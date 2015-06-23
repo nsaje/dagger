@@ -1,14 +1,25 @@
 package main
 
-import ("fmt"
-"bitbucket.org/nsaje/dagger/producers")
+import (
+	"bitbucket.org/nsaje/dagger/producers"
+	"fmt"
+)
 
 func main() {
-	p := ProducerPlugin{Name: "test producer"}
-	p.Init()
-	go p.Produce()
+	var p producers.TestProducerPlugin
+	streams := p.StartProducing()
 	for {
-		val := <-p.Streams["test stream"]
-		fmt.Printf("%v\n", val)
+		select {
+		case stream, ok := <-streams:
+			if !ok {
+				panic("what?")
+			}
+			go func(stream producers.Stream) {
+				for {
+					val := <-stream
+					fmt.Printf("%v\n", val)
+				}
+			}(stream)
+		}
 	}
 }

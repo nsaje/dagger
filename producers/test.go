@@ -1,19 +1,27 @@
 package producers
 
-import "time"
+import (
+	"bitbucket.org/nsaje/dagger/structs"
+	"time"
+)
 
-// Init initializes the producer
-func (p *ProducerPlugin) Init() {
-	p.Streams = make(map[string]chan Tuple)
-	p.Streams["test stream"] = make(chan Tuple)
-}
+// TestProducerPlugin produces an incremented value every second
+type TestProducerPlugin struct{}
 
-// Produce produces new tuples into the Stream channel
-func (p *ProducerPlugin) Produce() {
-	counter := 0
-	for {
-		time.Sleep(1000 * time.Millisecond)
-		p.Streams["test stream"] <- Tuple{time.Now(), counter}
-		counter++
-	}
+// StartProducing provides a channel of streams of new produced values
+func (p *TestProducerPlugin) StartProducing() <-chan Stream {
+	streams := make(chan Stream)
+
+	go func() {
+		stream := make(Stream)
+		streams <- stream
+		counter := 0
+		for {
+			time.Sleep(1000 * time.Millisecond)
+			stream <- structs.Tuple{Timestamp: time.Now(), Data: counter}
+			counter++
+		}
+	}()
+
+	return streams
 }

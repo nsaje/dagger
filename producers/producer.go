@@ -1,15 +1,13 @@
 package producers
 
-import "bitbucket.org/nsaje/dagger/producers/structs"
+import (
+	"bitbucket.org/nsaje/dagger/structs"
+)
 
-// ProducerPlugin creates tuples from the outside world
-type ProducerPlugin struct {
-	Name    string
-	Streams map[string]chan Tuple
-}
+// Stream is a channel of tuples
+type Stream chan structs.Tuple
 
-// Producer produces
+// Producer produces tuples from the outside world
 type Producer interface {
-	Init()
-	Produce()
+	StartProducing() <-chan Stream
 }
