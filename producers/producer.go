@@ -9,5 +9,5 @@ type Stream chan structs.Tuple
 
 // Producer produces tuples from the outside world
 type Producer interface {
-	StartProducing() <-chan Stream
+	StartProducing(chan<- Stream)
 }
