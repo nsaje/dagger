@@ -4,11 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"bitbucket.org/nsaje/dagger/producers"
-	"github.com/gdamore/mangos"
-	"github.com/gdamore/mangos/protocol/pub"
-	"github.com/gdamore/mangos/transport/ipc"
-	"github.com/gdamore/mangos/transport/tcp"
+	"github.com/codegangsta/cli"
 )
 
 func die(format string, v ...interface{}) {
@@ -16,43 +12,36 @@ func die(format string, v ...interface{}) {
 	os.Exit(1)
 }
 
-func main() {
-	prods := []producers.Producer{
-		&producers.TestProducerPlugin{},
-		&producers.TestProducerPlugin{},
+func dummy(ctx *cli.Context) {
+	fmt.Println("hi")
+	c, err := newCoordinator()
+	if err != nil {
+		die("Error starting coordinator %s", err)
 	}
-	streams := make(chan producers.Stream)
-	for _, p := range prods {
-		go p.StartProducing(streams)
+	err = c.RegisterTopic("mytopic")
+	if err != nil {
+		die("Error registering topic %s", err)
 	}
-	for {
-		select {
-		case newStream, ok := <-streams:
-			if !ok {
-				panic("what?")
-			}
-			go func(stream producers.Stream) {
-				sock := newStreamSocket()
-				for {
-					val := <-stream
-					fmt.Printf("%v\n", val)
-					sock.Send()
-				}
-			}(newStream)
-		}
+	pubs, err := c.GetPublishers("mytopic")
+	if err != nil {
+		die("Error getting topic publishers %s", err)
 	}
+	fmt.Printf("mytopic: %s\n", pubs[0])
 }
 
-func newStreamSocket() mangos.Socket {
-	var sock mangos.Socket
-	var err error
-	if sock, err = pub.NewSocket(); err != nil {
-		die("can't get new pub socket: %s", err)
+func main() {
+	app := cli.NewApp()
+	app.Name = "dagger"
+	app.Usage = "user-centric real-time stream processing"
+	app.Action = dummy
+	app.Commands = []cli.Command{
+		{
+			Name:    "producer",
+			Aliases: []string{"p"},
+			Usage:   "start dagger node as a producer",
+			Action:  producer,
+		},
 	}
-	sock.AddTransport(ipc.NewTransport())
-	sock.AddTransport(tcp.NewTransport())
-	if err = sock.Listen("0.0.0.0:0"); err != nil {
-		die("can't listen on pub socket: %s", err.Error())
-	}
-	return sock
+
+	app.Run(os.Args)
 }
