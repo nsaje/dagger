@@ -14,19 +14,6 @@ func die(format string, v ...interface{}) {
 
 func dummy(ctx *cli.Context) {
 	fmt.Println("hi")
-	c, err := newCoordinator()
-	if err != nil {
-		die("Error starting coordinator %s", err)
-	}
-	err = c.RegisterTopic("mytopic")
-	if err != nil {
-		die("Error registering topic %s", err)
-	}
-	pubs, err := c.GetPublishers("mytopic")
-	if err != nil {
-		die("Error getting topic publishers %s", err)
-	}
-	fmt.Printf("mytopic: %s\n", pubs[0])
 }
 
 func main() {
@@ -40,6 +27,12 @@ func main() {
 			Aliases: []string{"p"},
 			Usage:   "start dagger node as a producer",
 			Action:  producer,
+		},
+		{
+			Name:    "worker",
+			Aliases: []string{"w"},
+			Usage:   "start dagger node as a worker",
+			Action:  worker,
 		},
 	}
 

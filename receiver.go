@@ -12,17 +12,18 @@ import (
 // Receiver receives new tuples via incoming RPC calls
 type Receiver struct {
 	conf     *Config
-	incoming chan structs.Tuple
+	incoming chan *structs.Tuple
 }
 
 // SubmitTuple submits a new tuple into the worker process
-func (r *Receiver) SubmitTuple(t structs.Tuple, reply *string) error {
+func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
+	log.Printf("got call for Receiver.SubmitTuple() with tuple: %v", t)
 	r.incoming <- t
 	*reply = "ok"
 	return nil
 }
 
-func startReceiving(conf *Config, inc chan structs.Tuple) {
+func startReceiving(conf *Config, inc chan *structs.Tuple) {
 	l := &Receiver{conf, inc}
 	server := rpc.NewServer()
 	server.Register(l)
@@ -35,7 +36,7 @@ func startReceiving(conf *Config, inc chan structs.Tuple) {
 		if conn, err := listener.Accept(); err != nil {
 			log.Fatal("accept error: " + err.Error())
 		} else {
-			log.Printf("new connection established\n")
+			log.Printf("new connection to the receiver established\n")
 			go server.ServeCodec(jsonrpc.NewServerCodec(conn))
 		}
 	}

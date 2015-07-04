@@ -35,7 +35,8 @@ func startDispatching(conf *Config, coordinator Coordinator, output chan structs
 			client := jsonrpc.NewClient(conn)
 			client.Call("Receiver.SubmitTuple", t, &reply)
 			if reply != "ok" {
-				log.Fatal("reply not ok :-(")
+				log.Println("Receiver.SubmitTuple reply not ok: %s", reply)
+				continue
 			}
 			log.Println("Call succeeded")
 		}

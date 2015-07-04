@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"time"
 
@@ -21,8 +20,8 @@ func main() {
 	counter := 0
 	for {
 		time.Sleep(1000 * time.Millisecond)
-		s, _ := json.Marshal(structs.Tuple{Timestamp: time.Now(), Data: counter})
-		p.Stream <- string(s)
+		s := structs.Tuple{StreamID: "test", Data: counter}
+		p.Stream <- s
 		counter++
 	}
 }

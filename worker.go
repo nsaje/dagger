@@ -10,7 +10,7 @@ import (
 )
 
 func worker(c *cli.Context) {
-	inc := make(chan structs.Tuple)
+	inc := make(chan *structs.Tuple)
 	conf := DefaultConfig()
 	go startReceiving(conf, inc)
 

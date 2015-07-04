@@ -61,10 +61,10 @@ func StartPlugin(comp Computation) {
 // SubmitTuple submits the tuple into processing
 func (p *ComputationPlugin) SubmitTuple(arg *structs.Tuple,
 	response *string) error {
-	log.Printf("got call for Process\n")
+	log.Printf("Got call for SubmitTuple with tuple: %v\n", arg)
 	p.computation.Input() <- *arg
 	*response = "ok"
-	log.Printf("response sent: %s", *response)
+	log.Printf("SubmitTuple response sent: %s", *response)
 	return nil
 }
 
@@ -84,6 +84,6 @@ LOOP:
 		}
 	}
 	response.State = p.computation.State()
-	log.Printf("response sent: %s", *response)
+	log.Printf("GetProductionsAndState response sent: %v", *response)
 	return nil
 }

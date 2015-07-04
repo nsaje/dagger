@@ -7,6 +7,8 @@ import (
 	"os"
 	"sync"
 
+	"bitbucket.org/nsaje/dagger/structs"
+
 	"github.com/codegangsta/cli"
 	"github.com/natefinch/pie"
 )
@@ -14,11 +16,20 @@ import (
 func producer(c *cli.Context) {
 	log.SetPrefix("[master log] ")
 	log.Printf("starting main")
+	// TODO: discover all (enabled) producers
 	prods := []string{
-		"producer-test",
-		"producer-test",
-		"producer-test",
+		"./producer-test",
+		// "producer-test",
+		// "producer-test",
 	}
+	output := make(chan structs.Tuple)
+	conf := DefaultConfig()
+	coordinator, err := newCoordinator(conf)
+	if err != nil {
+		log.Fatal("error setting up coordinator")
+	}
+	go startDispatching(conf, coordinator, output)
+
 	var wg sync.WaitGroup
 	for _, path := range prods {
 		log.Printf("handling producer %s", path)
@@ -33,11 +44,14 @@ func producer(c *cli.Context) {
 			defer client.Close()
 			p := producerPlugin{client}
 			for {
+				log.Println("calling getnext")
 				res, err := p.GetNext()
+				log.Println("getnext returned")
 				if err != nil {
 					log.Fatalf("error calling GetNext(): %s", err)
 				}
-				log.Printf("Response from plugin: %q", res)
+				// handleMessage(res)
+				output <- res
 			}
 		}(path)
 	}
@@ -48,7 +62,11 @@ type producerPlugin struct {
 	client *rpc.Client
 }
 
-func (p producerPlugin) GetNext() (result string, err error) {
+func (p producerPlugin) GetNext() (result structs.Tuple, err error) {
 	err = p.client.Call("Producer.GetNext", "", &result)
 	return result, err
+}
+
+func handleMessage(msg string) {
+	// log.Printf("Response from plugin: %q", msg)
 }
