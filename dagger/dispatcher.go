@@ -1,4 +1,4 @@
-package main
+package dagger
 
 import (
 	"log"
@@ -14,15 +14,17 @@ type Dispatcher struct {
 	coordinator Coordinator
 }
 
-func startDispatching(conf *Config, coordinator Coordinator, output chan structs.Tuple) {
+// StartDispatching sends tuples to registered subscribers via RPC
+func StartDispatching(conf *Config, coordinator Coordinator, output chan structs.Tuple) {
 	// d := &Dispatcher{conf, coordinator}
+	log.SetPrefix("[Dispatcher]")
 	log.Println("Starting dispatching")
 	for t := range output {
-		log.Printf("Handling tuple: %s\n", t)
+		log.Printf("Handling tuple: %v\n", t)
 		subscribers, err := coordinator.GetSubscribers(t.StreamID)
 		log.Printf("Found subscribers: %v\n", subscribers)
 		if err != nil {
-			die("%v", err)
+			log.Fatal(err) // FIXME
 		}
 		for _, s := range subscribers {
 			conn, err := net.Dial("tcp", s)
@@ -35,7 +37,7 @@ func startDispatching(conf *Config, coordinator Coordinator, output chan structs
 			client := jsonrpc.NewClient(conn)
 			client.Call("Receiver.SubmitTuple", t, &reply)
 			if reply != "ok" {
-				log.Println("Receiver.SubmitTuple reply not ok: %s", reply)
+				log.Printf("Receiver.SubmitTuple reply not ok: %s", reply)
 				continue
 			}
 			log.Println("Call succeeded")

@@ -1,7 +1,8 @@
-package main
+package dagger
 
 import (
 	"errors"
+	"log"
 	"net"
 )
 
@@ -14,10 +15,10 @@ type Config struct {
 func DefaultConfig() *Config {
 	externalIPStr, err := externalIP()
 	if err != nil {
-		die("Unable to figure out an IP address to bind to.")
+		log.Fatal("Unable to figure out an IP address to bind to.")
 	}
 	conf := &Config{
-		RPCAdvertise: &net.TCPAddr{IP: net.ParseIP(externalIPStr), Port: 8435},
+		RPCAdvertise: &net.TCPAddr{IP: net.ParseIP(externalIPStr), Port: 0},
 	}
 	return conf
 }

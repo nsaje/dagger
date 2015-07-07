@@ -1,4 +1,4 @@
-package main
+package command
 
 import (
 	"log"
@@ -7,13 +7,16 @@ import (
 	"os"
 	"sync"
 
+	"bitbucket.org/nsaje/dagger/dagger"
 	"bitbucket.org/nsaje/dagger/structs"
 
 	"github.com/codegangsta/cli"
 	"github.com/natefinch/pie"
 )
 
-func producer(c *cli.Context) {
+// Producer collects data from a system / messaging queue / ... and submits it
+// to registered subscribers via RPC
+func Producer(c *cli.Context) {
 	log.SetPrefix("[master log] ")
 	log.Printf("starting main")
 	// TODO: discover all (enabled) producers
@@ -23,12 +26,14 @@ func producer(c *cli.Context) {
 		// "producer-test",
 	}
 	output := make(chan structs.Tuple)
-	conf := DefaultConfig()
-	coordinator, err := newCoordinator(conf)
+	conf := dagger.DefaultConfig()
+	coordinator := dagger.NewCoordinator(conf, conf.RPCAdvertise)
+	err := coordinator.Start()
+	defer coordinator.Stop()
 	if err != nil {
 		log.Fatal("error setting up coordinator")
 	}
-	go startDispatching(conf, coordinator, output)
+	go dagger.StartDispatching(conf, coordinator, output)
 
 	var wg sync.WaitGroup
 	for _, path := range prods {
@@ -55,7 +60,8 @@ func producer(c *cli.Context) {
 			}
 		}(path)
 	}
-	wg.Wait()
+	// wg.Wait()
+	handleSignals()
 }
 
 type producerPlugin struct {

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"bitbucket.org/nsaje/dagger/command"
+
 	"github.com/codegangsta/cli"
 )
 
@@ -26,13 +28,19 @@ func main() {
 			Name:    "producer",
 			Aliases: []string{"p"},
 			Usage:   "start dagger node as a producer",
-			Action:  producer,
+			Action:  command.Producer,
 		},
 		{
 			Name:    "worker",
 			Aliases: []string{"w"},
 			Usage:   "start dagger node as a worker",
-			Action:  worker,
+			Action:  command.Worker,
+		},
+		{
+			Name:    "subscriber",
+			Aliases: []string{"s"},
+			Usage:   "start dagger node as a topic subscriber",
+			Action:  command.Subscriber,
 		},
 	}
 
