@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/hashicorp/consul/api"
 )
@@ -20,21 +22,25 @@ type Coordinator interface {
 
 // ConsulCoordinator implementation based on Consul.io
 type ConsulCoordinator struct {
-	client   *api.Client
-	nodeConf *Config
-	addr     net.Addr
+	client *api.Client
+	config *Config
+	addr   net.Addr
 
 	sessionID    string
 	sessionRenew chan struct{}
+
+	subscribers     map[string]*subscribersList
+	subscribersLock sync.RWMutex
 }
 
 // NewCoordinator : this may return different coordinators based on config in the future
-func NewCoordinator(nodeConf *Config, addr net.Addr) Coordinator {
+func NewCoordinator(config *Config, addr net.Addr) Coordinator {
 	client, _ := api.NewClient(api.DefaultConfig())
 	c := &ConsulCoordinator{
-		client:   client,
-		nodeConf: nodeConf,
-		addr:     addr,
+		client:      client,
+		config:      config,
+		addr:        addr,
+		subscribers: make(map[string]*subscribersList),
 	}
 	return c
 }
@@ -71,7 +77,7 @@ func (c *ConsulCoordinator) Stop() {
 func (c *ConsulCoordinator) SubscribeTo(topic string) error {
 	kv := c.client.KV()
 	pair := &api.KVPair{
-		Key:     c.constructKey(topic),
+		Key:     c.constructSubscriberKey(topic),
 		Session: c.sessionID,
 	}
 	// ignore bool, since if it false it just means we're already subscribed
@@ -81,19 +87,85 @@ func (c *ConsulCoordinator) SubscribeTo(topic string) error {
 
 // GetSubscribers returns the addresses of subscribers interested in a certain topic
 func (c *ConsulCoordinator) GetSubscribers(topic string) ([]string, error) {
-	kv := c.client.KV()
 	prefix := fmt.Sprintf("dagger/%s/subscribers/", topic)
-	keys, _, err := kv.Keys(prefix, "", nil)
-	if err != nil {
-		return nil, err
+	c.subscribersLock.RLock()
+	subsList := c.subscribers[prefix]
+	c.subscribersLock.RUnlock()
+	if subsList == nil {
+		c.subscribersLock.Lock()
+		subsList = c.subscribers[prefix]
+		// check again, otherwise someone might have already acquired write lock before us
+		if subsList == nil {
+			subsList = &subscribersList{prefix: prefix, c: c}
+			log.Println("subs list: ", subsList)
+			err := subsList.fetch()
+			if err != nil {
+				return nil, err
+			}
+			c.subscribers[prefix] = subsList
+			// keep subscribers updated and clean up if unused
+			go subsList.sync()
+		}
+		c.subscribersLock.Unlock()
 	}
-	subscribers := make([]string, len(keys))
-	for i, key := range keys {
-		subscribers[i] = key[len(prefix):]
-	}
-	return subscribers, nil
+	return subsList.get(), nil
 }
 
-func (c *ConsulCoordinator) constructKey(topic string) string {
+func (c *ConsulCoordinator) constructSubscriberKey(topic string) string {
 	return fmt.Sprintf("dagger/%s/subscribers/%s", topic, c.addr.String())
+}
+
+type subscribersList struct {
+	subscribers []string
+	prefix      string
+	lastAccess  time.Time
+	lastIndex   uint64
+	c           *ConsulCoordinator
+	sync.RWMutex
+}
+
+func (sl *subscribersList) get() []string {
+	sl.Lock()
+	sl.lastAccess = time.Now()
+	sl.Unlock()
+	return sl.subscribers
+}
+
+func (sl *subscribersList) sync() {
+	for {
+		// check if this list is expired
+		sl.RLock()
+		lastAccess := sl.lastAccess
+		sl.RUnlock()
+		if time.Since(lastAccess) >= sl.c.config.SubscribersTTL {
+			log.Printf("TTL expired for subscribers of '%s'", sl.prefix)
+			sl.c.subscribersLock.Lock()
+			defer sl.c.subscribersLock.Unlock()
+			delete(sl.c.subscribers, sl.prefix)
+			return
+		}
+
+		// do a blocking query for when our prefix is updated
+		err := sl.fetch()
+		if err != nil {
+			log.Printf("WARNING: problem syncing subscribers for prefix: %s", sl.prefix)
+		}
+	}
+}
+
+func (sl *subscribersList) fetch() error {
+	kv := sl.c.client.KV()
+	fmt.Println("Executing blocking consul.Keys method, lastIndex: ", sl.lastIndex)
+	keys, queryMeta, err := kv.Keys(sl.prefix, "", &api.QueryOptions{WaitIndex: sl.lastIndex})
+	fmt.Println("consul.Keys method returned, New LastIndex: ", queryMeta.LastIndex)
+	if err != nil {
+		return err
+	}
+	sl.lastIndex = queryMeta.LastIndex
+	subscribers := make([]string, len(keys))
+	for i, key := range keys {
+		subscribers[i] = key[len(sl.prefix):]
+	}
+	sl.subscribers = subscribers
+	return nil
 }

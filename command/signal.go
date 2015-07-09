@@ -17,6 +17,7 @@ func handleSignals() {
 		select {
 		case s := <-signalCh:
 			log.Printf("Caught signal: %v", s)
+			// panic("stack")
 			return
 		}
 	}

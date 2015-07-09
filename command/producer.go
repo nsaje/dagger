@@ -33,7 +33,9 @@ func Producer(c *cli.Context) {
 	if err != nil {
 		log.Fatal("error setting up coordinator")
 	}
-	go dagger.StartDispatching(conf, coordinator, output)
+
+	dispatcher := dagger.NewDispatcher(conf, coordinator)
+	go dispatcher.StartDispatching(output)
 
 	var wg sync.WaitGroup
 	for _, path := range prods {

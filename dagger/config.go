@@ -4,11 +4,13 @@ import (
 	"errors"
 	"log"
 	"net"
+	"time"
 )
 
 // Config is used to configure the node
 type Config struct {
-	RPCAdvertise *net.TCPAddr
+	RPCAdvertise   *net.TCPAddr
+	SubscribersTTL time.Duration
 }
 
 // DefaultConfig provides default config values
@@ -18,7 +20,8 @@ func DefaultConfig() *Config {
 		log.Fatal("Unable to figure out an IP address to bind to.")
 	}
 	conf := &Config{
-		RPCAdvertise: &net.TCPAddr{IP: net.ParseIP(externalIPStr), Port: 0},
+		RPCAdvertise:   &net.TCPAddr{IP: net.ParseIP(externalIPStr), Port: 0},
+		SubscribersTTL: time.Duration(15 * time.Second),
 	}
 	return conf
 }
