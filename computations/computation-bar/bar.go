@@ -25,6 +25,7 @@ func main() {
 	computations.StartPlugin(c)
 	for t := range c.Input() {
 		t.Data = fmt.Sprintf("barized: %v", t.Data)
+		t.StreamID = "testbar"
 		c.Output() <- t
 		c.counter++
 	}

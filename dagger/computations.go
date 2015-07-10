@@ -50,6 +50,7 @@ func (p computationPlugin) SubmitTuple(t *structs.Tuple) (result string, err err
 
 func (p computationPlugin) GetProductionsAndState() (result structs.ComputationResponse, err error) {
 	err = p.client.Call("Computation.GetProductionsAndState", "", &result)
+	log.Println("[from-plugin] result: ", result)
 	return result, err
 }
 
@@ -57,6 +58,7 @@ type computationPluginHandler struct {
 	pluginName string
 	input      chan *structs.Tuple
 	output     chan *structs.Tuple
+	pending    []*structs.Tuple
 }
 
 func newComputationPluginHandler(name string, output chan *structs.Tuple) ComputationPluginHandler {
@@ -64,6 +66,7 @@ func newComputationPluginHandler(name string, output chan *structs.Tuple) Comput
 		name,
 		make(chan *structs.Tuple),
 		output,
+		make([]*structs.Tuple, 0),
 	}
 }
 
@@ -80,17 +83,23 @@ func (cph *computationPluginHandler) Start() {
 			select {
 			case t := <-cph.input:
 				_, err := p.SubmitTuple(t)
+				cph.pending = append(cph.pending, t)
 				if err != nil {
-					log.Fatalf("error calling SubmitTuple(): %s", err)
+					log.Fatalf("error calling SubmitTuple(): %s", err) // FIXME error handling
 				}
-			case <-time.Tick(100 * time.Millisecond):
+			case <-time.Tick(1000 * time.Millisecond):
 				res, err := p.GetProductionsAndState()
 				if err != nil {
 					log.Fatalf("error calling GetProductionsAndState(): %s", err)
 				}
-				for _, t := range res.Tuples {
-					cph.output <- &t
+				for i := range res.Tuples {
+					cph.output <- &res.Tuples[i]
 				}
+				// TODO PERSISTENCE
+				for _, t := range cph.pending {
+					t.Done()
+				}
+				cph.pending = make([]*structs.Tuple, 0)
 			}
 		}
 	}("./computation-" + cph.pluginName)
@@ -120,7 +129,7 @@ func (cm *computationManager) SetupComputation(
 func (cm *computationManager) ProcessComputations(in chan *structs.Tuple) chan *structs.Tuple {
 	go func() {
 		for t := range in {
-			log.Printf("processComputations: processing tuple: %v", t)
+			log.Printf("[computations] tuple: %v", t)
 			compChans := cm.compChannels[t.StreamID]
 
 			// Mark how many computations need to process this tuple
@@ -134,6 +143,7 @@ func (cm *computationManager) ProcessComputations(in chan *structs.Tuple) chan *
 			// ACK the tuple after all computations complete
 			go func(t *structs.Tuple) {
 				t.Wait()
+				log.Println("[computations] ACKing tuple ", t)
 				t.Ack()
 			}(t)
 		}

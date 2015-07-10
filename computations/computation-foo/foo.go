@@ -25,6 +25,7 @@ func main() {
 	computations.StartPlugin(c)
 	for t := range c.Input() {
 		t.Data = fmt.Sprintf("fooized: %v", t.Data)
+		t.StreamID = "testfoo"
 		c.Output() <- t
 		c.counter++
 	}

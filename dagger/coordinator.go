@@ -97,7 +97,6 @@ func (c *ConsulCoordinator) GetSubscribers(topic string) ([]string, error) {
 		// check again, otherwise someone might have already acquired write lock before us
 		if subsList == nil {
 			subsList = &subscribersList{prefix: prefix, c: c}
-			log.Println("subs list: ", subsList)
 			err := subsList.fetch()
 			if err != nil {
 				return nil, err
@@ -155,9 +154,10 @@ func (sl *subscribersList) sync() {
 
 func (sl *subscribersList) fetch() error {
 	kv := sl.c.client.KV()
-	fmt.Println("Executing blocking consul.Keys method, lastIndex: ", sl.lastIndex)
+	// fmt.Println("Executing blocking consul.Keys method, lastIndex: ", sl.lastIndex)
 	keys, queryMeta, err := kv.Keys(sl.prefix, "", &api.QueryOptions{WaitIndex: sl.lastIndex})
-	fmt.Println("consul.Keys method returned, New LastIndex: ", queryMeta.LastIndex)
+	log.Println("[coordinator] subscribers updated in ", sl.prefix)
+	// fmt.Println("consul.Keys method returned, New LastIndex: ", queryMeta.LastIndex)
 	if err != nil {
 		return err
 	}

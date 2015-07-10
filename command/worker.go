@@ -33,11 +33,6 @@ func Worker(c *cli.Context) {
 
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
 	go dispatcher.StartDispatching(processed)
-	// go func() {
-	// 	for tuple := range processed {
-	// 		fmt.Println("Produced tuple:", tuple)
-	// 	}
-	// }()
 
 	handleSignals()
 }
