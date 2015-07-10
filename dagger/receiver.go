@@ -39,8 +39,14 @@ func (r *Receiver) ListenAddr() net.Addr {
 // SubmitTuple submits a new tuple into the worker process
 func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	log.Printf("got call for Receiver.SubmitTuple() with tuple: %v", t)
+	doneCh, errCh := t.ProcessingStarted()
 	r.incoming <- t
-	*reply = "ok"
+	select {
+	case <-doneCh:
+		*reply = "ok"
+	case err := <-errCh:
+		*reply = err.Error()
+	}
 	return nil
 }
 

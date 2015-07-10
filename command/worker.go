@@ -1,7 +1,6 @@
 package command
 
 import (
-	"fmt"
 	"log"
 
 	"bitbucket.org/nsaje/dagger/dagger"
@@ -32,11 +31,13 @@ func Worker(c *cli.Context) {
 	compManager.SetupComputation("bar", []string{"test"}, "bartest")
 	processed := compManager.ProcessComputations(incoming)
 
-	go func() {
-		for tuple := range processed {
-			fmt.Println("Produced tuple:", tuple)
-		}
-	}()
+	dispatcher := dagger.NewDispatcher(conf, coordinator)
+	go dispatcher.StartDispatching(processed)
+	// go func() {
+	// 	for tuple := range processed {
+	// 		fmt.Println("Produced tuple:", tuple)
+	// 	}
+	// }()
 
 	handleSignals()
 }

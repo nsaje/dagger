@@ -23,7 +23,7 @@ func NewDispatcher(conf *Config, coordinator Coordinator) *Dispatcher {
 }
 
 // StartDispatching sends tuples to registered subscribers via RPC
-func (d *Dispatcher) StartDispatching(output chan structs.Tuple) {
+func (d *Dispatcher) StartDispatching(output chan *structs.Tuple) {
 	log.Println("Starting dispatching")
 	for t := range output {
 		log.Printf("Handling tuple: %v\n", t)
@@ -54,16 +54,18 @@ type subscriberHandler struct {
 	client *rpc.Client
 }
 
-func (s *subscriberHandler) send(t structs.Tuple) {
+func (s *subscriberHandler) send(t *structs.Tuple) {
 	var reply string
 	for {
 		log.Println("Calling...")
 		s.client.Call("Receiver.SubmitTuple", t, &reply)
+		log.Println("reply: ", reply)
 		if reply == "ok" {
 			log.Println("Call succeeded")
 			return
 		}
 		log.Printf("Receiver.SubmitTuple reply not ok: %s", reply)
+		log.Println("Will retry")
 		time.Sleep(time.Second)
 	}
 }

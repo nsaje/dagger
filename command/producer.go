@@ -25,7 +25,7 @@ func Producer(c *cli.Context) {
 		// "producer-test",
 		// "producer-test",
 	}
-	output := make(chan structs.Tuple)
+	output := make(chan *structs.Tuple)
 	conf := dagger.DefaultConfig()
 	coordinator := dagger.NewCoordinator(conf, conf.RPCAdvertise)
 	err := coordinator.Start()
@@ -70,9 +70,10 @@ type producerPlugin struct {
 	client *rpc.Client
 }
 
-func (p producerPlugin) GetNext() (result structs.Tuple, err error) {
-	err = p.client.Call("Producer.GetNext", "", &result)
-	return result, err
+func (p producerPlugin) GetNext() (*structs.Tuple, error) {
+	var result structs.Tuple
+	err := p.client.Call("Producer.GetNext", "", &result)
+	return &result, err
 }
 
 func handleMessage(msg string) {

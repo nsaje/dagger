@@ -32,6 +32,7 @@ func Subscriber(c *cli.Context) {
 	go func() {
 		for tuple := range incoming {
 			fmt.Println("Received tuple:", tuple)
+			tuple.Ack()
 		}
 	}()
 	handleSignals()
