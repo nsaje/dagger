@@ -121,15 +121,21 @@ func (cm *computationManager) ProcessComputations(in chan *structs.Tuple) chan *
 	go func() {
 		for t := range in {
 			log.Printf("processComputations: processing tuple: %v", t)
-			// if t.Data.(float64) == 0 {
-			// 	time.AfterFunc(5*time.Second, func() {
-			// 		panic("here:")
-			// 	})
-			// }
 			compChans := cm.compChannels[t.StreamID]
+
+			// Mark how many computations need to process this tuple
+			t.Add(len(compChans))
+
+			// Feed the tuple into interested computations
 			for _, chann := range compChans {
 				chann <- t
 			}
+
+			// ACK the tuple after all computations complete
+			go func(t *structs.Tuple) {
+				t.Wait()
+				t.Ack()
+			}(t)
 		}
 	}()
 	return cm.output

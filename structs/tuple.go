@@ -1,5 +1,7 @@
 package structs
 
+import "sync"
+
 // Tuple is the atomic unit of data flowing through Dagger
 type Tuple struct {
 	StreamID string      `json:"stream_id"`
@@ -7,6 +9,8 @@ type Tuple struct {
 
 	doneCh chan struct{}
 	errCh  chan error
+
+	sync.WaitGroup
 }
 
 // ProcessingStarted indicates that the tuple has entered the processing stage
