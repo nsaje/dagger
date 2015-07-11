@@ -4,6 +4,7 @@ import "sync"
 
 // Tuple is the atomic unit of data flowing through Dagger
 type Tuple struct {
+	ID       string      `json:"id"`
 	StreamID string      `json:"stream_id"`
 	Data     interface{} `json:"data"`
 

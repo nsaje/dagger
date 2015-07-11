@@ -12,6 +12,7 @@ import (
 
 	"github.com/codegangsta/cli"
 	"github.com/natefinch/pie"
+	"github.com/twinj/uuid"
 )
 
 // Producer collects data from a system / messaging queue / ... and submits it
@@ -73,6 +74,8 @@ type producerPlugin struct {
 func (p producerPlugin) GetNext() (*structs.Tuple, error) {
 	var result structs.Tuple
 	err := p.client.Call("Producer.GetNext", "", &result)
+	// assign ID
+	result.ID = uuid.NewV4().String()
 	return &result, err
 }
 

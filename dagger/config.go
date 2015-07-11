@@ -11,6 +11,7 @@ import (
 type Config struct {
 	RPCAdvertise   *net.TCPAddr
 	SubscribersTTL time.Duration
+	LevelDBFile    string
 }
 
 // DefaultConfig provides default config values
@@ -22,6 +23,7 @@ func DefaultConfig() *Config {
 	conf := &Config{
 		RPCAdvertise:   &net.TCPAddr{IP: net.ParseIP(externalIPStr), Port: 0},
 		SubscribersTTL: time.Duration(15 * time.Second),
+		LevelDBFile:    "dagger.db",
 	}
 	return conf
 }
