@@ -12,15 +12,15 @@ type Deduplicator interface {
 }
 
 type dedup struct {
-	persister Persister
-	filter    *bloom.BloomFilter
+	tupleTracker TupleTracker
+	filter       *bloom.BloomFilter
 }
 
 // NewDeduplicator initializes a new deduplicator
-func NewDeduplicator(persister Persister) Deduplicator {
+func NewDeduplicator(tupleTracker TupleTracker) Deduplicator {
 	return &dedup{
-		persister: persister,
-		filter:    bloom.New(20000, 5),
+		tupleTracker: tupleTracker,
+		filter:       bloom.New(20000, 5),
 	}
 }
 
@@ -31,12 +31,13 @@ func (d *dedup) Deduplicate(input chan *structs.Tuple) chan *structs.Tuple {
 			var seen bool
 			if seen = d.filter.TestAndAddString(t.ID); seen {
 				// we have probably seen it before, but we must check the DB
-				seen = d.persister.ReceivedAlready(t)
+				seen = d.tupleTracker.ReceivedAlready(t)
 			}
 			if !seen {
 				output <- t
 			}
 		}
+		close(output)
 	}()
 	return output
 }
