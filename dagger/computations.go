@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"encoding/json"
 	"log"
 	"net/rpc"
 	"net/rpc/jsonrpc"
@@ -30,6 +31,7 @@ func NewComputationManager(persister Persister) ComputationManager {
 		compChannels:  make(map[string][]chan *structs.Tuple),
 		subscriptions: make(map[string]string),
 		output:        make(chan *structs.Tuple),
+		persister:     persister,
 	}
 }
 
@@ -137,9 +139,18 @@ func (cph *computationPluginHandler) Start() {
 					cph.output <- &res.Tuples[i]
 				}
 
-				// persist state
+				// persist computation state
+				state, err := json.Marshal(res.State)
+				if err != nil { // FIXME error handling
+					cph.persister.PersistState(cph.pluginName, state)
+				}
+
+				// store tuple IDs so we know we've processed them already
+				log.Println("persisting: ", cph.pending, cph.persister)
+				cph.persister.PersistReceivedTuples(cph.pending)
 
 				// mark that this computation is done with this tuple
+				// so senders can be ACKed
 				for _, t := range cph.pending {
 					t.Done()
 				}

@@ -15,12 +15,19 @@ const (
 // Persister takes care of persisting in-flight tuples and computation state
 type Persister interface {
 	Close()
+	TupleTracker
+	StateTracker
 }
 
 // TupleTracker persists info about which tuples we've already seen
 type TupleTracker interface {
 	PersistReceivedTuples(tuples []*structs.Tuple)
 	ReceivedAlready(t *structs.Tuple) bool
+}
+
+// StateTracker persists the state of each computationManager
+type StateTracker interface {
+	PersistState(string, []byte)
 }
 
 // LevelDBPersister is built on top of LevelDB
@@ -37,14 +44,17 @@ func NewPersister(conf *Config) (*LevelDBPersister, error) {
 	return &LevelDBPersister{db}, nil
 }
 
+// Close the persister
 func (p *LevelDBPersister) Close() {
 	p.db.Close()
 }
 
-func (p *LevelDBPersister) PersistState() {
+// PersistState persists the state of the computation
+func (p *LevelDBPersister) PersistState(compID string, state []byte) {
 	return
 }
 
+// PersistReceivedTuples save the info about which tuples we've already seen
 func (p *LevelDBPersister) PersistReceivedTuples(tuples []*structs.Tuple) {
 	batch := new(leveldb.Batch)
 	for _, t := range tuples {
@@ -52,6 +62,7 @@ func (p *LevelDBPersister) PersistReceivedTuples(tuples []*structs.Tuple) {
 	}
 }
 
+// ReceivedAlready returns whether we've seen this tuple before
 func (p *LevelDBPersister) ReceivedAlready(t *structs.Tuple) bool {
 	received, err := p.db.Has([]byte(fmt.Sprintf(receivedKeyFormat, t.ID)), nil)
 	if err != nil {
