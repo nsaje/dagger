@@ -1,6 +1,10 @@
 package structs
 
-import "sync"
+import (
+	"fmt"
+	"strings"
+	"sync"
+)
 
 // Tuple is the atomic unit of data flowing through Dagger
 type Tuple struct {
@@ -36,4 +40,30 @@ func (t *Tuple) Fail(err error) {
 type ComputationResponse struct {
 	Tuples []Tuple
 	State  interface{}
+}
+
+// Computation represents info about an instance of a computation
+type Computation struct {
+	// The name identifying the computation type
+	Name string
+	// Free-form definition string, parsed by computations into arguments
+	Definition string
+}
+
+// String returns textual representation of the computation
+func (c Computation) String() string {
+	return fmt.Sprintf("%s(%s)", c.Name, c.Definition)
+}
+
+// ComputationFromString parses a computation definition
+func ComputationFromString(c string) (*Computation, error) {
+	c = strings.TrimSpace(c)
+	firstParen := strings.Index(c, "(")
+	if firstParen < 1 || c[len(c)-1] != ')' {
+		return nil, fmt.Errorf("Computation %s invalid!", c)
+	}
+	return &Computation{
+		Name:       c[:firstParen],
+		Definition: c[firstParen+1 : len(c)-1],
+	}, nil
 }
