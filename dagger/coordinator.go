@@ -80,9 +80,32 @@ func (c *ConsulCoordinator) SubscribeTo(topic string) error {
 		Key:     c.constructSubscriberKey(topic),
 		Session: c.sessionID,
 	}
-	// ignore bool, since if it false it just means we're already subscribed
+	// ignore bool, since if it's false, it just means we're already subscribed
 	_, _, err := kv.Acquire(pair, nil)
+	go c.monitorPublishers(topic)
 	return err
+}
+
+func (c *ConsulCoordinator) monitorPublishers(topic string) {
+	prefix := fmt.Sprintf("dagger/%s/publishers/", topic)
+	kv := c.client.KV()
+	lastIndex := uint64(0)
+	for {
+		keys, queryMeta, err := kv.Keys(prefix, "", &api.QueryOptions{WaitIndex: lastIndex})
+		log.Println("[coordinator] publishers checked in ", prefix)
+		if err != nil {
+			// FIXME
+		}
+		lastIndex = queryMeta.LastIndex
+
+		// if there are no publishers registered, post a new job
+		if len(keys) == 0 {
+			pair := &api.KVPair{
+				Key: fmt.Sprintf("dagger/jobs/%s", topic),
+			}
+			kv.Put(pair, nil) // FIXME error handling
+		}
+	}
 }
 
 // GetSubscribers returns the addresses of subscribers interested in a certain topic
