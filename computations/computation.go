@@ -58,6 +58,14 @@ func StartPlugin(comp Computation) {
 	go provider.ServeCodec(jsonrpc.NewServerCodec)
 }
 
+// GetInputs returns the inputs to this computation
+func (p *ComputationPlugin) GetInputs(arg string, response *structs.InputsResponse) error {
+	log.Println("got inputs call for ", arg)
+	*response = structs.InputsResponse{[]string{arg}}
+	log.Printf("returning %+v", *response)
+	return nil
+}
+
 // SubmitTuple submits the tuple into processing
 func (p *ComputationPlugin) SubmitTuple(arg *structs.Tuple,
 	response *string) error {

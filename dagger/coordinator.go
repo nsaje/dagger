@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,9 @@ type Coordinator interface {
 	// GetSubscribers(string) ([]string, error)
 	GetSubscribers(string) ([]string, error)
 	// GetConfig(string) (string, error)
+	WatchJobs() chan []string
+	TakeJob(string) (bool, error)
+	RegisterAsPublisher(string)
 	Start() error
 	Stop()
 }
@@ -28,6 +32,7 @@ type ConsulCoordinator struct {
 
 	sessionID    string
 	sessionRenew chan struct{}
+	stopCh       chan struct{}
 
 	subscribers     map[string]*subscribersList
 	subscribersLock sync.RWMutex
@@ -41,6 +46,7 @@ func NewCoordinator(config *Config, addr net.Addr) Coordinator {
 		config:      config,
 		addr:        addr,
 		subscribers: make(map[string]*subscribersList),
+		stopCh:      make(chan struct{}),
 	}
 	return c
 }
@@ -67,10 +73,69 @@ func (c *ConsulCoordinator) Start() error {
 func (c *ConsulCoordinator) Stop() {
 	close(c.sessionRenew)
 	c.sessionRenew = nil
+	close(c.stopCh)
 
 	session := c.client.Session()
 	log.Printf("Destroying session %s", c.sessionID)
 	session.Destroy(c.sessionID, nil) // ignoring error, session will expire anyway
+}
+
+// WatchJobs notifies of jobs in the job board
+func (c *ConsulCoordinator) WatchJobs() chan []string {
+	currentJobs := make(chan []string)
+	go func() {
+		prefix := "dagger/jobs/"
+		kv := c.client.KV()
+		lastIndex := uint64(0)
+		for {
+			select {
+			case <-c.stopCh:
+				return
+			default:
+				keys, queryMeta, err := kv.Keys(prefix, "", &api.QueryOptions{WaitIndex: lastIndex})
+				log.Println("[coordinator][WatchJobs] jobs checked ")
+				if err != nil {
+					// FIXME
+				}
+				log.Println("last index before, after ", lastIndex, queryMeta.LastIndex)
+				lastIndex = queryMeta.LastIndex
+				currentJobs <- keys
+			}
+		}
+	}()
+	return currentJobs
+}
+
+// TakeJob tries to take a job from the job list. If another Worker
+// manages to take the job, the call returns false.
+func (c *ConsulCoordinator) TakeJob(job string) (bool, error) {
+	log.Println("[coordinator] trying to take job: ", job)
+	kv := c.client.KV()
+	pair := &api.KVPair{
+		Key:     job,
+		Session: c.sessionID,
+	}
+	acquired, _, err := kv.Acquire(pair, nil)
+	return acquired, err
+}
+
+// RegisterAsPublisher registers us as publishers of this stream and
+// deletes the job entry for this job
+func (c *ConsulCoordinator) RegisterAsPublisher(job string) {
+	kv := c.client.KV()
+	slashIdx := strings.LastIndex(job, "/")
+	topic := job[slashIdx+1:]
+	pair := &api.KVPair{
+		Key:     fmt.Sprintf("dagger/%s/publishers/%s", topic, c.addr.String()),
+		Session: c.sessionID,
+	}
+	_, _, err := kv.Acquire(pair, nil)
+	if err != nil {
+		log.Println(err)
+	}
+
+	// delete the job
+	kv.Delete(job, nil)
 }
 
 // SubscribeTo subscribes to topics with global coordination
@@ -96,6 +161,7 @@ func (c *ConsulCoordinator) monitorPublishers(topic string) {
 		if err != nil {
 			// FIXME
 		}
+		log.Println("last index before, after ", lastIndex, queryMeta.LastIndex)
 		lastIndex = queryMeta.LastIndex
 
 		// if there are no publishers registered, post a new job

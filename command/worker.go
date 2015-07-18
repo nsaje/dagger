@@ -29,15 +29,14 @@ func Worker(c *cli.Context) {
 		log.Fatalf("Error starting coordinator %s", err)
 	}
 	log.Println("Coordinator started")
-	coordinator.SubscribeTo("test")
-	log.Println("Subscribed to test")
 
 	deduplicator := dagger.NewDeduplicator(persister)
 	deduped := deduplicator.Deduplicate(incoming)
 
-	compManager := dagger.NewComputationManager(persister)
-	compManager.SetupComputation("foo", []string{"test"}, "footest")
-	compManager.SetupComputation("bar", []string{"test"}, "bartest")
+	compManager := dagger.NewComputationManager(coordinator, persister)
+	// compManager.SetupComputation("foo", []string{"test"}, "footest")
+	// compManager.SetupComputation("bar", []string{"test"}, "bartest")
+	go compManager.TakeJobs()
 	processed := compManager.ProcessComputations(deduped)
 
 	dispatcher := dagger.NewDispatcher(conf, coordinator)

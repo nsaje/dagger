@@ -42,6 +42,10 @@ type ComputationResponse struct {
 	State  interface{}
 }
 
+type InputsResponse struct {
+	Inputs []string
+}
+
 // Computation represents info about an instance of a computation
 type Computation struct {
 	// The name identifying the computation type
