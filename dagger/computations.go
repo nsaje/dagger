@@ -28,6 +28,7 @@ type computationManager struct {
 	output        chan *structs.Tuple
 	coordinator   Coordinator
 	persister     Persister
+	jobs          map[string]struct{}
 }
 
 // NewComputationManager returns an object that can manage computations
@@ -38,6 +39,7 @@ func NewComputationManager(coordinator Coordinator, persister Persister) Computa
 		output:        make(chan *structs.Tuple),
 		coordinator:   coordinator,
 		persister:     persister,
+		jobs:          make(map[string]struct{}),
 	}
 }
 
@@ -46,6 +48,9 @@ func (cm *computationManager) TakeJobs() {
 	for newJobs := range jobsWatch {
 		randomOrder := rand.Perm(len(newJobs))
 		for _, i := range randomOrder {
+			if _, alreadyTaken := cm.jobs[newJobs[i]]; alreadyTaken {
+				continue
+			}
 			gotJob, err := cm.coordinator.TakeJob(newJobs[i])
 			if err == nil {
 				log.Println(err) // FIXME
@@ -55,6 +60,7 @@ func (cm *computationManager) TakeJobs() {
 				slashIdx := strings.LastIndex(newJobs[i], "/")
 				cm.SetupComputation(newJobs[i][slashIdx+1:])
 				cm.coordinator.RegisterAsPublisher(newJobs[i])
+				cm.jobs[newJobs[i]] = struct{}{}
 			}
 		}
 	}

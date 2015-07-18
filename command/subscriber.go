@@ -14,11 +14,17 @@ import (
 func Subscriber(c *cli.Context) {
 	conf := dagger.DefaultConfig()
 
+	persister, err := dagger.NewPersister(conf)
+	if err != nil {
+		log.Fatalf("error opening database")
+	}
+	defer persister.Close()
+
 	receiver := dagger.NewReceiver(conf)
 	incoming := receiver.StartReceiving()
 
 	coordinator := dagger.NewCoordinator(conf, receiver.ListenAddr())
-	err := coordinator.Start()
+	err = coordinator.Start()
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatalf("Error starting coordinator %s", err)
@@ -29,8 +35,11 @@ func Subscriber(c *cli.Context) {
 	coordinator.SubscribeTo(topicGlob)
 	log.Printf("Subscribed to %s", topicGlob)
 
+	deduplicator := dagger.NewDeduplicator(persister)
+	deduped := deduplicator.Deduplicate(incoming)
+
 	go func() {
-		for tuple := range incoming {
+		for tuple := range deduped {
 			fmt.Println("Received tuple:", tuple)
 			tuple.Ack()
 		}

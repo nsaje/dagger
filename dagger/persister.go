@@ -6,6 +6,7 @@ import (
 
 	"bitbucket.org/nsaje/dagger/structs"
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/twinj/uuid"
 )
 
 const (
@@ -37,7 +38,7 @@ type LevelDBPersister struct {
 
 // NewPersister initializes and returns a new Persister instance
 func NewPersister(conf *Config) (*LevelDBPersister, error) {
-	db, err := leveldb.OpenFile(conf.LevelDBFile, nil)
+	db, err := leveldb.OpenFile(uuid.NewV4().String(), nil)
 	if err != nil {
 		return nil, err
 	}
