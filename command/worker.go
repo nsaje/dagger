@@ -34,8 +34,6 @@ func Worker(c *cli.Context) {
 	deduped := deduplicator.Deduplicate(incoming)
 
 	compManager := dagger.NewComputationManager(coordinator, persister)
-	// compManager.SetupComputation("foo", []string{"test"}, "footest")
-	// compManager.SetupComputation("bar", []string{"test"}, "bartest")
 	go compManager.TakeJobs()
 	processed := compManager.ProcessComputations(deduped)
 

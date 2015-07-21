@@ -190,8 +190,9 @@ func (cph *computationPluginHandler) Start(definition string) ([]string, error) 
 				// persist computation state
 				state, err := json.Marshal(res.State)
 				if err != nil { // FIXME error handling
-					cph.persister.PersistState(cph.pluginName, state)
+					log.Println(err)
 				}
+				cph.persister.PersistState(cph.pluginName, state)
 
 				// store tuple IDs so we know we've processed them already
 				log.Println("persisting: ", cph.pending, cph.persister)

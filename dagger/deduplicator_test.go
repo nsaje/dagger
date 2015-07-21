@@ -32,12 +32,15 @@ func (tt *inmemTupleTracker) ReceivedAlready(t *structs.Tuple) bool {
 
 func TestDeduplicate(t *testing.T) {
 	tupleTracker := &inmemTupleTracker{set: make(map[string]struct{})}
+	tupleTracker.PersistReceivedTuples([]*structs.Tuple{&structs.Tuple{ID: "0"}})
+
 	deduplicator := NewDeduplicator(tupleTracker)
 
 	in := make(chan *structs.Tuple, 3)
 	out := deduplicator.Deduplicate(in)
 
 	tups := []*structs.Tuple{
+		&structs.Tuple{ID: "0"},
 		&structs.Tuple{ID: "1"},
 		&structs.Tuple{ID: "1"},
 		&structs.Tuple{ID: "2"},
