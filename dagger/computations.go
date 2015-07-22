@@ -1,220 +1,165 @@
 package dagger
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"os"
 	"strings"
-	"time"
 
 	"bitbucket.org/nsaje/dagger/structs"
 	"github.com/natefinch/pie"
 )
 
-// ComputationManager manages computation that are being executed
+// ComputationManager manages computations that are being executed
 type ComputationManager interface {
-	SetupComputation(string)
-	ProcessComputations(chan *structs.Tuple) chan *structs.Tuple
-	TakeJobs()
+	SetupComputation(string) error
+	ProcessTuple(*structs.Tuple) error
+	Has(string) bool
 }
 
 type computationManager struct {
-	compChannels  map[string][]chan *structs.Tuple
-	subscriptions map[string]string
-	output        chan *structs.Tuple
+	computations  map[string]Computation
+	subscriptions map[string][]TupleProcessor
 	coordinator   Coordinator
 	persister     Persister
-	jobs          map[string]struct{}
+	dispatcher    TupleProcessor
 }
 
 // NewComputationManager returns an object that can manage computations
-func NewComputationManager(coordinator Coordinator, persister Persister) ComputationManager {
+func NewComputationManager(coordinator Coordinator,
+	persister Persister,
+	dispatcher TupleProcessor) ComputationManager {
 	return &computationManager{
-		compChannels:  make(map[string][]chan *structs.Tuple),
-		subscriptions: make(map[string]string),
-		output:        make(chan *structs.Tuple),
+		computations:  make(map[string]Computation),
+		subscriptions: make(map[string][]TupleProcessor),
 		coordinator:   coordinator,
 		persister:     persister,
-		jobs:          make(map[string]struct{}),
+		dispatcher:    dispatcher,
 	}
 }
 
-func (cm *computationManager) TakeJobs() {
-	jobsWatch := cm.coordinator.WatchJobs()
-	for newJobs := range jobsWatch {
-		randomOrder := rand.Perm(len(newJobs))
-		for _, i := range randomOrder {
-			if _, alreadyTaken := cm.jobs[newJobs[i]]; alreadyTaken {
-				continue
-			}
-			gotJob, err := cm.coordinator.TakeJob(newJobs[i])
-			if err == nil {
-				log.Println(err) // FIXME
-			}
-			if gotJob {
-				log.Println("[computations] got job: ", newJobs[i])
-				slashIdx := strings.LastIndex(newJobs[i], "/")
-				cm.SetupComputation(newJobs[i][slashIdx+1:])
-				cm.coordinator.RegisterAsPublisher(newJobs[i])
-				cm.jobs[newJobs[i]] = struct{}{}
-			}
-		}
+// ParseComputationID parses a computation definition
+func ParseComputationID(c string) (string, string, error) {
+	c = strings.TrimSpace(c)
+	firstParen := strings.Index(c, "(")
+	if firstParen < 1 || c[len(c)-1] != ')' {
+		return "", "", fmt.Errorf("Computation %s invalid!", c)
 	}
+	return c[:firstParen], c[firstParen+1 : len(c)-1], nil
 }
 
-func (cm *computationManager) SetupComputation(definition string) {
-	computation, err := structs.ComputationFromString(definition)
+func (cm *computationManager) SetupComputation(computationID string) error {
+	name, definition, err := ParseComputationID(computationID)
 	if err != nil {
-		return // FIXME
+		return err
 	}
 
-	// FIXME error handling
-	cph := newComputationPluginHandler(computation.Name, cm.persister, cm.output)
-	inputs, err := cph.Start(computation.Definition)
+	// plugin := newComputationPluginHandler(name, cm.persister, cm.output)
+	plugin := &computationPlugin{}
+	err = plugin.Start(name)
+	if err != nil {
+		return err
+	}
 
-	log.Printf("INPUTS: ", inputs)
-	for _, input := range inputs {
+	// get information about the plugin, such as which input streams it needs
+	info, err := plugin.GetInfo(definition)
+	if err != nil {
+		return err
+	}
+
+	var computation Computation
+	if info.Stateful {
+		computation = &statefulComputation{plugin}
+	} else {
+		computation = &statelessComputation{plugin, cm.dispatcher}
+	}
+
+	for _, input := range info.Inputs {
 		cm.coordinator.SubscribeTo(input)
-		cm.compChannels[input] = append(cm.compChannels[input], cph.Input())
+		cm.subscriptions[input] = append(cm.subscriptions[input], computation)
 	}
+	cm.computations[computationID] = computation
+	return nil
 }
 
-func (cm *computationManager) ProcessComputations(in chan *structs.Tuple) chan *structs.Tuple {
-	go func() {
-		for t := range in {
-			log.Printf("[computations] tuple: %v", t)
-			compChans := cm.compChannels[t.StreamID]
+func (cm *computationManager) Has(computationID string) bool {
+	_, has := cm.computations[computationID]
+	return has
+}
 
-			// Mark how many computations need to process this tuple
-			t.Add(len(compChans))
+func (cm *computationManager) ProcessTuple(t *structs.Tuple) error {
+	log.Printf("[computations] tuple: %v", t)
+	comps := cm.subscriptions[t.StreamID]
 
-			// Feed the tuple into interested computations
-			for _, chann := range compChans {
-				chann <- t
-			}
+	// Feed the tuple into interested computations
+	return ProcessMultipleProcessors(comps, t)
+}
 
-			// ACK the tuple after all computations complete
-			go func(t *structs.Tuple) {
-				t.Wait()
-				log.Println("[computations] ACKing tuple ", t)
-				t.Ack()
-			}(t)
-		}
-	}()
-	return cm.output
+// Computation encapsulates all the stages of processing a tuple for a single
+// computation
+type Computation interface {
+	TupleProcessor
+}
+
+type statelessComputation struct {
+	plugin     ComputationPlugin
+	dispatcher TupleProcessor
+}
+
+func (comp *statelessComputation) ProcessTuple(t *structs.Tuple) error {
+	response, err := comp.plugin.SubmitTuple(t)
+	if err != nil {
+		return err
+	}
+	newTuples := make([]*structs.Tuple, len(response.Tuples))
+	for i, t := range response.Tuples {
+		newTuples[i] = &t
+	}
+	return ProcessMultipleTuples(comp.dispatcher, newTuples)
+}
+
+type statefulComputation struct {
+	plugin ComputationPlugin
+}
+
+func (comp *statefulComputation) ProcessTuple(*structs.Tuple) error {
+	return nil
+}
+
+// ComputationPlugin handles the running and interacting with a computation
+// plugin process
+type ComputationPlugin interface {
+	GetInfo(definition string) (*structs.ComputationPluginInfo, error)
+	SubmitTuple(t *structs.Tuple) (*structs.ComputationPluginResponse, error)
+	Start(name string) error
 }
 
 type computationPlugin struct {
 	client *rpc.Client
 }
 
-func (p computationPlugin) GetInputs(definition string) ([]string, error) {
-	var result structs.InputsResponse
-	log.Println("getting inputs for ", definition)
-	err := p.client.Call("Computation.GetInputs", definition, &result)
-	log.Printf("got inputs: %+v", result)
-	return result.Inputs, err
+func (p *computationPlugin) GetInfo(definition string) (*structs.ComputationPluginInfo, error) {
+	var result structs.ComputationPluginInfo
+	err := p.client.Call("Computation.GetInfo", definition, &result)
+	return &result, err
 }
 
-func (p computationPlugin) SubmitTuple(t *structs.Tuple) (result string, err error) {
-	err = p.client.Call("Computation.SubmitTuple", t, &result)
-	return result, err
+func (p *computationPlugin) SubmitTuple(t *structs.Tuple) (*structs.ComputationPluginResponse, error) {
+	var result structs.ComputationPluginResponse
+	err := p.client.Call("Computation.SubmitTuple", t, result)
+	return &result, err
 }
 
-func (p computationPlugin) GetProductionsAndState() (result structs.ComputationResponse, err error) {
-	err = p.client.Call("Computation.GetProductionsAndState", "", &result)
-	log.Println("[from-plugin] result: ", result)
-	return result, err
-}
-
-// ComputationPluginHandler handles an instance of a computation plugin
-type ComputationPluginHandler interface {
-	Start(string) ([]string, error)
-	Input() chan *structs.Tuple
-	Output() chan *structs.Tuple
-}
-
-type computationPluginHandler struct {
-	pluginName string
-	input      chan *structs.Tuple
-	output     chan *structs.Tuple
-	pending    []*structs.Tuple
-	persister  Persister
-}
-
-func newComputationPluginHandler(name string, persister Persister, output chan *structs.Tuple) ComputationPluginHandler {
-	return &computationPluginHandler{
-		name,
-		make(chan *structs.Tuple),
-		output,
-		make([]*structs.Tuple, 0),
-		persister,
-	}
-}
-
-func (cph *computationPluginHandler) Start(definition string) ([]string, error) {
-	log.Printf("[computations] launching computation '%s'", cph.pluginName)
-	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec, os.Stderr, "./computation-"+cph.pluginName)
+func (p *computationPlugin) Start(name string) error {
+	log.Printf("[computations] launching computation '%s'", name)
+	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec,
+		os.Stderr,
+		"./computation-"+name)
 	if err != nil {
-		log.Fatalf("Error running plugin: %s", err)
+		return fmt.Errorf("Error starting plugin %s: %s", name, err)
 	}
-	p := computationPlugin{client}
-	inputs, err := p.GetInputs(definition)
-	if err != nil {
-		return nil, err
-	}
-	go func() {
-		defer client.Close()
-		for {
-			select {
-			case t := <-cph.input:
-				_, err := p.SubmitTuple(t)
-				cph.pending = append(cph.pending, t)
-				if err != nil {
-					log.Fatalf("error calling SubmitTuple(): %s", err) // FIXME error handling
-				}
-			case <-time.Tick(1000 * time.Millisecond):
-				res, err := p.GetProductionsAndState()
-				if err != nil {
-					log.Fatalf("error calling GetProductionsAndState(): %s", err)
-				}
-				for i := range res.Tuples {
-					res.Tuples[i].StreamID = fmt.Sprintf("%s(%s)", cph.pluginName, definition)
-					cph.output <- &res.Tuples[i]
-				}
-
-				// persist computation state
-				state, err := json.Marshal(res.State)
-				if err != nil { // FIXME error handling
-					log.Println(err)
-				}
-				cph.persister.PersistState(cph.pluginName, state)
-
-				// store tuple IDs so we know we've processed them already
-				log.Println("persisting: ", cph.pending, cph.persister)
-				cph.persister.PersistReceivedTuples(cph.pending)
-
-				// mark that this computation is done with this tuple
-				// so senders can be ACKed
-				for _, t := range cph.pending {
-					t.Done()
-				}
-				cph.pending = make([]*structs.Tuple, 0)
-			}
-		}
-	}()
-
-	return inputs, nil
-}
-
-func (cph *computationPluginHandler) Input() chan *structs.Tuple {
-	return cph.input
-}
-
-func (cph *computationPluginHandler) Output() chan *structs.Tuple {
-	return cph.output
+	p.client = client
+	return nil
 }

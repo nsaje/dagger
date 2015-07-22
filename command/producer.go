@@ -26,7 +26,6 @@ func Producer(c *cli.Context) {
 		// "producer-test",
 		// "producer-test",
 	}
-	output := make(chan *structs.Tuple)
 	conf := dagger.DefaultConfig()
 	coordinator := dagger.NewCoordinator(conf, conf.RPCAdvertise)
 	err := coordinator.Start()
@@ -36,7 +35,6 @@ func Producer(c *cli.Context) {
 	}
 
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
-	go dispatcher.StartDispatching(output)
 
 	var wg sync.WaitGroup
 	for _, path := range prods {
@@ -58,8 +56,7 @@ func Producer(c *cli.Context) {
 				if err != nil {
 					log.Fatalf("error calling GetNext(): %s", err)
 				}
-				// handleMessage(res)
-				output <- res
+				dispatcher.ProcessTuple(res)
 			}
 		}(path)
 	}

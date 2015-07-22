@@ -58,11 +58,9 @@ func StartPlugin(comp Computation) {
 	go provider.ServeCodec(jsonrpc.NewServerCodec)
 }
 
-// GetInputs returns the inputs to this computation
-func (p *ComputationPlugin) GetInputs(arg string, response *structs.InputsResponse) error {
-	log.Println("got inputs call for ", arg)
-	*response = structs.InputsResponse{[]string{arg}}
-	log.Printf("returning %+v", *response)
+// GetInfo returns the inputs to this computation
+func (p *ComputationPlugin) GetInfo(arg string, response *structs.ComputationPluginInfo) error {
+	*response = structs.ComputationPluginInfo{[]string{arg}, false}
 	return nil
 }
 

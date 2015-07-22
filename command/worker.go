@@ -20,7 +20,6 @@ func Worker(c *cli.Context) {
 	defer persister.Close()
 
 	receiver := dagger.NewReceiver(conf)
-	incoming := receiver.StartReceiving()
 
 	coordinator := dagger.NewCoordinator(conf, receiver.ListenAddr())
 	err = coordinator.Start()
@@ -30,15 +29,15 @@ func Worker(c *cli.Context) {
 	}
 	log.Println("Coordinator started")
 
-	deduplicator := dagger.NewDeduplicator(persister)
-	deduped := deduplicator.Deduplicate(incoming)
-
-	compManager := dagger.NewComputationManager(coordinator, persister)
-	go compManager.TakeJobs()
-	processed := compManager.ProcessComputations(deduped)
-
+	// set up pipeline
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
-	go dispatcher.StartDispatching(processed)
+	compManager := dagger.NewComputationManager(coordinator, persister, dispatcher)
+
+	receiver.StartReceiving(compManager)
+	go coordinator.ManageJobs(compManager)
+
+	// deduplicator := dagger.NewDeduplicator(persister)
+	// deduped := deduplicator.Deduplicate(incoming)
 
 	handleSignals()
 }

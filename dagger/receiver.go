@@ -15,6 +15,7 @@ type Receiver struct {
 	incoming chan *structs.Tuple
 	server   *rpc.Server
 	listener net.Listener
+	next     TupleProcessor
 }
 
 // NewReceiver initializes a new receiver
@@ -39,28 +40,23 @@ func (r *Receiver) ListenAddr() net.Addr {
 // SubmitTuple submits a new tuple into the worker process
 func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	log.Printf("[receiver] tuple: %v", t)
-	doneCh, errCh := t.ProcessingStarted()
-	r.incoming <- t
-	select {
-	case <-doneCh:
-		*reply = "ok"
-	case err := <-errCh:
-		*reply = err.Error()
+	err := r.next.ProcessTuple(t)
+	if err != nil {
+		return err
 	}
+	*reply = "ok"
 	return nil
 }
 
 // StartReceiving starts receiving incoming tuples over RPC
-func (r *Receiver) StartReceiving() chan *structs.Tuple {
-	go func() {
-		for {
-			if conn, err := r.listener.Accept(); err != nil {
-				log.Fatal("accept error: " + err.Error())
-			} else {
-				log.Printf("new connection to the receiver established\n")
-				go r.server.ServeCodec(jsonrpc.NewServerCodec(conn))
-			}
+func (r *Receiver) StartReceiving(next TupleProcessor) {
+	r.next = next
+	for {
+		if conn, err := r.listener.Accept(); err != nil {
+			log.Fatal("accept error: " + err.Error())
+		} else {
+			log.Printf("new connection to the receiver established\n")
+			go r.server.ServeCodec(jsonrpc.NewServerCodec(conn))
 		}
-	}()
-	return r.incoming
+	}
 }

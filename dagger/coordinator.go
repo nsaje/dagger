@@ -3,25 +3,52 @@ package dagger
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/hashicorp/consul/api"
 )
 
+const (
+	// JobPrefix is the key prefix for jobs
+	JobPrefix = "/dagger/jobs/"
+)
+
 // Coordinator coordinates topics, their publishers and subscribers
 type Coordinator interface {
-	SubscribeTo(string) error
 	// GetSubscribers(string) ([]string, error)
-	GetSubscribers(string) ([]string, error)
 	// GetConfig(string) (string, error)
-	WatchJobs() chan []string
-	TakeJob(string) (bool, error)
-	RegisterAsPublisher(string)
+	SubscribeCoordinator
+	PublishCoordinator
+	JobCoordinator
+	ReplicationCoordinator
 	Start() error
 	Stop()
+}
+
+// SubscribeCoordinator handles the act of subscribing to a stream
+type SubscribeCoordinator interface {
+	SubscribeTo(streamID string) error
+}
+
+// PublishCoordinator handles the coordination of publishing a stream
+type PublishCoordinator interface {
+	GetSubscribers(streamID string) ([]string, error)
+	RegisterAsPublisher(streamID string)
+}
+
+// JobCoordinator coordinates accepts, starts and stops jobs
+type JobCoordinator interface {
+	ManageJobs(ComputationManager)
+}
+
+// ReplicationCoordinator coordinates replication of tuples onto multiple
+// computations on multiple hosts for high availability
+type ReplicationCoordinator interface {
+	AreWeLeader(streamID string) (bool, error)
+	GetFollowers(streamID string) ([]string, error)
 }
 
 // ConsulCoordinator implementation based on Consul.io
@@ -80,30 +107,42 @@ func (c *ConsulCoordinator) Stop() {
 	session.Destroy(c.sessionID, nil) // ignoring error, session will expire anyway
 }
 
-// WatchJobs notifies of jobs in the job board
-func (c *ConsulCoordinator) WatchJobs() chan []string {
-	currentJobs := make(chan []string)
-	go func() {
-		prefix := "dagger/jobs/"
-		kv := c.client.KV()
-		lastIndex := uint64(0)
-		for {
-			select {
-			case <-c.stopCh:
-				return
-			default:
-				keys, queryMeta, err := kv.Keys(prefix, "", &api.QueryOptions{WaitIndex: lastIndex})
-				log.Println("[coordinator][WatchJobs] jobs checked ")
-				if err != nil {
-					// FIXME
+// ManageJobs manages jobs
+func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
+	kv := c.client.KV()
+	lastIndex := uint64(0)
+	for {
+		select {
+		case <-c.stopCh:
+			return
+		default:
+			keys, queryMeta, err := kv.Keys(JobPrefix, "", &api.QueryOptions{WaitIndex: lastIndex})
+			log.Println("[coordinator][WatchJobs] jobs checked ")
+			if err != nil {
+				// FIXME
+			}
+			lastIndex = queryMeta.LastIndex
+
+			randomOrder := rand.Perm(len(keys))
+			for _, i := range randomOrder {
+				computationID := keys[i][len(JobPrefix)+1:]
+				if alreadyTaken := cm.Has(computationID); alreadyTaken {
+					continue
 				}
-				log.Println("last index before, after ", lastIndex, queryMeta.LastIndex)
-				lastIndex = queryMeta.LastIndex
-				currentJobs <- keys
+				gotJob, err := c.TakeJob(keys[i])
+				if err == nil {
+					log.Println(err) // FIXME
+				}
+				if gotJob {
+					log.Println("[computations] got job: ", keys[i])
+					cm.SetupComputation(computationID)
+
+					// delete the job
+					kv.Delete(keys[i], nil)
+				}
 			}
 		}
-	}()
-	return currentJobs
+	}
 }
 
 // TakeJob tries to take a job from the job list. If another Worker
@@ -119,23 +158,27 @@ func (c *ConsulCoordinator) TakeJob(job string) (bool, error) {
 	return acquired, err
 }
 
+// AreWeLeader checks if we're the leader of our computation group
+func (c *ConsulCoordinator) AreWeLeader(streamID string) (bool, error) {
+	return false, nil
+}
+
+// GetFollowers returns the addresses of computations running in 'follower' mode
+func (c *ConsulCoordinator) GetFollowers(streamID string) ([]string, error) {
+	return nil, nil
+}
+
 // RegisterAsPublisher registers us as publishers of this stream and
-// deletes the job entry for this job
-func (c *ConsulCoordinator) RegisterAsPublisher(job string) {
+func (c *ConsulCoordinator) RegisterAsPublisher(compID string) {
 	kv := c.client.KV()
-	slashIdx := strings.LastIndex(job, "/")
-	topic := job[slashIdx+1:]
 	pair := &api.KVPair{
-		Key:     fmt.Sprintf("dagger/%s/publishers/%s", topic, c.addr.String()),
+		Key:     fmt.Sprintf("dagger/%s/publishers/%s", compID, c.addr.String()),
 		Session: c.sessionID,
 	}
 	_, _, err := kv.Acquire(pair, nil)
 	if err != nil {
 		log.Println(err)
 	}
-
-	// delete the job
-	kv.Delete(job, nil)
 }
 
 // SubscribeTo subscribes to topics with global coordination
