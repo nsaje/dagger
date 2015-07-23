@@ -34,6 +34,8 @@ func Producer(c *cli.Context) {
 		log.Fatal("error setting up coordinator")
 	}
 
+	coordinator.RegisterAsPublisher("test")
+
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
 
 	var wg sync.WaitGroup

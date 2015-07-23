@@ -13,7 +13,7 @@ import (
 
 const (
 	// JobPrefix is the key prefix for jobs
-	JobPrefix = "/dagger/jobs/"
+	JobPrefix = "dagger/jobs/"
 )
 
 // Coordinator coordinates topics, their publishers and subscribers
@@ -125,19 +125,23 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 
 			randomOrder := rand.Perm(len(keys))
 			for _, i := range randomOrder {
-				computationID := keys[i][len(JobPrefix)+1:]
+				computationID := keys[i][len(JobPrefix):]
 				if alreadyTaken := cm.Has(computationID); alreadyTaken {
 					continue
 				}
 				gotJob, err := c.TakeJob(keys[i])
-				if err == nil {
+				if err != nil {
 					log.Println(err) // FIXME
 				}
 				if gotJob {
 					log.Println("[computations] got job: ", keys[i])
-					cm.SetupComputation(computationID)
-
-					// delete the job
+					err = cm.SetupComputation(computationID)
+					if err != nil {
+						log.Println("error setting up computation:", err) // FIXME
+						c.ReleaseJob(keys[i])
+					}
+					// job set up successfuly, register as publisher and delete the job
+					c.RegisterAsPublisher(computationID)
 					kv.Delete(keys[i], nil)
 				}
 			}
@@ -156,6 +160,18 @@ func (c *ConsulCoordinator) TakeJob(job string) (bool, error) {
 	}
 	acquired, _, err := kv.Acquire(pair, nil)
 	return acquired, err
+}
+
+// ReleaseJob releases the job
+func (c *ConsulCoordinator) ReleaseJob(job string) (bool, error) {
+	log.Println("[coordinator] releasing job: ", job)
+	kv := c.client.KV()
+	pair := &api.KVPair{
+		Key:     job,
+		Session: c.sessionID,
+	}
+	released, _, err := kv.Release(pair, nil)
+	return released, err
 }
 
 // AreWeLeader checks if we're the leader of our computation group

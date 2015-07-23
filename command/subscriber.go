@@ -23,7 +23,7 @@ func Subscriber(c *cli.Context) {
 
 	printer := &printer{}
 	receiver := dagger.NewReceiver(conf)
-	receiver.StartReceiving(printer)
+	go receiver.ReceiveTuples(printer)
 
 	coordinator := dagger.NewCoordinator(conf, receiver.ListenAddr())
 	err := coordinator.Start()

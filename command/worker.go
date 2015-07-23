@@ -33,7 +33,7 @@ func Worker(c *cli.Context) {
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
 	compManager := dagger.NewComputationManager(coordinator, persister, dispatcher)
 
-	receiver.StartReceiving(compManager)
+	go receiver.ReceiveTuples(compManager)
 	go coordinator.ManageJobs(compManager)
 
 	// deduplicator := dagger.NewDeduplicator(persister)

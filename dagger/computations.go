@@ -56,9 +56,7 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 		return err
 	}
 
-	// plugin := newComputationPluginHandler(name, cm.persister, cm.output)
-	plugin := &computationPlugin{}
-	err = plugin.Start(name)
+	plugin, err := StartComputationPlugin(name)
 	if err != nil {
 		return err
 	}
@@ -90,8 +88,8 @@ func (cm *computationManager) Has(computationID string) bool {
 }
 
 func (cm *computationManager) ProcessTuple(t *structs.Tuple) error {
-	log.Printf("[computations] tuple: %v", t)
 	comps := cm.subscriptions[t.StreamID]
+	log.Printf("[computations] tuple: %v, subscriptions:%v", t, comps)
 
 	// Feed the tuple into interested computations
 	return ProcessMultipleProcessors(comps, t)
@@ -128,16 +126,32 @@ func (comp *statefulComputation) ProcessTuple(*structs.Tuple) error {
 	return nil
 }
 
+// StartComputationPlugin starts the plugin process
+func StartComputationPlugin(name string) (ComputationPlugin, error) {
+	log.Printf("[computations] launching computation plugin '%s'", name)
+	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec,
+		os.Stderr,
+		"./computation-"+name)
+	if err != nil {
+		return nil, fmt.Errorf("Error starting plugin %s: %s", name, err)
+	}
+	plugin := &computationPlugin{
+		name:   name,
+		client: client,
+	}
+	return plugin, nil
+}
+
 // ComputationPlugin handles the running and interacting with a computation
 // plugin process
 type ComputationPlugin interface {
 	GetInfo(definition string) (*structs.ComputationPluginInfo, error)
 	SubmitTuple(t *structs.Tuple) (*structs.ComputationPluginResponse, error)
-	Start(name string) error
 }
 
 type computationPlugin struct {
 	client *rpc.Client
+	name   string
 }
 
 func (p *computationPlugin) GetInfo(definition string) (*structs.ComputationPluginInfo, error) {
@@ -148,18 +162,10 @@ func (p *computationPlugin) GetInfo(definition string) (*structs.ComputationPlug
 
 func (p *computationPlugin) SubmitTuple(t *structs.Tuple) (*structs.ComputationPluginResponse, error) {
 	var result structs.ComputationPluginResponse
-	err := p.client.Call("Computation.SubmitTuple", t, result)
-	return &result, err
-}
-
-func (p *computationPlugin) Start(name string) error {
-	log.Printf("[computations] launching computation '%s'", name)
-	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec,
-		os.Stderr,
-		"./computation-"+name)
+	err := p.client.Call("Computation.SubmitTuple", t, &result)
 	if err != nil {
-		return fmt.Errorf("Error starting plugin %s: %s", name, err)
+		return nil, fmt.Errorf("Error submitting tuple to plugin %s: %s",
+			p.name, err)
 	}
-	p.client = client
-	return nil
+	return &result, err
 }

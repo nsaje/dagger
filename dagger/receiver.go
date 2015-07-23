@@ -42,14 +42,15 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	log.Printf("[receiver] tuple: %v", t)
 	err := r.next.ProcessTuple(t)
 	if err != nil {
+		log.Println(err)
 		return err
 	}
 	*reply = "ok"
 	return nil
 }
 
-// StartReceiving starts receiving incoming tuples over RPC
-func (r *Receiver) StartReceiving(next TupleProcessor) {
+// ReceiveTuples starts receiving incoming tuples over RPC
+func (r *Receiver) ReceiveTuples(next TupleProcessor) {
 	r.next = next
 	for {
 		if conn, err := r.listener.Accept(); err != nil {
