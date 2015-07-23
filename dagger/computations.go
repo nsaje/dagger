@@ -56,7 +56,7 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 		return err
 	}
 
-	plugin, err := StartComputationPlugin(name)
+	plugin, err := StartComputationPlugin(name, computationID)
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func (comp *statefulComputation) ProcessTuple(*structs.Tuple) error {
 }
 
 // StartComputationPlugin starts the plugin process
-func StartComputationPlugin(name string) (ComputationPlugin, error) {
+func StartComputationPlugin(name string, compID string) (ComputationPlugin, error) {
 	log.Printf("[computations] launching computation plugin '%s'", name)
 	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec,
 		os.Stderr,
@@ -137,6 +137,7 @@ func StartComputationPlugin(name string) (ComputationPlugin, error) {
 	}
 	plugin := &computationPlugin{
 		name:   name,
+		compID: compID,
 		client: client,
 	}
 	return plugin, nil
@@ -152,6 +153,7 @@ type ComputationPlugin interface {
 type computationPlugin struct {
 	client *rpc.Client
 	name   string
+	compID string
 }
 
 func (p *computationPlugin) GetInfo(definition string) (*structs.ComputationPluginInfo, error) {
@@ -166,6 +168,9 @@ func (p *computationPlugin) SubmitTuple(t *structs.Tuple) (*structs.ComputationP
 	if err != nil {
 		return nil, fmt.Errorf("Error submitting tuple to plugin %s: %s",
 			p.name, err)
+	}
+	for _, t := range result.Tuples {
+		t.StreamID = p.compID
 	}
 	return &result, err
 }

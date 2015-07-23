@@ -23,7 +23,7 @@ func StartPlugin(impl ComputationImplementation) {
 	if err := provider.RegisterName("Computation", computationPlugin); err != nil {
 		log.Fatalf("failed to register computation Plugin: %s", err)
 	}
-	go provider.ServeCodec(jsonrpc.NewServerCodec)
+	provider.ServeCodec(jsonrpc.NewServerCodec)
 }
 
 // ComputationPlugin handles RPC calls from the main dagger process
