@@ -9,87 +9,40 @@ import (
 	"github.com/natefinch/pie"
 )
 
-// Computation represents a specific computation implementation
-type Computation interface {
-	Input() chan structs.Tuple
-	Output() chan structs.Tuple
-	State() interface{}
-}
-
-// DefaultComputation represents the default computation implementation
-type DefaultComputation struct {
-	input  chan structs.Tuple
-	output chan structs.Tuple
-}
-
-// Input is a channel incoming tuples are published on
-func (c *DefaultComputation) Input() chan structs.Tuple {
-	return c.input
-}
-
-// Output is a channel resulting tuples are published on
-func (c *DefaultComputation) Output() chan structs.Tuple {
-	return c.output
-}
-
-// NewDefaultComputation returns a new default computation
-func NewDefaultComputation() *DefaultComputation {
-	return &DefaultComputation{
-		input:  make(chan structs.Tuple, 100),
-		output: make(chan structs.Tuple, 100),
-	}
-}
-
-// ComputationPlugin is a plugin performing computations on plugins
-type ComputationPlugin struct {
-	computation Computation
+// ComputationImplementation represents a specific computation implementation
+type ComputationImplementation interface {
+	GetInfo(definition string) (structs.ComputationPluginInfo, error)
+	SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error)
 }
 
 // StartPlugin starts serving RPC requests and brokers data between RPC caller
 // and the computation
-func StartPlugin(comp Computation) {
+func StartPlugin(impl ComputationImplementation) {
 	provider := pie.NewProvider()
-	computationPlugin := &ComputationPlugin{
-		computation: comp,
-	}
+	computationPlugin := &ComputationPlugin{impl}
 	if err := provider.RegisterName("Computation", computationPlugin); err != nil {
 		log.Fatalf("failed to register computation Plugin: %s", err)
 	}
 	go provider.ServeCodec(jsonrpc.NewServerCodec)
 }
 
+// ComputationPlugin handles RPC calls from the main dagger process
+type ComputationPlugin struct {
+	impl ComputationImplementation
+}
+
 // GetInfo returns the inputs to this computation
-func (p *ComputationPlugin) GetInfo(arg string, response *structs.ComputationPluginInfo) error {
-	*response = structs.ComputationPluginInfo{[]string{arg}, false}
-	return nil
+func (p *ComputationPlugin) GetInfo(definition string, response *structs.ComputationPluginInfo) error {
+	info, err := p.impl.GetInfo(definition)
+	*response = info
+	return err
 }
 
 // SubmitTuple submits the tuple into processing
-func (p *ComputationPlugin) SubmitTuple(arg *structs.Tuple,
-	response *string) error {
-	// log.Printf("Got call for SubmitTuple with tuple: %v\n", arg)
-	p.computation.Input() <- *arg
-	*response = "ok"
-	// log.Printf("SubmitTuple response sent: %s", *response)
-	return nil
-}
-
-// GetProductionsAndState gets new productions and current
-// state of the computation
-func (p *ComputationPlugin) GetProductionsAndState(arg string,
-	response *structs.ComputationResponse) error {
-	// log.Printf("got call for GetProductionsAndState\n")
-	// drain output buffer, TODO: do this more efficiently
-LOOP:
-	for {
-		select {
-		case t := <-p.computation.Output():
-			response.Tuples = append(response.Tuples, t)
-		default:
-			break LOOP
-		}
-	}
-	response.State = p.computation.State()
-	// log.Printf("GetProductionsAndState response sent: %v", *response)
-	return nil
+func (p *ComputationPlugin) SubmitTuple(t *structs.Tuple,
+	response *structs.ComputationPluginResponse) error {
+	*response = structs.ComputationPluginResponse{}
+	newTuples, err := p.impl.SubmitTuple(t)
+	response.Tuples = newTuples
+	return err
 }

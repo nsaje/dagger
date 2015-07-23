@@ -5,28 +5,28 @@ import (
 	"log"
 
 	"bitbucket.org/nsaje/dagger/computations"
+	"bitbucket.org/nsaje/dagger/structs"
 )
 
 // BarComputation simply prepends "barized" to a tuple
-type BarComputation struct {
-	*computations.DefaultComputation
-	counter int
+type BarComputation struct{}
+
+func (c BarComputation) GetInfo(definition string) (structs.ComputationPluginInfo, error) {
+	info := structs.ComputationPluginInfo{
+		Inputs:   []string{definition},
+		Stateful: false,
+	}
+	return info, nil
 }
 
-// State returns this computation's state
-func (c *BarComputation) State() interface{} {
-	return c.counter
+func (c BarComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error) {
+	t.Data = fmt.Sprintf("barized: %v", t.Data)
+	return []*structs.Tuple{t}, nil
 }
 
 func main() {
 	log.SetPrefix("[barComputation log] ")
 	log.Printf("barComputation started")
-	c := &BarComputation{computations.NewDefaultComputation(), 0}
+	c := BarComputation{}
 	computations.StartPlugin(c)
-	for t := range c.Input() {
-		t.Data = fmt.Sprintf("barized: %v", t.Data)
-		t.StreamID = "testbar"
-		c.Output() <- t
-		c.counter++
-	}
 }

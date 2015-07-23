@@ -111,11 +111,11 @@ func (comp *statelessComputation) ProcessTuple(t *structs.Tuple) error {
 	if err != nil {
 		return err
 	}
-	newTuples := make([]*structs.Tuple, len(response.Tuples))
-	for i, t := range response.Tuples {
-		newTuples[i] = &t
-	}
-	return ProcessMultipleTuples(comp.dispatcher, newTuples)
+	// newTuples := make([]*structs.Tuple, len(response.Tuples))
+	// for i, t := range response.Tuples {
+	// 	newTuples[i] = &t
+	// }
+	return ProcessMultipleTuples(comp.dispatcher, response.Tuples)
 }
 
 type statefulComputation struct {
