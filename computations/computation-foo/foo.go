@@ -14,7 +14,7 @@ type FooComputation struct{}
 func (c FooComputation) GetInfo(definition string) (structs.ComputationPluginInfo, error) {
 	info := structs.ComputationPluginInfo{
 		Inputs:   []string{definition},
-		Stateful: false,
+		Stateful: true,
 	}
 	return info, nil
 }

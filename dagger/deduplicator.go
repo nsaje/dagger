@@ -1,7 +1,7 @@
 package dagger
 
 import (
-	"log"
+	"fmt"
 
 	"github.com/willf/bloom"
 
@@ -10,7 +10,7 @@ import (
 
 // Deduplicator throws away duplicate tuples (and ACKs their senders)
 type Deduplicator interface {
-	Deduplicate(chan *structs.Tuple) chan *structs.Tuple
+	Seen(t *structs.Tuple) (bool, error)
 }
 
 type dedup struct {
@@ -37,24 +37,15 @@ func NewDeduplicator(computation string, tupleTracker ReceivedTracker) (Deduplic
 	return dd, nil
 }
 
-func (d *dedup) Deduplicate(input chan *structs.Tuple) chan *structs.Tuple {
-	output := make(chan *structs.Tuple)
-	go func() {
-		for t := range input {
-			var seen bool
-			var err error
-			if seen = d.filter.TestAndAddString(t.ID); seen {
-				// we have probably seen it before, but we must check the DB
-				seen, err = d.tupleTracker.ReceivedAlready(d.computation, t)
-				if err != nil {
-					log.Panic("error reading DB") // FIXME
-				}
-			}
-			if !seen {
-				output <- t
-			}
+func (d *dedup) Seen(t *structs.Tuple) (bool, error) {
+	var seen bool
+	var err error
+	if seen = d.filter.TestAndAddString(t.ID); seen {
+		// we have probably seen it before, but we must check the DB
+		seen, err = d.tupleTracker.ReceivedAlready(d.computation, t)
+		if err != nil {
+			return true, fmt.Errorf("Error deduplicating: %s", err)
 		}
-		close(output)
-	}()
-	return output
+	}
+	return seen, nil
 }

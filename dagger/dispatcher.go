@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
+	"time"
 
 	"bitbucket.org/nsaje/dagger/structs"
 )
@@ -42,6 +43,60 @@ func (d *Dispatcher) ProcessTuple(t *structs.Tuple) error {
 		subscriberHandlers[i] = subHandler
 	}
 	return ProcessMultipleProcessors(subscriberHandlers, t)
+}
+
+// BufferedDispatcher bufferes produced tuples and sends them with retrying
+// until they are ACKed
+type BufferedDispatcher struct {
+	computationID string
+	buffer        chan *structs.Tuple
+	dispatcher    TupleProcessor
+	stopCh        chan struct{}
+	sentTracker   SentTracker
+}
+
+// StartBufferedDispatcher creates a new buffered dispatcher and starts workers
+// that will be consuming off the queue an sending tuples
+func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTracker SentTracker,
+	stopCh chan struct{}) *BufferedDispatcher {
+	bd := &BufferedDispatcher{
+		computationID: compID,
+		buffer:        make(chan *structs.Tuple, 100), // FIXME: make it configurable
+		dispatcher:    dispatcher,
+		sentTracker:   sentTracker,
+		stopCh:        stopCh,
+	}
+
+	// FIXME: configurable number?
+	for i := 0; i < 10; i++ {
+		go bd.dispatch()
+	}
+
+	return bd
+}
+
+// ProcessTuple sends the tuple to the buffered channel
+func (bd *BufferedDispatcher) ProcessTuple(t *structs.Tuple) error {
+	bd.buffer <- t
+	return nil
+}
+
+func (bd *BufferedDispatcher) dispatch() {
+	for {
+		select {
+		case <-bd.stopCh:
+			return
+		case t := <-bd.buffer:
+			for {
+				err := bd.dispatcher.ProcessTuple(t)
+				if err == nil {
+					bd.sentTracker.SentSuccessfuly(bd.computationID, t)
+					break
+				}
+				time.Sleep(time.Second) // exponential backoff?
+			}
+		}
+	}
 }
 
 type subscriberHandler struct {

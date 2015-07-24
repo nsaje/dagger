@@ -69,7 +69,20 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 
 	var computation Computation
 	if info.Stateful {
-		computation = &statefulComputation{plugin}
+		deduplicator, err := NewDeduplicator(computationID, cm.persister)
+		if err != nil {
+			return err
+		}
+		stopCh := make(chan struct{})
+		bufferedDispatcher := StartBufferedDispatcher(computationID, cm.dispatcher, cm.persister, stopCh)
+		computation = &statefulComputation{
+			computationID,
+			plugin,
+			deduplicator,
+			cm.persister,
+			bufferedDispatcher,
+			stopCh,
+		}
 	} else {
 		computation = &statelessComputation{plugin, cm.dispatcher}
 	}
@@ -111,19 +124,37 @@ func (comp *statelessComputation) ProcessTuple(t *structs.Tuple) error {
 	if err != nil {
 		return err
 	}
-	// newTuples := make([]*structs.Tuple, len(response.Tuples))
-	// for i, t := range response.Tuples {
-	// 	newTuples[i] = &t
-	// }
 	return ProcessMultipleTuples(comp.dispatcher, response.Tuples)
 }
 
 type statefulComputation struct {
-	plugin ComputationPlugin
+	computationID      string
+	plugin             ComputationPlugin
+	deduplicator       Deduplicator
+	persister          Persister
+	bufferedDispatcher TupleProcessor
+	stopCh             chan struct{}
 }
 
-func (comp *statefulComputation) ProcessTuple(*structs.Tuple) error {
-	return nil
+func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
+	seen, err := comp.deduplicator.Seen(t)
+	if err != nil {
+		return err
+	}
+	if seen {
+		return nil
+	}
+	response, err := comp.plugin.SubmitTuple(t)
+	if err != nil {
+		return err
+	}
+
+	err = comp.persister.CommitComputation(comp.computationID, t, response.Tuples)
+	if err != nil {
+		return err
+	}
+
+	return ProcessMultipleTuples(comp.bufferedDispatcher, response.Tuples)
 }
 
 // StartComputationPlugin starts the plugin process
