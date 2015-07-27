@@ -19,6 +19,8 @@ const (
 type Persister interface {
 	Close()
 	CommitComputation(compID string, in *structs.Tuple, out []*structs.Tuple) error
+	GetSnapshot(compID string) (*structs.ComputationSnapshot, error)
+	ApplySnapshot(compID string, snapshot *structs.ComputationSnapshot) error
 	SentTracker
 	ReceivedTracker
 	StatePersister
@@ -67,13 +69,84 @@ func (p *LevelDBPersister) CommitComputation(compID string, in *structs.Tuple, o
 	batch := new(leveldb.Batch)
 	// mark incoming tuple as received
 	batch.Put([]byte(fmt.Sprintf(receivedKeyFormat, compID, in.ID)), nil)
+
 	// save productions
 	for _, t := range out {
 		serialized, err := json.Marshal(t)
 		if err != nil {
 			return fmt.Errorf("Error marshalling tuple %v: %s", t, err)
 		}
-		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, in.ID))
+		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.ID))
+		batch.Put(key, []byte(serialized))
+	}
+	return p.db.Write(batch, nil)
+}
+
+// GetSnapshot returns the snapshot of the computation's persisted state
+func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnapshot, error) {
+	dbSnapshot, err := p.db.GetSnapshot()
+	defer dbSnapshot.Release()
+	if err != nil {
+		return nil, err
+	}
+	var snapshot structs.ComputationSnapshot
+	// get received tuples
+	snapshot.Received = make([]string, 0)
+	keyPrefix := fmt.Sprintf(receivedKeyFormat, compID, "")
+	iter := dbSnapshot.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
+	defer iter.Release()
+	for iter.Next() {
+		receivedID := iter.Key()[len(keyPrefix):]
+		snapshot.Received = append(snapshot.Received, string(receivedID))
+	}
+	err = iter.Error()
+	if err != nil {
+		return nil, err
+	}
+
+	// get produced tuples
+	snapshot.Produced = make([]*structs.Tuple, 0)
+	keyPrefix = fmt.Sprintf(productionsKeyFormat, compID, "")
+	iter2 := dbSnapshot.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
+	defer iter2.Release()
+	for iter2.Next() {
+		var tuple structs.Tuple
+		err := json.Unmarshal(iter.Value(), &tuple)
+		if err != nil {
+			return nil, err
+		}
+		snapshot.Produced = append(snapshot.Produced, &tuple)
+	}
+	err = iter.Error()
+	if err != nil {
+		return nil, err
+	}
+	return &snapshot, err
+}
+
+// ApplySnapshot applies the snapshot of the computation's persisted state
+func (p *LevelDBPersister) ApplySnapshot(compID string, snapshot *structs.ComputationSnapshot) error {
+	batch := new(leveldb.Batch)
+
+	// clear data for this computation
+	keyPrefix := fmt.Sprintf("%s-", compID)
+	iter := p.db.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
+	defer iter.Release()
+	for iter.Next() {
+		batch.Delete(iter.Key())
+	}
+
+	for _, r := range snapshot.Received {
+		batch.Put([]byte(fmt.Sprintf(receivedKeyFormat, compID, r)), nil)
+	}
+
+	// save productions
+	for _, t := range snapshot.Produced {
+		serialized, err := json.Marshal(t)
+		if err != nil {
+			return fmt.Errorf("Error marshalling tuple %v: %s", t, err)
+		}
+		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.ID))
 		batch.Put(key, []byte(serialized))
 	}
 	return p.db.Write(batch, nil)
