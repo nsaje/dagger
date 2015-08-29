@@ -47,8 +47,7 @@ type JobCoordinator interface {
 // ReplicationCoordinator coordinates replication of tuples onto multiple
 // computations on multiple hosts for high availability
 type ReplicationCoordinator interface {
-	AreWeLeader(streamID string) (bool, error)
-	GetFollowers(streamID string) ([]string, error)
+	JoinGroup(streamID string) (GroupHandler, error)
 }
 
 // ConsulCoordinator implementation based on Consul.io
@@ -111,6 +110,7 @@ func (c *ConsulCoordinator) Stop() {
 func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 	kv := c.client.KV()
 	lastIndex := uint64(0)
+	unapplicableSet := make(map[string]struct{})
 	for {
 		select {
 		case <-c.stopCh:
@@ -120,6 +120,7 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 			log.Println("[coordinator][WatchJobs] jobs checked ")
 			if err != nil {
 				// FIXME
+				log.Println("ERROR managejobs:", err)
 			}
 			lastIndex = queryMeta.LastIndex
 
@@ -129,9 +130,13 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 				if alreadyTaken := cm.Has(computationID); alreadyTaken {
 					continue
 				}
+				if _, found := unapplicableSet[computationID]; found {
+					continue
+				}
 				gotJob, err := c.TakeJob(keys[i])
 				if err != nil {
 					log.Println(err) // FIXME
+					continue
 				}
 				if gotJob {
 					log.Println("[computations] got job: ", keys[i])
@@ -139,6 +144,8 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 					if err != nil {
 						log.Println("error setting up computation:", err) // FIXME
 						c.ReleaseJob(keys[i])
+						unapplicableSet[computationID] = struct{}{}
+						continue
 					}
 					// job set up successfuly, register as publisher and delete the job
 					c.RegisterAsPublisher(computationID)
@@ -174,16 +181,6 @@ func (c *ConsulCoordinator) ReleaseJob(job string) (bool, error) {
 	return released, err
 }
 
-// AreWeLeader checks if we're the leader of our computation group
-func (c *ConsulCoordinator) AreWeLeader(streamID string) (bool, error) {
-	return false, nil
-}
-
-// GetFollowers returns the addresses of computations running in 'follower' mode
-func (c *ConsulCoordinator) GetFollowers(streamID string) ([]string, error) {
-	return nil, nil
-}
-
 // RegisterAsPublisher registers us as publishers of this stream and
 func (c *ConsulCoordinator) RegisterAsPublisher(compID string) {
 	kv := c.client.KV()
@@ -210,6 +207,105 @@ func (c *ConsulCoordinator) SubscribeTo(topic string) error {
 	return err
 }
 
+// JoinGroup joins the group that produces compID computation
+func (c *ConsulCoordinator) JoinGroup(compID string) (GroupHandler, error) {
+	gh := &groupHandler{
+		compID: compID,
+		c:      c,
+		stopCh: make(chan struct{}),
+		errCh:  make(chan error),
+	}
+	err := gh.contend()
+	go func() {
+		for {
+			select {
+			case <-gh.stopCh:
+				return
+			default:
+				err := gh.contend()
+				if err != nil {
+					gh.errCh <- err
+				}
+			}
+		}
+	}()
+	return gh, err
+}
+
+// GroupHandler handles leadership status of a group
+type GroupHandler interface {
+	GetStatus() (bool, string, error)
+}
+
+type groupHandler struct {
+	compID string
+	c      *ConsulCoordinator
+
+	areWeLeader   bool
+	currentLeader string
+
+	lastIndex uint64
+	stopCh    chan struct{}
+	errCh     chan error
+
+	sync.RWMutex
+}
+
+// GetStatus returns whether we're the leader and the address of the current leader
+func (gh *groupHandler) GetStatus() (bool, string, error) {
+	gh.RLock()
+	defer gh.RUnlock()
+	select {
+	case err := <-gh.errCh:
+		return false, "", err
+	default:
+		return gh.areWeLeader, gh.currentLeader, nil
+	}
+}
+
+func (gh *groupHandler) contend() error {
+	key := fmt.Sprintf("dagger/%s/publishers/leader", gh.compID)
+	if gh.currentLeader == "" {
+		pair := &api.KVPair{
+			Key:     key,
+			Session: gh.c.sessionID,
+			Value:   []byte(gh.c.addr.String()),
+		}
+		kv := gh.c.client.KV()
+		_, _, err := kv.Acquire(pair, nil)
+		if err != nil {
+			return err
+		}
+		return gh.fetch()
+	}
+	return nil
+}
+
+func (gh *groupHandler) fetch() error {
+	key := fmt.Sprintf("dagger/%s/publishers/leader", gh.compID)
+	kv := gh.c.client.KV()
+	pair, queryMeta, err := kv.Get(key, &api.QueryOptions{WaitIndex: gh.lastIndex})
+	log.Println("[coordinator][groupHandler] fetch returned new data")
+	if err != nil {
+		log.Println("FETCH ERROR")
+		return err
+	}
+	gh.Lock()
+	gh.lastIndex = queryMeta.LastIndex
+	if pair == nil || pair.Session == "" {
+		gh.currentLeader = ""
+		gh.areWeLeader = false
+	} else {
+		gh.currentLeader = string(pair.Value)
+		gh.areWeLeader = (gh.currentLeader == gh.c.addr.String())
+	}
+	gh.Unlock()
+
+	log.Println("NEW LEADER: ", gh.currentLeader, pair)
+
+	return nil
+}
+
 func (c *ConsulCoordinator) monitorPublishers(topic string) {
 	prefix := fmt.Sprintf("dagger/%s/publishers/", topic)
 	kv := c.client.KV()
@@ -218,13 +314,14 @@ func (c *ConsulCoordinator) monitorPublishers(topic string) {
 		keys, queryMeta, err := kv.Keys(prefix, "", &api.QueryOptions{WaitIndex: lastIndex})
 		log.Println("[coordinator] publishers checked in ", prefix)
 		if err != nil {
+			log.Println("ERROR:", err)
 			// FIXME
 		}
 		log.Println("last index before, after ", lastIndex, queryMeta.LastIndex)
 		lastIndex = queryMeta.LastIndex
 
 		// if there are no publishers registered, post a new job
-		if len(keys) == 0 {
+		if len(keys) < 2 {
 			pair := &api.KVPair{
 				Key: fmt.Sprintf("dagger/jobs/%s", topic),
 			}

@@ -11,11 +11,12 @@ import (
 
 // Receiver receives new tuples via incoming RPC calls
 type Receiver struct {
-	conf     *Config
-	incoming chan *structs.Tuple
-	server   *rpc.Server
-	listener net.Listener
-	next     TupleProcessor
+	conf              *Config
+	incoming          chan *structs.Tuple
+	server            *rpc.Server
+	listener          net.Listener
+	next              TupleProcessor
+	computationSyncer ComputationSyncer
 }
 
 // NewReceiver initializes a new receiver
@@ -47,6 +48,11 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	}
 	*reply = "ok"
 	return nil
+}
+
+func (r *Receiver) Sync(compID string, reply *structs.ComputationSnapshot) error {
+	log.Printf("[receiver] sync request for %s", compID)
+	return nil // FIXME
 }
 
 // ReceiveTuples starts receiving incoming tuples over RPC

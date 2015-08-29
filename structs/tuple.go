@@ -17,3 +17,9 @@ type ComputationPluginInfo struct {
 	Inputs   []string
 	Stateful bool
 }
+
+// ComputationSnapshot is used for synchronizing computation state between workers
+type ComputationSnapshot struct {
+	Received []string
+	Produced []*Tuple
+}

@@ -3,10 +3,12 @@ package dagger
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"os"
 	"strings"
+	"sync"
 
 	"bitbucket.org/nsaje/dagger/structs"
 	"github.com/natefinch/pie"
@@ -17,6 +19,11 @@ type ComputationManager interface {
 	SetupComputation(string) error
 	ProcessTuple(*structs.Tuple) error
 	Has(string) bool
+}
+
+// ComputationSyncer allows synchronizing computation status between workers
+type ComputationSyncer interface {
+	Sync(string) (*structs.ComputationSnapshot, error)
 }
 
 type computationManager struct {
@@ -74,14 +81,23 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 			return err
 		}
 		stopCh := make(chan struct{})
+
+		groupHandler, err := cm.coordinator.JoinGroup(computationID)
+		if err != nil {
+			return err
+		}
+
 		bufferedDispatcher := StartBufferedDispatcher(computationID, cm.dispatcher, cm.persister, stopCh)
 		computation = &statefulComputation{
 			computationID,
 			plugin,
+			groupHandler,
 			deduplicator,
 			cm.persister,
 			bufferedDispatcher,
 			stopCh,
+			sync.RWMutex{},
+			false,
 		}
 	} else {
 		computation = &statelessComputation{plugin, cm.dispatcher}
@@ -100,6 +116,14 @@ func (cm *computationManager) Has(computationID string) bool {
 	return has
 }
 
+func (cm *computationManager) Sync(computationID string) (*structs.ComputationSnapshot, error) {
+	comp, has := cm.computations[computationID]
+	if !has {
+		return nil, fmt.Errorf("Computation not found!")
+	}
+	return comp.Sync()
+}
+
 func (cm *computationManager) ProcessTuple(t *structs.Tuple) error {
 	comps := cm.subscriptions[t.StreamID]
 	log.Printf("[computations] tuple: %v, subscriptions:%v", t, comps)
@@ -112,6 +136,7 @@ func (cm *computationManager) ProcessTuple(t *structs.Tuple) error {
 // computation
 type Computation interface {
 	TupleProcessor
+	Sync() (*structs.ComputationSnapshot, error)
 }
 
 type statelessComputation struct {
@@ -127,16 +152,67 @@ func (comp *statelessComputation) ProcessTuple(t *structs.Tuple) error {
 	return ProcessMultipleTuples(comp.dispatcher, response.Tuples)
 }
 
+func (comp *statelessComputation) Sync() (*structs.ComputationSnapshot, error) {
+	return nil, nil
+}
+
 type statefulComputation struct {
 	computationID      string
 	plugin             ComputationPlugin
+	groupHandler       GroupHandler
 	deduplicator       Deduplicator
 	persister          Persister
 	bufferedDispatcher TupleProcessor
 	stopCh             chan struct{}
+
+	sync.RWMutex // a reader/writer lock for blocking new tuples on sync request
+	initialized  bool
+}
+
+func (comp *statefulComputation) syncStateWithMaster() error {
+	comp.Lock()
+	defer comp.Unlock()
+	if !comp.initialized {
+		areWeLeader, currentLeader, err := comp.groupHandler.GetStatus()
+		if err != nil {
+			return err
+		}
+		if !areWeLeader {
+			if err != nil {
+				return err
+			}
+			leaderHandler, err := newMasterHandler(currentLeader)
+			if err != nil {
+				return err
+			}
+			snapshot, err := leaderHandler.Sync(comp.computationID)
+			if err != nil {
+				return err
+			}
+			err = comp.persister.ApplySnapshot(comp.computationID, snapshot)
+			if err != nil {
+				return err
+			}
+		}
+		comp.initialized = true
+	}
+	return nil
 }
 
 func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
+	if !comp.initialized {
+		err := comp.syncStateWithMaster()
+		if err != nil {
+			return err
+		}
+	}
+
+	// acquire a reader lock, so we wait in case there's synchronization with
+	// a slave going on
+	comp.RLock()
+	defer comp.RUnlock()
+
+	// deduplication
 	seen, err := comp.deduplicator.Seen(t)
 	if err != nil {
 		return err
@@ -144,17 +220,35 @@ func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
 	if seen {
 		return nil
 	}
+
+	// send it to the plugin for processing
 	response, err := comp.plugin.SubmitTuple(t)
 	if err != nil {
 		return err
 	}
 
+	// persist info about received and produced tuples
 	err = comp.persister.CommitComputation(comp.computationID, t, response.Tuples)
 	if err != nil {
 		return err
 	}
 
-	return ProcessMultipleTuples(comp.bufferedDispatcher, response.Tuples)
+	areWeLeader, _, err := comp.groupHandler.GetStatus()
+	if err != nil {
+		return err
+	}
+	if areWeLeader {
+		// send to asynchronous dispatcher and return immediately
+		return ProcessMultipleTuples(comp.bufferedDispatcher, response.Tuples)
+	}
+	// don't send downstream if we're not the leader of our group
+	return nil
+}
+
+func (comp *statefulComputation) Sync() (*structs.ComputationSnapshot, error) {
+	comp.Lock()
+	defer comp.Unlock()
+	return comp.persister.GetSnapshot(comp.computationID)
 }
 
 // StartComputationPlugin starts the plugin process
@@ -204,4 +298,23 @@ func (p *computationPlugin) SubmitTuple(t *structs.Tuple) (*structs.ComputationP
 		t.StreamID = p.compID
 	}
 	return &result, err
+}
+
+type masterHandler struct {
+	client *rpc.Client
+}
+
+func newMasterHandler(addr string) (*masterHandler, error) {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	client := jsonrpc.NewClient(conn)
+	return &masterHandler{client}, nil
+}
+
+func (s *masterHandler) Sync(compID string) (*structs.ComputationSnapshot, error) {
+	var reply structs.ComputationSnapshot
+	err := s.client.Call("Receiver.Sync", compID, &reply)
+	return &reply, err
 }
