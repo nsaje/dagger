@@ -3,7 +3,7 @@ package command
 import (
 	"log"
 
-	"bitbucket.org/nsaje/dagger/dagger"
+	"github.com/nsaje/dagger/dagger"
 
 	"github.com/codegangsta/cli"
 )

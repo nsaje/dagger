@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"bitbucket.org/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/structs"
 )
 
 type inmemTupleTracker struct {

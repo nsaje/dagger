@@ -5,7 +5,7 @@ import (
 
 	"github.com/willf/bloom"
 
-	"bitbucket.org/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/structs"
 )
 
 // Deduplicator throws away duplicate tuples (and ACKs their senders)

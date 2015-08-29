@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/rpc/jsonrpc"
 
-	"bitbucket.org/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/structs"
 
 	"github.com/natefinch/pie"
 )

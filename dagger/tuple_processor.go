@@ -1,6 +1,6 @@
 package dagger
 
-import "bitbucket.org/nsaje/dagger/structs"
+import "github.com/nsaje/dagger/structs"
 
 // TupleProcessor is an object capable of processing a tuple
 type TupleProcessor interface {

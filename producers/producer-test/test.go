@@ -4,8 +4,8 @@ import (
 	"log"
 	"time"
 
-	"bitbucket.org/nsaje/dagger/producers"
-	"bitbucket.org/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/producers"
+	"github.com/nsaje/dagger/structs"
 )
 
 // TestProducerPlugin produces an incremented value every second

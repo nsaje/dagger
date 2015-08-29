@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"bitbucket.org/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/structs"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
 	"github.com/twinj/uuid"

@@ -6,7 +6,7 @@ import (
 	"net/rpc"
 	"net/rpc/jsonrpc"
 
-	"bitbucket.org/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/structs"
 )
 
 // Receiver receives new tuples via incoming RPC calls

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"bitbucket.org/nsaje/dagger/computations"
-	"bitbucket.org/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/computations"
+	"github.com/nsaje/dagger/structs"
 )
 
 // BarComputation simply prepends "barized" to a tuple

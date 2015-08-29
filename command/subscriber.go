@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"bitbucket.org/nsaje/dagger/dagger"
-	"bitbucket.org/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/dagger"
+	"github.com/nsaje/dagger/structs"
 
 	"github.com/codegangsta/cli"
 )

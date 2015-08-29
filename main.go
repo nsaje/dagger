@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"bitbucket.org/nsaje/dagger/command"
+	"github.com/nsaje/dagger/command"
 
 	"github.com/codegangsta/cli"
 )

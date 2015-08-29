@@ -7,7 +7,7 @@ import (
 	"net/rpc/jsonrpc"
 	"time"
 
-	"bitbucket.org/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/structs"
 )
 
 // Dispatcher dispatches tuples to registered subscribers

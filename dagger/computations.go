@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"bitbucket.org/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/structs"
 	"github.com/natefinch/pie"
 )
 
