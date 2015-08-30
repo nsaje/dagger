@@ -310,6 +310,7 @@ func (c *ConsulCoordinator) monitorPublishers(topic string) {
 	prefix := fmt.Sprintf("dagger/%s/publishers/", topic)
 	kv := c.client.KV()
 	lastIndex := uint64(0)
+	lastNumPublishers := -1
 	for {
 		keys, queryMeta, err := kv.Keys(prefix, "", &api.QueryOptions{WaitIndex: lastIndex})
 		log.Println("[coordinator] publishers checked in ", prefix)
@@ -321,7 +322,8 @@ func (c *ConsulCoordinator) monitorPublishers(topic string) {
 		lastIndex = queryMeta.LastIndex
 
 		// if there are no publishers registered, post a new job
-		if len(keys) < 2 {
+		if len(keys) != lastNumPublishers && len(keys) < 2 {
+			lastNumPublishers = len(keys)
 			pair := &api.KVPair{
 				Key: fmt.Sprintf("dagger/jobs/%s", topic),
 			}
