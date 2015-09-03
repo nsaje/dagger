@@ -9,9 +9,10 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/nsaje/dagger/structs"
 	"github.com/natefinch/pie"
+	"github.com/nsaje/dagger/structs"
 )
 
 // ComputationManager manages computations that are being executed
@@ -172,10 +173,16 @@ type statefulComputation struct {
 func (comp *statefulComputation) syncStateWithMaster() error {
 	comp.Lock()
 	defer comp.Unlock()
-	if !comp.initialized {
+	for !comp.initialized {
 		areWeLeader, currentLeader, err := comp.groupHandler.GetStatus()
 		if err != nil {
 			return err
+		}
+		if currentLeader == "" {
+			// wait until a leader is chosen
+			log.Println("[computations] leader of ", comp.computationID, "not yet chosen, waiting")
+			time.Sleep(time.Second)
+			continue
 		}
 		if !areWeLeader {
 			if err != nil {
@@ -183,14 +190,17 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 			}
 			leaderHandler, err := newMasterHandler(currentLeader)
 			if err != nil {
+				log.Println("error creating master handler")
 				return err
 			}
 			snapshot, err := leaderHandler.Sync(comp.computationID)
 			if err != nil {
+				log.Println("error syncing computation with master")
 				return err
 			}
 			err = comp.persister.ApplySnapshot(comp.computationID, snapshot)
 			if err != nil {
+				log.Println("error applying computation snapshot")
 				return err
 			}
 		}

@@ -139,7 +139,7 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 					continue
 				}
 				if gotJob {
-					log.Println("[computations] got job: ", keys[i])
+					log.Println("[coordinator] got job: ", keys[i])
 					err = cm.SetupComputation(computationID)
 					if err != nil {
 						log.Println("error setting up computation:", err) // FIXME
@@ -149,6 +149,7 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 					}
 					// job set up successfuly, register as publisher and delete the job
 					c.RegisterAsPublisher(computationID)
+					log.Println("[coordinator] deleting job: ", computationID)
 					kv.Delete(keys[i], nil)
 				}
 			}
@@ -183,6 +184,7 @@ func (c *ConsulCoordinator) ReleaseJob(job string) (bool, error) {
 
 // RegisterAsPublisher registers us as publishers of this stream and
 func (c *ConsulCoordinator) RegisterAsPublisher(compID string) {
+	log.Println("[coordinator] registering as publisher for: ", compID)
 	kv := c.client.KV()
 	pair := &api.KVPair{
 		Key:     fmt.Sprintf("dagger/%s/publishers/%s", compID, c.addr.String()),
@@ -264,7 +266,7 @@ func (gh *groupHandler) GetStatus() (bool, string, error) {
 }
 
 func (gh *groupHandler) contend() error {
-	key := fmt.Sprintf("dagger/%s/publishers/leader", gh.compID)
+	key := fmt.Sprintf("dagger/%s/publishers_leader", gh.compID)
 	if gh.currentLeader == "" {
 		pair := &api.KVPair{
 			Key:     key,
@@ -272,8 +274,10 @@ func (gh *groupHandler) contend() error {
 			Value:   []byte(gh.c.addr.String()),
 		}
 		kv := gh.c.client.KV()
+		log.Println("[coordinator][groupHandler] trying to acquire leadership of ", gh.compID)
 		_, _, err := kv.Acquire(pair, nil)
 		if err != nil {
+			log.Println("error acquiring leadership", err)
 			return err
 		}
 		return gh.fetch()
@@ -282,9 +286,17 @@ func (gh *groupHandler) contend() error {
 }
 
 func (gh *groupHandler) fetch() error {
-	key := fmt.Sprintf("dagger/%s/publishers/leader", gh.compID)
+	key := fmt.Sprintf("dagger/%s/publishers_leader", gh.compID)
 	kv := gh.c.client.KV()
-	pair, queryMeta, err := kv.Get(key, &api.QueryOptions{WaitIndex: gh.lastIndex})
+
+	qOpts := &api.QueryOptions{WaitIndex: gh.lastIndex}
+	// determine if we should do a short poll in case a leader's not chosen yet
+	gh.RLock()
+	if gh.currentLeader == "" {
+		qOpts.WaitTime = time.Second
+	}
+	gh.RUnlock()
+	pair, queryMeta, err := kv.Get(key, qOpts)
 	log.Println("[coordinator][groupHandler] fetch returned new data")
 	if err != nil {
 		log.Println("FETCH ERROR")
@@ -292,10 +304,13 @@ func (gh *groupHandler) fetch() error {
 	}
 	gh.Lock()
 	gh.lastIndex = queryMeta.LastIndex
+	log.Println("leader keypair:", pair)
 	if pair == nil || pair.Session == "" {
+		log.Println("in branch 1")
 		gh.currentLeader = ""
 		gh.areWeLeader = false
 	} else {
+		log.Println("in branch 2")
 		gh.currentLeader = string(pair.Value)
 		gh.areWeLeader = (gh.currentLeader == gh.c.addr.String())
 	}
@@ -323,11 +338,18 @@ func (c *ConsulCoordinator) monitorPublishers(topic string) {
 
 		// if there are no publishers registered, post a new job
 		if len(keys) != lastNumPublishers && len(keys) < 2 {
+			log.Printf("Number of publishers of %s is %d, posting job.", topic, len(keys))
+			log.Println("Publishers: ", keys)
 			lastNumPublishers = len(keys)
 			pair := &api.KVPair{
 				Key: fmt.Sprintf("dagger/jobs/%s", topic),
 			}
 			kv.Put(pair, nil) // FIXME error handling
+		} else { // FIXME: do this more elegantly
+			if len(keys) == 2 {
+				log.Printf("Number of publishers of %s is %d, not posting job.", topic, len(keys))
+				log.Println("Publishers: ", keys)
+			}
 		}
 	}
 }
