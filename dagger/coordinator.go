@@ -148,9 +148,9 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 						continue
 					}
 					// job set up successfuly, register as publisher and delete the job
-					c.RegisterAsPublisher(computationID)
 					log.Println("[coordinator] deleting job: ", computationID)
 					kv.Delete(keys[i], nil)
+					c.RegisterAsPublisher(computationID)
 				}
 			}
 		}
@@ -255,13 +255,23 @@ type groupHandler struct {
 
 // GetStatus returns whether we're the leader and the address of the current leader
 func (gh *groupHandler) GetStatus() (bool, string, error) {
-	gh.RLock()
-	defer gh.RUnlock()
-	select {
-	case err := <-gh.errCh:
-		return false, "", err
-	default:
-		return gh.areWeLeader, gh.currentLeader, nil
+	for {
+		select {
+		case err := <-gh.errCh:
+			return false, "", err
+		default:
+			gh.RLock()
+			currentLeader := gh.currentLeader
+			gh.RUnlock()
+			if currentLeader == "" {
+				// wait until a leader is elected
+				time.Sleep(time.Second)
+				continue
+			}
+			gh.RLock()
+			defer gh.RUnlock()
+			return gh.areWeLeader, gh.currentLeader, nil
+		}
 	}
 }
 
@@ -280,9 +290,9 @@ func (gh *groupHandler) contend() error {
 			log.Println("error acquiring leadership", err)
 			return err
 		}
-		return gh.fetch()
 	}
-	return nil
+	return gh.fetch()
+	// return nil
 }
 
 func (gh *groupHandler) fetch() error {
@@ -340,7 +350,6 @@ func (c *ConsulCoordinator) monitorPublishers(topic string) {
 		if len(keys) != lastNumPublishers && len(keys) < 2 {
 			log.Printf("Number of publishers of %s is %d, posting job.", topic, len(keys))
 			log.Println("Publishers: ", keys)
-			lastNumPublishers = len(keys)
 			pair := &api.KVPair{
 				Key: fmt.Sprintf("dagger/jobs/%s", topic),
 			}
@@ -351,6 +360,7 @@ func (c *ConsulCoordinator) monitorPublishers(topic string) {
 				log.Println("Publishers: ", keys)
 			}
 		}
+		lastNumPublishers = len(keys)
 	}
 }
 
