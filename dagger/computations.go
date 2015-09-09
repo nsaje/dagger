@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -264,9 +265,11 @@ func (comp *statefulComputation) Sync() (*structs.ComputationSnapshot, error) {
 // StartComputationPlugin starts the plugin process
 func StartComputationPlugin(name string, compID string) (ComputationPlugin, error) {
 	log.Printf("[computations] launching computation plugin '%s'", name)
+	path := path.Join(os.Getenv("DAGGER_PLUGIN_PATH"), "./computation-"+name)
 	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec,
 		os.Stderr,
-		"./computation-"+name)
+		path,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("Error starting plugin %s: %s", name, err)
 	}

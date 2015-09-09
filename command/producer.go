@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bufio"
 	"log"
 	"net/rpc"
 	"net/rpc/jsonrpc"
@@ -21,11 +22,12 @@ func Producer(c *cli.Context) {
 	log.SetPrefix("[master log] ")
 	log.Printf("starting main")
 	// TODO: discover all (enabled) producers
-	prods := []string{
-		"./producer-test",
-		// "producer-test",
-		// "producer-test",
-	}
+	// prods := []string{
+	// 	"./producer-test_stdin",
+	// 	// "producer-test",
+	// 	// "producer-test",
+	// }
+	prods := []string{c.Args().First()}
 	conf := dagger.DefaultConfig()
 	coordinator := dagger.NewCoordinator(conf, conf.RPCAdvertise)
 	err := coordinator.Start()
@@ -34,7 +36,7 @@ func Producer(c *cli.Context) {
 		log.Fatal("error setting up coordinator")
 	}
 
-	coordinator.RegisterAsPublisher("test")
+	coordinator.RegisterAsPublisher(c.Args().Get(1))
 
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
 
@@ -44,21 +46,35 @@ func Producer(c *cli.Context) {
 		wg.Add(1)
 		go func(pluginPath string) {
 			defer wg.Done()
-			log.Printf("launching producer")
-			client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec, os.Stderr, pluginPath)
-			if err != nil {
-				log.Fatalf("Error running plugin: %s", err)
-			}
-			defer client.Close()
-			p := producerPlugin{client}
-			for {
-				log.Println("calling getnext")
-				res, err := p.GetNext()
-				log.Println("getnext returned")
-				if err != nil {
-					log.Fatalf("error calling GetNext(): %s", err)
+			if c.Args().First() == "producer-stdin" {
+				for {
+					reader := bufio.NewReader(os.Stdin)
+					var line string
+					line, _ = reader.ReadString('\n')
+					tuple := &structs.Tuple{
+						ID:       uuid.NewV4().String(),
+						StreamID: c.Args().Get(1),
+						Data:     line,
+					}
+					dispatcher.ProcessTuple(tuple)
 				}
-				dispatcher.ProcessTuple(res)
+			} else {
+				log.Printf("launching producer")
+				client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec, os.Stderr, pluginPath)
+				if err != nil {
+					log.Fatalf("Error running plugin: %s", err)
+				}
+				defer client.Close()
+				p := producerPlugin{client}
+				for {
+					log.Println("calling getnext")
+					res, err := p.GetNext()
+					log.Println("getnext returned")
+					if err != nil {
+						log.Fatalf("error calling GetNext(): %s", err)
+					}
+					dispatcher.ProcessTuple(res)
+				}
 			}
 		}(path)
 	}
