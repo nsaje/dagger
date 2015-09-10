@@ -50,9 +50,12 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	return nil
 }
 
+// Sync is the RPC method called by slave workers wanting to sync a computation
 func (r *Receiver) Sync(compID string, reply *structs.ComputationSnapshot) error {
 	log.Printf("[receiver] sync request for %s", compID)
-	return nil // FIXME
+	snapshot, err := r.computationSyncer.Sync(compID)
+	*reply = *snapshot
+	return err
 }
 
 // ReceiveTuples starts receiving incoming tuples over RPC

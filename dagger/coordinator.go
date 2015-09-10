@@ -92,6 +92,8 @@ func (c *ConsulCoordinator) Start() error {
 	c.sessionID = sessionID
 	go session.RenewPeriodic(api.DefaultLockSessionTTL, sessionID, nil, c.sessionRenew)
 
+	log.Print("coordinator ready")
+
 	return nil
 }
 
