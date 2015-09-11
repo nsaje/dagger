@@ -45,7 +45,7 @@ func watchReady(p *Process, readyText string, r io.Reader, b *Buffer) {
 			break
 		}
 		text := scanner.Text()
-		// fmt.Println("read", text)
+		fmt.Println("read", text)
 		if strings.Contains(strings.ToLower(text), "failed to start consul") {
 			p.errCh <- fmt.Errorf("error occurred when starting %v", p.Cmd.Args)
 		}
@@ -125,7 +125,7 @@ func startConsul(t *testing.T) *Process {
 }
 
 func startSubscriber(t *testing.T, topic string) *Process {
-	return startProcess(t, DaggerReadyText, "../bin/dagger", "subscriber", topic)
+	return startProcess(t, DaggerReadyText, "../bin/dagger", "subscriber", "-dataonly", topic)
 }
 
 func startProducer(t *testing.T, topic string) *Process {
@@ -139,7 +139,7 @@ func startWorker(t *testing.T) *Process {
 
 func (p *Process) stop() {
 	if p != nil {
-		err := p.Cmd.Process.Kill()
+		err := p.Cmd.Process.Signal(os.Interrupt)
 		if err != nil {
 			p.t.Error("error killing process: ", err)
 		}
@@ -202,8 +202,6 @@ func TestFailover(t *testing.T) {
 	defer sub.stop()
 	worker1 := startWorker(t)
 	defer worker1.stop()
-	worker2 := startWorker(t)
-	defer worker2.stop()
 	pub := startProducer(t, "teststdin")
 	defer pub.stop()
 
@@ -212,7 +210,7 @@ func TestFailover(t *testing.T) {
 	for _, inp := range input {
 		expected.WriteString("fooized: ")
 		expected.WriteString(inp)
-		expected.WriteRune('\n')
+		expected.WriteString("\n")
 	}
 	time.Sleep(1 * time.Second)
 	go func() {
@@ -221,6 +219,13 @@ func TestFailover(t *testing.T) {
 			pub.StdinPipe.Write([]byte(inp + "\n"))
 		}
 	}()
+	time.Sleep(1 * time.Second)
+	worker2 := startWorker(t)
+	defer worker2.stop()
+
+	time.Sleep(1 * time.Second)
+	worker1.stop()
+
 	time.Sleep(6 * time.Second)
 
 	actual := sub.StdoutBuffer.String()

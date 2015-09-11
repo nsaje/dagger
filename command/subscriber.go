@@ -21,7 +21,7 @@ func Subscriber(c *cli.Context) {
 	// }
 	// defer persister.Close()
 
-	printer := &printer{}
+	printer := &printer{dataonly: c.Bool("dataonly")}
 	receiver := dagger.NewReceiver(conf)
 	go receiver.ReceiveTuples(printer)
 
@@ -43,9 +43,15 @@ func Subscriber(c *cli.Context) {
 	handleSignals()
 }
 
-type printer struct{}
+type printer struct {
+	dataonly bool
+}
 
 func (p *printer) ProcessTuple(t *structs.Tuple) error {
-	fmt.Println(t)
+	if p.dataonly {
+		fmt.Println(t.Data)
+	} else {
+		fmt.Println(t)
+	}
 	return nil
 }

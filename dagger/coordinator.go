@@ -81,7 +81,10 @@ func NewCoordinator(config *Config, addr net.Addr) Coordinator {
 func (c *ConsulCoordinator) Start() error {
 	session := c.client.Session()
 	// set session to delete our keys on invalidation
-	sessionOptions := &api.SessionEntry{Behavior: api.SessionBehaviorDelete}
+	sessionOptions := &api.SessionEntry{
+		Behavior:  api.SessionBehaviorDelete,
+		LockDelay: 100 * time.Millisecond,
+	}
 	sessionID, _, err := session.Create(sessionOptions, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create consul session: %v", err)

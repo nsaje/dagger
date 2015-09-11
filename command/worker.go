@@ -32,6 +32,7 @@ func Worker(c *cli.Context) {
 	// set up pipeline
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
 	compManager := dagger.NewComputationManager(coordinator, persister, dispatcher)
+	receiver.SetComputationSyncer(compManager)
 
 	go receiver.ReceiveTuples(compManager)
 	go coordinator.ManageJobs(compManager)

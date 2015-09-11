@@ -6,6 +6,7 @@ import (
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/structs"
+	"github.com/twinj/uuid"
 )
 
 // FooComputation simply prepends "fooized" to a tuple
@@ -21,6 +22,7 @@ func (c FooComputation) GetInfo(definition string) (structs.ComputationPluginInf
 
 func (c FooComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error) {
 	t.Data = fmt.Sprintf("fooized: %v", t.Data)
+	t.ID = uuid.NewV4().String()
 	return []*structs.Tuple{t}, nil
 }
 

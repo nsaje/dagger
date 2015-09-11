@@ -3,6 +3,8 @@ package dagger
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/nsaje/dagger/structs"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -46,16 +48,18 @@ type StatePersister interface {
 
 // NewPersister initializes and returns a new Persister instance
 func NewPersister(conf *Config) (Persister, error) {
-	db, err := leveldb.OpenFile(uuid.NewV4().String(), nil)
+	filename := "daggerDB-" + uuid.NewV4().String()
+	db, err := leveldb.OpenFile(filename, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &LevelDBPersister{db}, nil
+	return &LevelDBPersister{db, filename}, nil
 }
 
 // LevelDBPersister is built on top of LevelDB
 type LevelDBPersister struct {
-	db *leveldb.DB
+	db       *leveldb.DB
+	filename string
 }
 
 // Close the persister
@@ -68,6 +72,7 @@ func (p *LevelDBPersister) Close() {
 func (p *LevelDBPersister) CommitComputation(compID string, in *structs.Tuple, out []*structs.Tuple) error {
 	batch := new(leveldb.Batch)
 	// mark incoming tuple as received
+	log.Println("[persister]", p.filename, "committing", *in, "prods:", out)
 	batch.Put([]byte(fmt.Sprintf(receivedKeyFormat, compID, in.ID)), nil)
 
 	// save productions
@@ -78,6 +83,7 @@ func (p *LevelDBPersister) CommitComputation(compID string, in *structs.Tuple, o
 		}
 		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.ID))
 		batch.Put(key, []byte(serialized))
+		log.Println("[persister]", p.filename, "prod", string(key), string(serialized))
 	}
 	return p.db.Write(batch, nil)
 }
@@ -87,7 +93,7 @@ func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnaps
 	dbSnapshot, err := p.db.GetSnapshot()
 	defer dbSnapshot.Release()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("[persister]", err)
 	}
 	var snapshot structs.ComputationSnapshot
 	// get received tuples
@@ -101,7 +107,7 @@ func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnaps
 	}
 	err = iter.Error()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("[persister]", err)
 	}
 
 	// get produced tuples
@@ -110,16 +116,19 @@ func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnaps
 	iter2 := dbSnapshot.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
 	defer iter2.Release()
 	for iter2.Next() {
+		if !strings.HasPrefix(string(iter.Key()), keyPrefix) {
+			continue
+		}
 		var tuple structs.Tuple
 		err := json.Unmarshal(iter.Value(), &tuple)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("[persister]", err)
 		}
 		snapshot.Produced = append(snapshot.Produced, &tuple)
 	}
 	err = iter.Error()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("[persister]", err)
 	}
 	return &snapshot, err
 }
@@ -127,6 +136,7 @@ func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnaps
 // ApplySnapshot applies the snapshot of the computation's persisted state
 func (p *LevelDBPersister) ApplySnapshot(compID string, snapshot *structs.ComputationSnapshot) error {
 	batch := new(leveldb.Batch)
+	log.Println("[persister] applying snapshot", snapshot)
 
 	// clear data for this computation
 	keyPrefix := fmt.Sprintf("%s-", compID)

@@ -6,6 +6,7 @@ import (
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/nsaje/dagger/dagger"
@@ -54,7 +55,7 @@ func Producer(c *cli.Context) {
 					tuple := &structs.Tuple{
 						ID:       uuid.NewV4().String(),
 						StreamID: c.Args().Get(1),
-						Data:     line,
+						Data:     strings.TrimSpace(line),
 					}
 					dispatcher.ProcessTuple(tuple)
 				}

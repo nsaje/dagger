@@ -41,6 +41,12 @@ func main() {
 			Aliases: []string{"s"},
 			Usage:   "start dagger node as a topic subscriber",
 			Action:  command.Subscriber,
+			Flags: []cli.Flag{
+				cli.BoolFlag{
+					Name:  "dataonly",
+					Usage: "print only the 'Data' field of the tuple if true",
+				},
+			},
 		},
 	}
 

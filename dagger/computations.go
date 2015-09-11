@@ -39,7 +39,7 @@ type computationManager struct {
 // NewComputationManager returns an object that can manage computations
 func NewComputationManager(coordinator Coordinator,
 	persister Persister,
-	dispatcher TupleProcessor) ComputationManager {
+	dispatcher TupleProcessor) *computationManager {
 	return &computationManager{
 		computations:  make(map[string]Computation),
 		subscriptions: make(map[string][]TupleProcessor),

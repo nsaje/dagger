@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/rpc"
@@ -53,9 +54,20 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 // Sync is the RPC method called by slave workers wanting to sync a computation
 func (r *Receiver) Sync(compID string, reply *structs.ComputationSnapshot) error {
 	log.Printf("[receiver] sync request for %s", compID)
+	if r.computationSyncer == nil {
+		return fmt.Errorf("Computation manager doesn't exist!")
+	}
 	snapshot, err := r.computationSyncer.Sync(compID)
+	log.Printf("[receiver] snapshot: %v, err: %v", snapshot, err)
+	if err != nil {
+		return err
+	}
 	*reply = *snapshot
 	return err
+}
+
+func (r *Receiver) SetComputationSyncer(cs ComputationSyncer) {
+	r.computationSyncer = cs
 }
 
 // ReceiveTuples starts receiving incoming tuples over RPC
