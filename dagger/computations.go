@@ -199,11 +199,23 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 				log.Println("error syncing computation with master")
 				return err
 			}
-			err = comp.persister.ApplySnapshot(comp.computationID, snapshot)
+			err = comp.plugin.SetState(snapshot.PluginState)
 			if err != nil {
-				log.Println("error applying computation snapshot")
+				log.Println("error setting computation plugin state", err)
 				return err
 			}
+			err = comp.persister.ApplySnapshot(comp.computationID, snapshot)
+			if err != nil {
+				log.Println("error applying computation snapshot", err)
+				return err
+			}
+			// recreate deduplicator from newest received info
+			deduplicator, err := NewDeduplicator(comp.computationID, comp.persister)
+			if err != nil {
+				log.Println("error recreating deduplicator after sync", err)
+				return err
+			}
+			comp.deduplicator = deduplicator
 		}
 		comp.initialized = true
 	}
@@ -212,6 +224,8 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 
 func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
 	if !comp.initialized {
+		log.Println("[computations] computation %s not initialized, syncing with group",
+			comp.computationID)
 		err := comp.syncStateWithMaster()
 		if err != nil {
 			return err
@@ -259,7 +273,16 @@ func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
 func (comp *statefulComputation) Sync() (*structs.ComputationSnapshot, error) {
 	comp.Lock()
 	defer comp.Unlock()
-	return comp.persister.GetSnapshot(comp.computationID)
+	snapshot, err := comp.persister.GetSnapshot(comp.computationID)
+	if err != nil {
+		return nil, err
+	}
+	pluginState, err := comp.plugin.GetState()
+	if err != nil {
+		return nil, err
+	}
+	snapshot.PluginState = pluginState
+	return snapshot, nil
 }
 
 // StartComputationPlugin starts the plugin process
@@ -286,6 +309,8 @@ func StartComputationPlugin(name string, compID string) (ComputationPlugin, erro
 type ComputationPlugin interface {
 	GetInfo(definition string) (*structs.ComputationPluginInfo, error)
 	SubmitTuple(t *structs.Tuple) (*structs.ComputationPluginResponse, error)
+	GetState() (*structs.ComputationPluginState, error)
+	SetState(*structs.ComputationPluginState) error
 }
 
 type computationPlugin struct {
@@ -298,6 +323,18 @@ func (p *computationPlugin) GetInfo(definition string) (*structs.ComputationPlug
 	var result structs.ComputationPluginInfo
 	err := p.client.Call("Computation.GetInfo", definition, &result)
 	return &result, err
+}
+
+func (p *computationPlugin) GetState() (*structs.ComputationPluginState, error) {
+	var result structs.ComputationPluginState
+	err := p.client.Call("Computation.GetState", struct{}{}, &result)
+	return &result, err
+}
+
+func (p *computationPlugin) SetState(state *structs.ComputationPluginState) error {
+	var result string
+	err := p.client.Call("Computation.SetState", state, &result)
+	return err
 }
 
 func (p *computationPlugin) SubmitTuple(t *structs.Tuple) (*structs.ComputationPluginResponse, error) {

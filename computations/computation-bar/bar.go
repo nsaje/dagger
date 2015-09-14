@@ -24,6 +24,14 @@ func (c BarComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error) 
 	return []*structs.Tuple{t}, nil
 }
 
+func (c BarComputation) GetState() ([]byte, error) {
+	return nil, fmt.Errorf("not stateful!")
+}
+
+func (c BarComputation) SetState(state []byte) error {
+	return fmt.Errorf("not stateful!")
+}
+
 func main() {
 	log.SetPrefix("[barComputation log] ")
 	log.Printf("barComputation started")

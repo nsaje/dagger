@@ -13,6 +13,8 @@ import (
 type ComputationImplementation interface {
 	GetInfo(definition string) (structs.ComputationPluginInfo, error)
 	SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error)
+	GetState() ([]byte, error)
+	SetState([]byte) error
 }
 
 // StartPlugin starts serving RPC requests and brokers data between RPC caller
@@ -44,5 +46,22 @@ func (p *ComputationPlugin) SubmitTuple(t *structs.Tuple,
 	*response = structs.ComputationPluginResponse{}
 	newTuples, err := p.impl.SubmitTuple(t)
 	response.Tuples = newTuples
+	return err
+}
+
+// GetState returns the dump of computation's state to dagger
+func (p *ComputationPlugin) GetState(_ struct{},
+	response *structs.ComputationPluginState) error {
+	*response = structs.ComputationPluginState{}
+	state, err := p.impl.GetState()
+	response.State = state
+	return err
+}
+
+// SetState seeds the state of the computation
+func (p *ComputationPlugin) SetState(state *structs.ComputationPluginState,
+	response *string) error {
+	*response = "ok"
+	err := p.impl.SetState(state.State)
 	return err
 }

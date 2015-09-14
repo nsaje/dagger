@@ -24,8 +24,21 @@ type ComputationPluginInfo struct {
 	Stateful bool
 }
 
+// ComputationPluginState is state returned from a computation plugin to the main app
+type ComputationPluginState struct {
+	State []byte
+}
+
 // ComputationSnapshot is used for synchronizing computation state between workers
 type ComputationSnapshot struct {
-	Received []string
-	Produced []*Tuple
+	Received    []string
+	Produced    []*Tuple
+	PluginState *ComputationPluginState
+}
+
+func (s *ComputationSnapshot) String() string {
+	return fmt.Sprintf("Received: %v, Produced: %v, PluginState: %s",
+		s.Received,
+		s.Produced,
+		string(s.PluginState.State))
 }

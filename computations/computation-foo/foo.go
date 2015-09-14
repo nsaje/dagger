@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/structs"
@@ -10,9 +11,11 @@ import (
 )
 
 // FooComputation simply prepends "fooized" to a tuple
-type FooComputation struct{}
+type FooComputation struct {
+	counter int
+}
 
-func (c FooComputation) GetInfo(definition string) (structs.ComputationPluginInfo, error) {
+func (c *FooComputation) GetInfo(definition string) (structs.ComputationPluginInfo, error) {
 	info := structs.ComputationPluginInfo{
 		Inputs:   []string{definition},
 		Stateful: true,
@@ -20,15 +23,31 @@ func (c FooComputation) GetInfo(definition string) (structs.ComputationPluginInf
 	return info, nil
 }
 
-func (c FooComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error) {
-	t.Data = fmt.Sprintf("fooized: %v", t.Data)
+func (c *FooComputation) GetState() ([]byte, error) {
+	return []byte(fmt.Sprintf("%d", c.counter)), nil
+}
+
+func (c *FooComputation) SetState(state []byte) error {
+	counter, err := strconv.Atoi(string(state))
+	if err != nil {
+		return fmt.Errorf("Error setting state %s in plugin: %s",
+			string(state),
+			err)
+	}
+	c.counter = counter
+	return nil
+}
+
+func (c *FooComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error) {
+	t.Data = fmt.Sprintf("fooized: %v, state: %v", t.Data, c.counter)
 	t.ID = uuid.NewV4().String()
+	c.counter++
 	return []*structs.Tuple{t}, nil
 }
 
 func main() {
 	log.SetPrefix("[fooComputation log] ")
 	log.Printf("fooComputation started")
-	c := FooComputation{}
+	c := &FooComputation{1}
 	computations.StartPlugin(c)
 }

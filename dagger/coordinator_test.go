@@ -210,6 +210,8 @@ func TestFailover(t *testing.T) {
 	for _, inp := range input {
 		expected.WriteString("fooized: ")
 		expected.WriteString(inp)
+		expected.WriteString(", state: ")
+		expected.WriteString(inp)
 		expected.WriteString("\n")
 	}
 	time.Sleep(1 * time.Second)
