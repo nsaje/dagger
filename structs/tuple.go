@@ -1,11 +1,15 @@
 package structs
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // Tuple is the atomic unit of data flowing through Dagger
 type Tuple struct {
 	ID       string      `json:"id"`
 	StreamID string      `json:"stream_id"`
+	LWM      time.Time   `json:"lwm"`
 	Data     interface{} `json:"data"`
 }
 

@@ -114,5 +114,9 @@ func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
 
 func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
 	var reply string
-	return s.client.Call("Receiver.SubmitTuple", t, &reply)
+	err := s.client.Call("Receiver.SubmitTuple", t, &reply)
+	if err != nil {
+		log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)
+	}
+	return err
 }

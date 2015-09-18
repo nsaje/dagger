@@ -89,9 +89,14 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 			return err
 		}
 
-		bufferedDispatcher := StartBufferedDispatcher(computationID, cm.dispatcher, cm.persister, stopCh)
+		lwmTracker := NewLWMTracker()
+		// notify both LWM tracker and persister when a tuple is successfuly sent
+		multiSentTracker := MultiSentTracker{[]SentTracker{lwmTracker, cm.persister}}
+
+		bufferedDispatcher := StartBufferedDispatcher(computationID, cm.dispatcher, multiSentTracker, stopCh)
 		computation = &statefulComputation{
 			computationID,
+			lwmTracker,
 			plugin,
 			groupHandler,
 			deduplicator,
@@ -160,6 +165,7 @@ func (comp *statelessComputation) Sync() (*structs.ComputationSnapshot, error) {
 
 type statefulComputation struct {
 	computationID      string
+	lwmTracker         LwmTracker
 	plugin             ComputationPlugin
 	groupHandler       GroupHandler
 	deduplicator       Deduplicator
@@ -246,10 +252,27 @@ func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
 		return nil
 	}
 
+	// calculate low water mark (LWM)
+	// LWM = min(oldest event in this computation, LWM across all publishers this
+	// computation is subscribed to)
+	err = comp.lwmTracker.ProcessTuple(t)
+	if err != nil {
+		return err
+	}
+
 	// send it to the plugin for processing
 	response, err := comp.plugin.SubmitTuple(t)
 	if err != nil {
 		return err
+	}
+
+	// calculate local low-water mark
+	localLWM, err := comp.lwmTracker.GetLWM()
+	if err != nil {
+		return err
+	}
+	for _, t := range response.Tuples {
+		t.LWM = localLWM
 	}
 
 	// persist info about received and produced tuples
@@ -262,7 +285,9 @@ func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
 	if err != nil {
 		return err
 	}
+
 	if areWeLeader {
+		comp.lwmTracker.BeforeDispatching(response.Tuples)
 		// send to asynchronous dispatcher and return immediately
 		return ProcessMultipleTuples(comp.bufferedDispatcher, response.Tuples)
 	}

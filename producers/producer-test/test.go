@@ -20,7 +20,7 @@ func main() {
 	counter := 0
 	for {
 		time.Sleep(1000 * time.Millisecond)
-		s := structs.Tuple{StreamID: "test", Data: counter}
+		s := structs.Tuple{StreamID: "test", Data: counter, LWM: time.Now()}
 		p.Stream <- s
 		counter++
 	}

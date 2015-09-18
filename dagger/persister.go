@@ -33,6 +33,22 @@ type SentTracker interface {
 	SentSuccessfuly(string, *structs.Tuple) error
 }
 
+// MultiSentTracker enables notifying multiple SentTrackers of a successfuly
+// sent tuple
+type MultiSentTracker struct {
+	trackers []SentTracker
+}
+
+func (st MultiSentTracker) SentSuccessfuly(compID string, t *structs.Tuple) error {
+	for _, tracker := range st.trackers {
+		err := tracker.SentSuccessfuly(compID, t)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ReceivedTracker persists info about which tuples we've already seen
 type ReceivedTracker interface {
 	PersistReceivedTuples(string, []*structs.Tuple) error
@@ -83,7 +99,6 @@ func (p *LevelDBPersister) CommitComputation(compID string, in *structs.Tuple, o
 		}
 		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.ID))
 		batch.Put(key, []byte(serialized))
-		log.Println("[persister]", p.filename, "prod", string(key), string(serialized))
 	}
 	return p.db.Write(batch, nil)
 }

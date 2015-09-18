@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nsaje/dagger/dagger"
 	"github.com/nsaje/dagger/structs"
@@ -55,6 +56,7 @@ func Producer(c *cli.Context) {
 					tuple := &structs.Tuple{
 						ID:       uuid.NewV4().String(),
 						StreamID: c.Args().Get(1),
+						LWM:      time.Now(),
 						Data:     strings.TrimSpace(line),
 					}
 					dispatcher.ProcessTuple(tuple)
