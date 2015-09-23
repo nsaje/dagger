@@ -41,16 +41,12 @@ func (lwmT *lwmTracker) GetLWM() (time.Time, error) {
 	min := time.Now().Add(1 << 62)
 	for _, lwm := range lwmT.inProcessing {
 		if lwm.Before(min) {
-			log.Println("swapping", min, lwm)
 			min = lwm
 		}
 	}
 	for _, lwm := range lwmT.upstream {
 		if lwm.Before(min) {
-			log.Println("swapping", min, lwm)
 			min = lwm
-		} else {
-			log.Println("not swapping", min, lwm)
 		}
 	}
 	log.Println("[lwm_tracker]", min, lwmT.upstream, lwmT.inProcessing)

@@ -7,10 +7,11 @@ import (
 
 // Tuple is the atomic unit of data flowing through Dagger
 type Tuple struct {
-	ID       string      `json:"id"`
-	StreamID string      `json:"stream_id"`
-	LWM      time.Time   `json:"lwm"`
-	Data     interface{} `json:"data"`
+	ID        string      `json:"id"`
+	StreamID  string      `json:"stream_id"`
+	LWM       time.Time   `json:"lwm"`
+	Timestamp time.Time   `json:"timestamp"`
+	Data      interface{} `json:"data"`
 }
 
 func (t *Tuple) String() string {
