@@ -133,7 +133,7 @@ func (cm *computationManager) Sync(computationID string) (*structs.ComputationSn
 
 func (cm *computationManager) ProcessTuple(t *structs.Tuple) error {
 	comps := cm.subscriptions[t.StreamID]
-	log.Printf("[computations] tuple: %v, subscriptions:%v", t, comps)
+	log.Printf("[computations] Processing: %s", t)
 
 	// Feed the tuple into interested computations
 	return ProcessMultipleProcessors(comps, t)
@@ -187,7 +187,7 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 		}
 		if currentLeader == "" {
 			// wait until a leader is chosen
-			log.Println("[computations] leader of ", comp.computationID, "not yet chosen, waiting")
+			log.Println("[computations] Leader of ", comp.computationID, "not yet chosen, waiting")
 			time.Sleep(time.Second)
 			continue
 		}
@@ -197,29 +197,24 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 			}
 			leaderHandler, err := newMasterHandler(currentLeader)
 			if err != nil {
-				log.Println("error creating master handler")
-				return err
+				return fmt.Errorf("[computations] Error creating master handler: %s", err)
 			}
 			snapshot, err := leaderHandler.Sync(comp.computationID)
 			if err != nil {
-				log.Println("error syncing computation with master")
-				return err
+				return fmt.Errorf("[computations] Error syncing computation with master: %s", err)
 			}
 			err = comp.plugin.SetState(snapshot.PluginState)
 			if err != nil {
-				log.Println("error setting computation plugin state", err)
-				return err
+				return fmt.Errorf("[computations] Error setting computation plugin state: %s", err)
 			}
 			err = comp.persister.ApplySnapshot(comp.computationID, snapshot)
 			if err != nil {
-				log.Println("error applying computation snapshot", err)
-				return err
+				return fmt.Errorf("[computations] Error applying computation snapshot: %s", err)
 			}
 			// recreate deduplicator from newest received info
 			deduplicator, err := NewDeduplicator(comp.computationID, comp.persister)
 			if err != nil {
-				log.Println("error recreating deduplicator after sync", err)
-				return err
+				return fmt.Errorf("[computations] Error recreating deduplicator after sync: %s", err)
 			}
 			comp.deduplicator = deduplicator
 		}
@@ -230,7 +225,7 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 
 func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
 	if !comp.initialized {
-		log.Println("[computations] computation %s not initialized, syncing with group",
+		log.Println("[computations] Computation %s not initialized, syncing with group",
 			comp.computationID)
 		err := comp.syncStateWithMaster()
 		if err != nil {
@@ -312,7 +307,7 @@ func (comp *statefulComputation) Sync() (*structs.ComputationSnapshot, error) {
 
 // StartComputationPlugin starts the plugin process
 func StartComputationPlugin(name string, compID string) (ComputationPlugin, error) {
-	log.Printf("[computations] launching computation plugin '%s'", name)
+	log.Printf("[computations] Launching computation plugin '%s'", name)
 	path := path.Join(os.Getenv("DAGGER_PLUGIN_PATH"), ".") + "/computation-" + name
 	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec,
 		os.Stderr,

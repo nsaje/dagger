@@ -15,7 +15,7 @@ type Tuple struct {
 }
 
 func (t *Tuple) String() string {
-	return fmt.Sprint(*t)
+	return fmt.Sprintf("stream_id: %s, data: %v", t.StreamID, t.Data)
 }
 
 // ComputationPluginResponse  is returned from a computation plugin to the main app

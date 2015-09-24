@@ -1,7 +1,6 @@
 package dagger
 
 import (
-	"log"
 	"time"
 
 	"github.com/nsaje/dagger/structs"
@@ -49,7 +48,7 @@ func (lwmT *lwmTracker) GetLWM() (time.Time, error) {
 			min = lwm
 		}
 	}
-	log.Println("[lwm_tracker]", min, lwmT.upstream, lwmT.inProcessing)
+	// log.Println("[lwm_tracker]", min, lwmT.upstream, lwmT.inProcessing)
 	return min, nil
 }
 

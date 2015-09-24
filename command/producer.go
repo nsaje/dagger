@@ -22,7 +22,6 @@ import (
 // to registered subscribers via RPC
 func Producer(c *cli.Context) {
 	log.SetPrefix("[master log] ")
-	log.Printf("starting main")
 	// TODO: discover all (enabled) producers
 	// prods := []string{
 	// 	"./producer-test_stdin",
@@ -35,7 +34,7 @@ func Producer(c *cli.Context) {
 	err := coordinator.Start()
 	defer coordinator.Stop()
 	if err != nil {
-		log.Fatal("error setting up coordinator")
+		log.Fatal("Error setting up coordinator")
 	}
 
 	coordinator.RegisterAsPublisher(c.Args().Get(1))
@@ -44,7 +43,6 @@ func Producer(c *cli.Context) {
 
 	var wg sync.WaitGroup
 	for _, path := range prods {
-		log.Printf("handling producer %s", path)
 		wg.Add(1)
 		go func(pluginPath string) {
 			defer wg.Done()
@@ -62,7 +60,7 @@ func Producer(c *cli.Context) {
 					dispatcher.ProcessTuple(tuple)
 				}
 			} else {
-				log.Printf("launching producer")
+				log.Printf("Launching producer")
 				client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec, os.Stderr, pluginPath)
 				if err != nil {
 					log.Fatalf("Error running plugin: %s", err)
@@ -70,11 +68,10 @@ func Producer(c *cli.Context) {
 				defer client.Close()
 				p := producerPlugin{client}
 				for {
-					log.Println("calling getnext")
+					log.Println("Getting next tuple from plugin...")
 					res, err := p.GetNext()
-					log.Println("getnext returned")
 					if err != nil {
-						log.Fatalf("error calling GetNext(): %s", err)
+						log.Fatalf("Error calling GetNext(): %s", err)
 					}
 					dispatcher.ProcessTuple(res)
 				}

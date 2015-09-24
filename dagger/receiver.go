@@ -29,7 +29,7 @@ func NewReceiver(conf *Config) *Receiver {
 	var err error
 	r.listener, err = net.Listen("tcp", r.conf.RPCAdvertise.String())
 	if err != nil {
-		log.Fatal("listen error:", err)
+		log.Fatal("[receiver] Listen error:", err)
 	}
 	return r
 }
@@ -41,10 +41,9 @@ func (r *Receiver) ListenAddr() net.Addr {
 
 // SubmitTuple submits a new tuple into the worker process
 func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
-	log.Printf("[receiver] tuple: %v", t)
+	log.Printf("[receiver] Received: %s", t)
 	err := r.next.ProcessTuple(t)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	*reply = "ok"
@@ -53,12 +52,12 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 
 // Sync is the RPC method called by slave workers wanting to sync a computation
 func (r *Receiver) Sync(compID string, reply *structs.ComputationSnapshot) error {
-	log.Printf("[receiver] sync request for %s", compID)
+	log.Printf("[receiver] Sync request for %s", compID)
 	if r.computationSyncer == nil {
-		return fmt.Errorf("Computation manager doesn't exist!")
+		return fmt.Errorf("[receiver] Computation manager doesn't exist!")
 	}
 	snapshot, err := r.computationSyncer.Sync(compID)
-	log.Printf("[receiver] snapshot: %v, err: %v", snapshot, err)
+	log.Printf("[receiver] Replying with snapshot: %v, err: %v", snapshot, err)
 	if err != nil {
 		return err
 	}
@@ -75,9 +74,9 @@ func (r *Receiver) ReceiveTuples(next TupleProcessor) {
 	r.next = next
 	for {
 		if conn, err := r.listener.Accept(); err != nil {
-			log.Fatal("accept error: " + err.Error())
+			log.Fatal("[receiver] Accept error: " + err.Error())
 		} else {
-			log.Printf("new connection to the receiver established\n")
+			log.Printf("[receiver] New connection to the receiver established\n")
 			go r.server.ServeCodec(jsonrpc.NewServerCodec(conn))
 		}
 	}

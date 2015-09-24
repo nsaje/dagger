@@ -15,7 +15,7 @@ func Worker(c *cli.Context) {
 
 	persister, err := dagger.NewPersister(conf)
 	if err != nil {
-		log.Fatalf("error opening database")
+		log.Fatalf("Error opening database")
 	}
 	defer persister.Close()
 

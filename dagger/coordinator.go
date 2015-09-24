@@ -95,7 +95,7 @@ func (c *ConsulCoordinator) Start() error {
 	c.sessionID = sessionID
 	go session.RenewPeriodic(api.DefaultLockSessionTTL, sessionID, nil, c.sessionRenew)
 
-	log.Print("coordinator ready")
+	log.Println("[coordinator] Coordinator ready")
 
 	return nil
 }
@@ -107,7 +107,7 @@ func (c *ConsulCoordinator) Stop() {
 	close(c.stopCh)
 
 	session := c.client.Session()
-	log.Printf("Destroying session %s", c.sessionID)
+	log.Printf("[coordinator] Destroying session %s", c.sessionID)
 	session.Destroy(c.sessionID, nil) // ignoring error, session will expire anyway
 }
 
@@ -122,10 +122,10 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 			return
 		default:
 			keys, queryMeta, err := kv.Keys(JobPrefix, "", &api.QueryOptions{WaitIndex: lastIndex})
-			log.Println("[coordinator][WatchJobs] jobs checked ")
+			log.Println("[coordinator][WatchJobs] Jobs checked ")
 			if err != nil {
 				// FIXME
-				log.Fatal("ERROR managejobs:", err)
+				log.Println("[ERROR][coordinator][WatchJobs]:", err)
 				continue
 			}
 			lastIndex = queryMeta.LastIndex
@@ -141,20 +141,21 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 				}
 				gotJob, err := c.TakeJob(keys[i])
 				if err != nil {
-					log.Println(err) // FIXME
+					// FIXME
+					log.Println("[ERROR][coordinator][WatchJobs][gotJob]:", err)
 					continue
 				}
 				if gotJob {
-					log.Println("[coordinator] got job: ", keys[i])
+					log.Println("[coordinator] Got job:", keys[i])
 					err = cm.SetupComputation(computationID)
 					if err != nil {
-						log.Println("error setting up computation:", err) // FIXME
+						log.Println("Error setting up computation:", err) // FIXME
 						c.ReleaseJob(keys[i])
 						unapplicableSet[computationID] = struct{}{}
 						continue
 					}
 					// job set up successfuly, register as publisher and delete the job
-					log.Println("[coordinator] deleting job: ", computationID)
+					log.Println("[coordinator] Deleting job: ", computationID)
 					kv.Delete(keys[i], nil)
 					c.RegisterAsPublisher(computationID)
 				}
@@ -166,7 +167,7 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 // TakeJob tries to take a job from the job list. If another Worker
 // manages to take the job, the call returns false.
 func (c *ConsulCoordinator) TakeJob(job string) (bool, error) {
-	log.Println("[coordinator] trying to take job: ", job)
+	log.Println("[coordinator] Trying to take job: ", job)
 	kv := c.client.KV()
 	pair := &api.KVPair{
 		Key:     job,
@@ -178,7 +179,7 @@ func (c *ConsulCoordinator) TakeJob(job string) (bool, error) {
 
 // ReleaseJob releases the job
 func (c *ConsulCoordinator) ReleaseJob(job string) (bool, error) {
-	log.Println("[coordinator] releasing job: ", job)
+	log.Println("[coordinator] Releasing job: ", job)
 	kv := c.client.KV()
 	pair := &api.KVPair{
 		Key:     job,
@@ -190,7 +191,7 @@ func (c *ConsulCoordinator) ReleaseJob(job string) (bool, error) {
 
 // RegisterAsPublisher registers us as publishers of this stream and
 func (c *ConsulCoordinator) RegisterAsPublisher(compID string) {
-	log.Println("[coordinator] registering as publisher for: ", compID)
+	log.Println("[coordinator] Registering as publisher for: ", compID)
 	kv := c.client.KV()
 	pair := &api.KVPair{
 		Key:     fmt.Sprintf("dagger/%s/publishers/%s", compID, c.addr.String()),
@@ -198,7 +199,7 @@ func (c *ConsulCoordinator) RegisterAsPublisher(compID string) {
 	}
 	_, _, err := kv.Acquire(pair, nil)
 	if err != nil {
-		log.Println(err)
+		log.Println("[coordinator] Error registering as publisher: ", err)
 	}
 }
 
@@ -290,10 +291,10 @@ func (gh *groupHandler) contend() error {
 			Value:   []byte(gh.c.addr.String()),
 		}
 		kv := gh.c.client.KV()
-		log.Println("[coordinator][groupHandler] trying to acquire leadership of ", gh.compID)
+		log.Println("[coordinator][groupHandler] Trying to acquire leadership of ", gh.compID)
 		_, _, err := kv.Acquire(pair, nil)
 		if err != nil {
-			log.Println("error acquiring leadership", err)
+			log.Println("Error acquiring leadership", err)
 			return err
 		}
 	}
@@ -313,26 +314,23 @@ func (gh *groupHandler) fetch() error {
 	}
 	gh.RUnlock()
 	pair, queryMeta, err := kv.Get(key, qOpts)
-	log.Println("[coordinator][groupHandler] fetch returned new data")
+	// log.Println("[coordinator][groupHandler] Fetch returned new data")
 	if err != nil {
 		log.Println("FETCH ERROR")
 		return err
 	}
 	gh.Lock()
 	gh.lastIndex = queryMeta.LastIndex
-	log.Println("leader keypair:", pair)
 	if pair == nil || pair.Session == "" {
-		log.Println("in branch 1")
 		gh.currentLeader = ""
 		gh.areWeLeader = false
 	} else {
-		log.Println("in branch 2")
 		gh.currentLeader = string(pair.Value)
 		gh.areWeLeader = (gh.currentLeader == gh.c.addr.String())
 	}
 	gh.Unlock()
 
-	log.Println("NEW LEADER: ", gh.currentLeader, pair)
+	log.Println("[coordinator] New leader:", gh.currentLeader)
 
 	return nil
 }
@@ -344,27 +342,27 @@ func (c *ConsulCoordinator) monitorPublishers(topic string) {
 	lastNumPublishers := -1
 	for {
 		keys, queryMeta, err := kv.Keys(prefix, "", &api.QueryOptions{WaitIndex: lastIndex})
-		log.Println("[coordinator] publishers checked in ", prefix)
+		log.Println("[coordinator] Publishers checked in ", prefix)
 		if err != nil {
 			log.Fatal("ERROR:", err)
 			// FIXME
 			continue
 		}
-		log.Println("last index before, after ", lastIndex, queryMeta.LastIndex)
+		// log.Println("last index before, after ", lastIndex, queryMeta.LastIndex)
 		lastIndex = queryMeta.LastIndex
 
 		// if there are no publishers registered, post a new job
 		if len(keys) != lastNumPublishers && len(keys) < 2 {
-			log.Printf("Number of publishers of %s is %d, posting job.", topic, len(keys))
-			log.Println("Publishers: ", keys)
+			log.Printf("[coordinator] Number of publishers of %s is %d, posting a job.", topic, len(keys))
+			// log.Println("Publishers: ", keys)
 			pair := &api.KVPair{
 				Key: fmt.Sprintf("dagger/jobs/%s", topic),
 			}
 			kv.Put(pair, nil) // FIXME error handling
 		} else { // FIXME: do this more elegantly
 			if len(keys) == 2 {
-				log.Printf("Number of publishers of %s is %d, not posting job.", topic, len(keys))
-				log.Println("Publishers: ", keys)
+				log.Printf("[coordinator] Number of publishers of %s is %d, not posting a job.", topic, len(keys))
+				// log.Println("Publishers: ", keys)
 			}
 		}
 		lastNumPublishers = len(keys)
@@ -423,7 +421,7 @@ func (sl *subscribersList) sync() {
 		lastAccess := sl.lastAccess
 		sl.RUnlock()
 		if time.Since(lastAccess) >= sl.c.config.SubscribersTTL {
-			log.Printf("TTL expired for subscribers of '%s'", sl.prefix)
+			log.Printf("[coordinator] TTL expired for subscribers of '%s'", sl.prefix)
 			sl.c.subscribersLock.Lock()
 			defer sl.c.subscribersLock.Unlock()
 			delete(sl.c.subscribers, sl.prefix)
@@ -433,7 +431,7 @@ func (sl *subscribersList) sync() {
 		// do a blocking query for when our prefix is updated
 		err := sl.fetch()
 		if err != nil {
-			log.Fatal("WARNING: problem syncing subscribers for prefix: %s", sl.prefix)
+			log.Fatal("[coordinator][WARNING] Problem syncing subscribers for prefix: %s", sl.prefix)
 		}
 	}
 }
@@ -442,7 +440,7 @@ func (sl *subscribersList) fetch() error {
 	kv := sl.c.client.KV()
 	// fmt.Println("Executing blocking consul.Keys method, lastIndex: ", sl.lastIndex)
 	keys, queryMeta, err := kv.Keys(sl.prefix, "", &api.QueryOptions{WaitIndex: sl.lastIndex})
-	log.Println("[coordinator] subscribers updated in ", sl.prefix)
+	log.Println("[coordinator] Subscribers updated in ", sl.prefix)
 	// fmt.Println("consul.Keys method returned, New LastIndex: ", queryMeta.LastIndex)
 	if err != nil {
 		return err
