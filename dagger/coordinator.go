@@ -125,7 +125,8 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 			log.Println("[coordinator][WatchJobs] jobs checked ")
 			if err != nil {
 				// FIXME
-				log.Println("ERROR managejobs:", err)
+				log.Fatal("ERROR managejobs:", err)
+				continue
 			}
 			lastIndex = queryMeta.LastIndex
 
@@ -345,8 +346,9 @@ func (c *ConsulCoordinator) monitorPublishers(topic string) {
 		keys, queryMeta, err := kv.Keys(prefix, "", &api.QueryOptions{WaitIndex: lastIndex})
 		log.Println("[coordinator] publishers checked in ", prefix)
 		if err != nil {
-			log.Println("ERROR:", err)
+			log.Fatal("ERROR:", err)
 			// FIXME
+			continue
 		}
 		log.Println("last index before, after ", lastIndex, queryMeta.LastIndex)
 		lastIndex = queryMeta.LastIndex
@@ -431,7 +433,7 @@ func (sl *subscribersList) sync() {
 		// do a blocking query for when our prefix is updated
 		err := sl.fetch()
 		if err != nil {
-			log.Printf("WARNING: problem syncing subscribers for prefix: %s", sl.prefix)
+			log.Fatal("WARNING: problem syncing subscribers for prefix: %s", sl.prefix)
 		}
 	}
 }
