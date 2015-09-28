@@ -181,6 +181,8 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 	comp.Lock()
 	defer comp.Unlock()
 	for !comp.initialized {
+		log.Printf("[computations] Computation %s not initialized, syncing with group",
+			comp.computationID)
 		areWeLeader, currentLeader, err := comp.groupHandler.GetStatus()
 		if err != nil {
 			return err
@@ -224,13 +226,15 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 }
 
 func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
+	comp.RLock()
 	if !comp.initialized {
-		log.Println("[computations] Computation %s not initialized, syncing with group",
-			comp.computationID)
+		comp.RUnlock()
 		err := comp.syncStateWithMaster()
 		if err != nil {
 			return err
 		}
+	} else {
+		comp.RUnlock()
 	}
 
 	// acquire a reader lock, so we wait in case there's synchronization with
@@ -364,6 +368,7 @@ func (p *computationPlugin) SubmitTuple(t *structs.Tuple) (*structs.ComputationP
 		return nil, fmt.Errorf("Error submitting tuple to plugin %s: %s",
 			p.name, err)
 	}
+	log.Println("[computations] got reply from plugin")
 	for _, t := range result.Tuples {
 		t.StreamID = p.compID
 	}

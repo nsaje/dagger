@@ -13,47 +13,43 @@ import (
 	"github.com/twinj/uuid"
 )
 
-// AvgProcessor calculates averages of numeric values over time periods
-type AvgProcessor struct {
-	state AvgCompState
+// SumProcessor calculates averages of numeric values over time periods
+type SumProcessor struct {
+	state SumCompState
 }
 
-// AvgCompState contains state needed for this statistic
-type AvgCompState struct {
-	Sums   map[time.Time]float64
-	Counts map[time.Time]int
+// SumCompState contains state needed for this statistic
+type SumCompState struct {
+	Sums map[time.Time]float64
 }
 
-// AvgCompStateJSON modified for JSON transport
-type AvgCompStateJSON struct {
+// SumCompStateJSON modified for JSON transport
+type SumCompStateJSON struct {
 	Buckets []time.Time
 	Sums    []float64
-	Counts  []int
 }
 
 // GetState returns serialized state for synchronization
-func (c *AvgProcessor) GetState() ([]byte, error) {
-	stateJSON := NewAvgProcessorStateJSON()
+func (c *SumProcessor) GetState() ([]byte, error) {
+	stateJSON := NewSumProcessorStateJSON()
 	for bucket := range c.state.Sums {
 		stateJSON.Buckets = append(stateJSON.Buckets, bucket)
 		stateJSON.Sums = append(stateJSON.Sums, c.state.Sums[bucket])
-		stateJSON.Counts = append(stateJSON.Counts, c.state.Counts[bucket])
 	}
 	log.Println("returning stateJSON:", stateJSON)
 	return json.Marshal(stateJSON)
 }
 
 // SetState deserializes and sets up a synchronized state for this computation
-func (c *AvgProcessor) SetState(state []byte) error {
-	newState := NewAvgProcessorState()
-	newStateJSON := NewAvgProcessorStateJSON()
+func (c *SumProcessor) SetState(state []byte) error {
+	newState := NewSumProcessorState()
+	newStateJSON := NewSumProcessorStateJSON()
 	err := json.Unmarshal(state, &newStateJSON)
 	if err != nil {
 		return fmt.Errorf("Error setting plugin state: %s", err)
 	}
 	for i, bucket := range newStateJSON.Buckets {
 		newState.Sums[bucket] = newStateJSON.Sums[i]
-		newState.Counts[bucket] = newStateJSON.Counts[i]
 	}
 	c.state = newState
 	log.Println("[avg] new state:", c.state)
@@ -61,42 +57,38 @@ func (c *AvgProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new tuple
-func (c *AvgProcessor) ProcessBucket(bucket time.Time, t *structs.Tuple) error {
+func (c *SumProcessor) ProcessBucket(bucket time.Time, t *structs.Tuple) error {
 	log.Println("[avg] processing", t)
 	value, _ := t.Data.(float64)
-	c.state.Counts[bucket]++
 	c.state.Sums[bucket] += value
 	return nil
 }
 
 // FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *AvgProcessor) FinalizeBucket(bucket time.Time) *structs.Tuple {
+func (c *SumProcessor) FinalizeBucket(bucket time.Time) *structs.Tuple {
 	log.Println("[avg] finalizing", bucket)
 	new := &structs.Tuple{
-		Data:      c.state.Sums[bucket] / float64(c.state.Counts[bucket]),
+		Data:      c.state.Sums[bucket],
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),
 	}
 	delete(c.state.Sums, bucket)
-	delete(c.state.Counts, bucket)
 	log.Println("[avg] finalization finished", bucket)
 	return new
 }
 
-// NewAvgProcessorState initializes state struct
-func NewAvgProcessorState() AvgCompState {
-	return AvgCompState{
-		Sums:   make(map[time.Time]float64),
-		Counts: make(map[time.Time]int),
+// NewSumProcessorState initializes state struct
+func NewSumProcessorState() SumCompState {
+	return SumCompState{
+		Sums: make(map[time.Time]float64),
 	}
 }
 
-// NewAvgProcessorStateJSON initializes state struct for transfer via JSON
-func NewAvgProcessorStateJSON() AvgCompStateJSON {
-	return AvgCompStateJSON{
+// NewSumProcessorStateJSON initializes state struct for transfer via JSON
+func NewSumProcessorStateJSON() SumCompStateJSON {
+	return SumCompStateJSON{
 		Buckets: make([]time.Time, 0),
 		Sums:    make([]float64, 0),
-		Counts:  make([]int, 0),
 	}
 }
 
@@ -108,8 +100,8 @@ func main() {
 			panic(sig)
 		}
 	}()
-	log.SetPrefix("[AvgComputation log] ")
-	log.Printf("AvgComputation started")
-	c := computations.NewTimeBucketsComputation(&AvgProcessor{state: NewAvgProcessorState()})
+	log.SetPrefix("[SumComputation log] ")
+	log.Printf("SumComputation started")
+	c := computations.NewTimeBucketsComputation(&SumProcessor{state: NewSumProcessorState()})
 	computations.StartPlugin(c)
 }

@@ -118,5 +118,6 @@ func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
 	if err != nil {
 		log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)
 	}
+	log.Printf("[dispatcher] ACK received for tuple %s", t)
 	return err
 }

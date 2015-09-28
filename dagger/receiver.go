@@ -44,9 +44,11 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	log.Printf("[receiver] Received: %s", t)
 	err := r.next.ProcessTuple(t)
 	if err != nil {
+		log.Printf("[ERROR] Processing %s failed: %s", t, err)
 		return err
 	}
 	*reply = "ok"
+	log.Printf("[receiver] ACKed: %s", t)
 	return nil
 }
 
