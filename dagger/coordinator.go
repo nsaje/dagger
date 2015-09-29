@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,8 @@ const (
 	// JobPrefix is the key prefix for jobs
 	JobPrefix = "dagger/jobs/"
 )
+
+type Tags map[string]string
 
 // Coordinator coordinates topics, their publishers and subscribers
 type Coordinator interface {
@@ -194,7 +197,7 @@ func (c *ConsulCoordinator) RegisterAsPublisher(compID string) {
 	log.Println("[coordinator] Registering as publisher for: ", compID)
 	kv := c.client.KV()
 	pair := &api.KVPair{
-		Key:     fmt.Sprintf("dagger/%s/publishers/%s", compID, c.addr.String()),
+		Key:     fmt.Sprintf("dagger/publishers/%s/%s", compID, c.addr.String()),
 		Session: c.sessionID,
 	}
 	_, _, err := kv.Acquire(pair, nil)
@@ -336,7 +339,7 @@ func (gh *groupHandler) fetch() error {
 }
 
 func (c *ConsulCoordinator) monitorPublishers(topic string) {
-	prefix := fmt.Sprintf("dagger/%s/publishers/", topic)
+	prefix := fmt.Sprintf("dagger/publishers/%s", topic)
 	kv := c.client.KV()
 	lastIndex := uint64(0)
 	lastNumPublishers := -1
@@ -369,9 +372,43 @@ func (c *ConsulCoordinator) monitorPublishers(topic string) {
 	}
 }
 
+func parseTags(topic string) Tags {
+	tags := make(Tags)
+	idx0 := strings.Index(topic, "{")
+	idx1 := strings.Index(topic, "}")
+	if idx0 == -1 || idx1 == -1 {
+		return nil
+	}
+	taglist := topic[idx0+1 : idx1]
+	pairs := strings.Split(taglist, ",")
+	for _, pair := range pairs {
+		kv := strings.Split(pair, "=")
+		if len(kv) != 2 {
+			continue
+		}
+		tags[kv[0]] = kv[1]
+	}
+	if len(tags) == 0 {
+		return nil
+	}
+	return tags
+}
+
+func stripTags(topic string) string {
+	idx0 := strings.Index(topic, "{")
+	if idx0 > 0 {
+		return topic[:idx0]
+	}
+	return topic
+}
+
 // GetSubscribers returns the addresses of subscribers interested in a certain topic
 func (c *ConsulCoordinator) GetSubscribers(topic string) ([]string, error) {
-	prefix := fmt.Sprintf("dagger/%s/subscribers/", topic)
+	tags := parseTags(topic)
+	log.Println("Publisher tags:", tags, topic)
+	topic = stripTags(topic)
+	prefix := fmt.Sprintf("dagger/subscribers/%s", topic)
+
 	c.subscribersLock.RLock()
 	subsList := c.subscribers[prefix]
 	c.subscribersLock.RUnlock()
@@ -380,7 +417,7 @@ func (c *ConsulCoordinator) GetSubscribers(topic string) ([]string, error) {
 		subsList = c.subscribers[prefix]
 		// check again, otherwise someone might have already acquired write lock before us
 		if subsList == nil {
-			subsList = &subscribersList{prefix: prefix, c: c}
+			subsList = &subscribersList{prefix: prefix, tags: tags, c: c}
 			err := subsList.fetch()
 			if err != nil {
 				return nil, err
@@ -395,12 +432,13 @@ func (c *ConsulCoordinator) GetSubscribers(topic string) ([]string, error) {
 }
 
 func (c *ConsulCoordinator) constructSubscriberKey(topic string) string {
-	return fmt.Sprintf("dagger/%s/subscribers/%s", topic, c.addr.String())
+	return fmt.Sprintf("dagger/subscribers/%s/%s", topic, c.addr.String())
 }
 
 type subscribersList struct {
 	subscribers []string
 	prefix      string
+	tags        Tags
 	lastAccess  time.Time
 	lastIndex   uint64
 	c           *ConsulCoordinator
@@ -446,9 +484,22 @@ func (sl *subscribersList) fetch() error {
 		return err
 	}
 	sl.lastIndex = queryMeta.LastIndex
-	subscribers := make([]string, len(keys))
-	for i, key := range keys {
-		subscribers[i] = key[len(sl.prefix):]
+	subscribers := make([]string, 0, len(keys))
+	for _, key := range keys {
+		tags := parseTags(key)
+		log.Println("[coordinator][tags] Publisher", sl.tags, ", subscriber", tags)
+		tagsMatch := true
+		for k, v := range tags {
+			if sl.tags[k] != v {
+				tagsMatch = false
+			}
+		}
+		if tagsMatch {
+			idx := strings.LastIndex(key, "/")
+			if idx > 0 {
+				subscribers = append(subscribers, key[idx+1:])
+			}
+		}
 	}
 	sl.subscribers = subscribers
 	return nil

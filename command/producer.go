@@ -66,7 +66,7 @@ func Producer(c *cli.Context) {
 					log.Fatalf("Error running plugin: %s", err)
 				}
 				defer client.Close()
-				p := producerPlugin{client}
+				p := producerPlugin{client, c.Args().Get(1)}
 				for {
 					log.Println("Getting next tuple from plugin...")
 					res, err := p.GetNext()
@@ -83,7 +83,8 @@ func Producer(c *cli.Context) {
 }
 
 type producerPlugin struct {
-	client *rpc.Client
+	client   *rpc.Client
+	streamID string
 }
 
 func (p producerPlugin) GetNext() (*structs.Tuple, error) {
@@ -91,6 +92,7 @@ func (p producerPlugin) GetNext() (*structs.Tuple, error) {
 	err := p.client.Call("Producer.GetNext", "", &result)
 	// assign ID
 	result.ID = uuid.NewV4().String()
+	result.StreamID = p.streamID
 	return &result, err
 }
 
