@@ -1,0 +1,85 @@
+{
+// parser grammar for alarms
+
+package main
+
+}
+
+AlarmDefinition <- _ e:Expr _ mb:MatchBy? {
+  var matchBy string
+  if mb != nil {
+    matchBy = mb.(string)
+  }
+  return AlarmDefinition{e.(Node), matchBy}, nil
+}
+
+MatchBy <- ',' _ matchBy:Any {
+  return matchBy.(string), nil
+}
+
+Any <- .* {
+  return string(c.text), nil
+}
+
+Expr <- _ e1:AndExpr _ OrOperator _ e2:Expr _ {
+  return BinNode{OR, e1.(Node), e2.(Node)}, nil
+} / _ e:AndExpr _ {
+  return e.(Node), nil
+}
+
+AndExpr <- _ e1:SubExpr _ AndOperator _ e2:AndExpr _ {
+  return BinNode{AND, e1.(Node), e2.(Node)}, nil
+} / _ e:SubExpr _ {
+  return e.(Node), nil
+}
+
+SubExpr <- streamID:StreamID _ op:RelationalOperator _ thresholdValue:Float64 _ times:Times? {
+  var periods int
+  if times != nil {
+    periods = times.(int)
+  }
+  return LeafNode{
+    streamID.(string),
+    op.(RelationalOperator),
+    thresholdValue.(float64),
+    periods,
+  }, nil
+} / "(" e:Expr ")" {
+  return e.(Node), nil
+}
+
+Times <- "times" _ periods:[0-9]+ {
+  return strconv.Atoi(string(periods.([]byte)))
+}
+
+// contiguous string of non-whitespace chars followed by optional curly-braces
+// enclosed tags OR contiguous string of non-whitespace chars followed by
+// parenthesis enclosed params
+StreamID <- ( [^ \n\t\r()]+ ParenthesesEnclosure
+  / ([^ \n\t\r(){}]+ ('{' .* '}')?) )
+{
+  return string(c.text), nil
+}
+
+ParenthesesEnclosure <- '(' [^()]* (ParenthesesEnclosure [^()]*)* ')'
+
+OrOperator <- "or" / "||"
+
+AndOperator <- "and" / "&&"
+
+RelationalOperator <-
+    "lte" { return LTE, nil }
+  / "<=" { return LTE, nil }
+  / "gte" { return GTE, nil }
+  / ">=" { return GTE, nil }
+  / "lt" { return LT, nil }
+  / "<" { return LT, nil }
+  / "gt" { return GT, nil }
+  / ">" { return GT, nil }
+
+Float64 <- ('-' '+')? [0-9]* ('.' [0-9]+)? {
+  return strconv.ParseFloat(string(c.text), 64)
+}
+
+_ "whitespace" <- [ \n\t\r]*
+EOF <- !.
