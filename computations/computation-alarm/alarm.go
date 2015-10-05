@@ -28,17 +28,68 @@ type Bucket struct {
 	fired     bool
 }
 
+type valueTable struct {
+	values     map[string][]*structs.Tuple
+	maxPeriods map[string]int
+	LWM        time.Time
+}
+
+func newValueTable() valueTable {
+	return valueTable{
+		make(map[string][]*structs.Tuple),
+		make(map[string]int),
+		time.Time{},
+	}
+}
+
+func (vt *valueTable) getLastN(streamID string, n int) []*structs.Tuple {
+	timeSeries := vt.values[streamID]
+	i := sort.Search(len(timeSeries), func(i int) bool {
+		return timeSeries[i].Timestamp.After(vt.LWM)
+	})
+	if i < n {
+		// not enough tuples in time series
+		return nil
+	}
+
+	// delete old tuples
+	deleteTo := i - vt.maxPeriods[streamID]
+	if deleteTo > 0 {
+		timeSeries = timeSeries[deleteTo:]
+		vt.values[streamID] = timeSeries
+	}
+
+	return timeSeries[i-n : i]
+}
+
+func (vt *valueTable) insert(t *structs.Tuple) {
+	timeSeries := vt.values[t.StreamID]
+	vt.LWM = t.LWM
+
+	// find the correct place for our tuple
+	i := sort.Search(len(timeSeries), func(i int) bool {
+		return timeSeries[i].Timestamp.After(t.Timestamp)
+	})
+
+	// insert it
+	timeSeries = append(timeSeries, nil)
+	copy(timeSeries[i+1:], timeSeries[i:])
+	timeSeries[i] = t
+
+	vt.values[t.StreamID] = timeSeries
+}
+
 type alarmComputationState struct {
 	definition AlarmDefinition
 	numInputs  int
-	buckets    []Bucket
+	valueTable valueTable
 }
 
 func NewAlarmComputationState() alarmComputationState {
 	return alarmComputationState{
 		AlarmDefinition{},
 		0,
-		make([]Bucket, 0, 10),
+		newValueTable(),
 	}
 }
 
@@ -74,37 +125,33 @@ func (c *AlarmComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, erro
 		return nil, fmt.Errorf("Wrong data format, expected float!")
 	}
 
-	// find the correct bucket in our sorted list of buckets
-	i := sort.Search(len(c.state.buckets), func(i int) bool {
-		return c.state.buckets[i].timestamp.After(t.Timestamp) ||
-			c.state.buckets[i].timestamp.Equal(t.Timestamp)
-	})
-	// if it doesn't exist, create and insert it
-	if i == len(c.state.buckets) || !c.state.buckets[i].timestamp.Equal(t.Timestamp) {
-		b := Bucket{t.Timestamp, make(map[string]float64), false, false}
-		c.state.buckets = append(c.state.buckets, Bucket{})
-		copy(c.state.buckets[i+1:], c.state.buckets[i:])
-		c.state.buckets[i] = b
-	}
-
-	// store the value inside bucket
-	c.state.buckets[i].values[t.StreamID] = t.Data.(float64)
-
-	// evaluate if the bucket has all the necessary values for evaluation
-	if len(c.state.buckets[i].values) == c.state.numInputs {
-		fired := c.state.definition.tree.eval(c.state.buckets[i].values)
-		c.state.buckets[i].evaluated = true
-		c.state.buckets[i].fired = fired
-		if fired {
-			new := &structs.Tuple{
-				Data: fmt.Sprintf("Alarm %+v fired with values %v",
-					c.state.definition.tree, c.state.buckets[i].values),
-				Timestamp: t.Timestamp,
-				ID:        uuid.NewV4().String(),
-			}
-			return []*structs.Tuple{new}, nil
+	c.state.valueTable.insert(t)
+	fired, values := c.state.definition.tree.eval(c.state.valueTable)
+	if fired {
+		new := &structs.Tuple{
+			Data: fmt.Sprintf("Alarm %+v fired with values %+v",
+				c.state.definition.tree, values),
+			Timestamp: t.Timestamp,
+			ID:        uuid.NewV4().String(),
 		}
+		return []*structs.Tuple{new}, nil
 	}
+
+	// // evaluate if the bucket has all the necessary values for evaluation
+	// if len(c.state.buckets[i].values) == c.state.numInputs {
+	// 	fired := c.state.definition.tree.eval(c.state.buckets[i].values)
+	// 	c.state.buckets[i].evaluated = true
+	// 	c.state.buckets[i].fired = fired
+	// 	if fired {
+	// 		new := &structs.Tuple{
+	// 			Data: fmt.Sprintf("Alarm %+v fired with values %v",
+	// 				c.state.definition.tree, c.state.buckets[i].values),
+	// 			Timestamp: t.Timestamp,
+	// 			ID:        uuid.NewV4().String(),
+	// 		}
+	// 		return []*structs.Tuple{new}, nil
+	// 	}
+	// }
 
 	return nil, nil
 }

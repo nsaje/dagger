@@ -34,7 +34,7 @@ AndExpr <- _ e1:SubExpr _ AndOperator _ e2:AndExpr _ {
 }
 
 SubExpr <- streamID:StreamID _ op:RelationalOperator _ thresholdValue:Float64 _ times:Times? {
-  var periods int
+  periods := 1
   if times != nil {
     periods = times.(int)
   }

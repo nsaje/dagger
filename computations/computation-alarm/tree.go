@@ -17,7 +17,7 @@ const (
 )
 
 type Node interface {
-	eval(values map[string]float64) bool
+	eval(valueTable valueTable) (bool, map[string][]float64)
 	getStreamIDs() []string
 }
 
@@ -32,18 +32,29 @@ func (n LeafNode) getStreamIDs() []string {
 	return []string{n.streamID}
 }
 
-func (n LeafNode) eval(values map[string]float64) bool {
-	switch n.relationalOperator {
-	case LT:
-		return values[n.streamID] < n.threshold
-	case GT:
-		return values[n.streamID] > n.threshold
-	case LTE:
-		return values[n.streamID] <= n.threshold
-	case GTE:
-		return values[n.streamID] >= n.threshold
+func (n LeafNode) eval(vt valueTable) (bool, map[string][]float64) {
+	result := true
+	values := make(map[string][]float64)
+	values[n.streamID] = make([]float64, n.times)
+	lastNTuples := vt.getLastN(n.streamID, n.times)
+	if len(lastNTuples) == 0 {
+		return false, values
 	}
-	return false
+	for i, t := range lastNTuples {
+		value := t.Data.(float64)
+		values[n.streamID][i] = value
+		switch n.relationalOperator {
+		case LT:
+			result = result && value < n.threshold
+		case GT:
+			result = result && value > n.threshold
+		case LTE:
+			result = result && value <= n.threshold
+		case GTE:
+			result = result && value >= n.threshold
+		}
+	}
+	return result, values
 }
 
 type BinNode struct {
@@ -52,14 +63,32 @@ type BinNode struct {
 	right Node
 }
 
-func (n BinNode) eval(values map[string]float64) bool {
+func mergeValues(l map[string][]float64, r map[string][]float64) map[string][]float64 {
+	values := l
+	for k, rightVal := range r {
+		leftVal := l[k]
+		// skip if key already exists and contains a longer slice (larger periods value)
+		if leftVal != nil && len(leftVal) > len(rightVal) {
+			continue
+		}
+		values[k] = rightVal
+	}
+	return values
+}
+
+func (n BinNode) eval(vt valueTable) (bool, map[string][]float64) {
+	leftResult, leftValues := n.left.eval(vt)
+	rightResult, rightValues := n.right.eval(vt)
+	values := mergeValues(leftValues, rightValues)
+	var result bool
 	if n.op == OR {
-		return n.left.eval(values) || n.right.eval(values)
+		result = leftResult || rightResult
 	} else if n.op == AND {
-		return n.left.eval(values) && n.right.eval(values)
+		result = leftResult && rightResult
 	} else {
 		panic("unknown operator")
 	}
+	return result, values
 }
 
 func (n BinNode) getStreamIDs() []string {
