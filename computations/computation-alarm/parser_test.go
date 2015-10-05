@@ -8,11 +8,16 @@ import (
 
 func TestParser(t *testing.T) {
 	inputs := []string{
+		"test > 15",
 		"avg(cpu_util{t1=v1,t2=v2}, 5s) > 30.0 or avg(sum(test)) > 16.0 and sum(test2) < 13",
 		"(avg(cpu_util{t1=v1,t2=v2}, 5s) > 30.0 or avg(sum(test)) > 16.0) and sum(test2) < 13",
 		"avg(cpu_util{t1=v1,t2=v2}, 5s) > 30.0 or avg(sum(test{t1=v1})) > 16.0 and sum(test2) < 13, t1",
 	}
 	expected := []AlarmDefinition{
+		AlarmDefinition{
+			LeafNode{"test", GT, 15.0, 0},
+			"",
+		},
 		AlarmDefinition{
 			BinNode{OR,
 				LeafNode{"avg(cpu_util{t1=v1,t2=v2}, 5s)", GT, 30.0, 0},
