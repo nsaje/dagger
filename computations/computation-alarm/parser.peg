@@ -48,8 +48,12 @@ SubExpr <- streamID:StreamID _ op:RelationalOperator _ thresholdValue:Float64 _ 
   return e.(Node), nil
 }
 
-Times <- "times" _ periods:[0-9]+ {
-  return strconv.Atoi(string(periods.([]byte)))
+Times <- "times" _ periods:Int {
+  return periods, nil
+}
+
+Int <- [0-9]+ {
+  return strconv.Atoi(string(c.text))
 }
 
 // contiguous string of non-whitespace chars followed by optional curly-braces

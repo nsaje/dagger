@@ -52,6 +52,8 @@ func (vt *valueTable) getLastN(streamID string, n int) []*structs.Tuple {
 		return nil
 	}
 
+	evalSlice := timeSeries[i-n : i]
+
 	// delete old tuples
 	deleteTo := i - vt.maxPeriods[streamID]
 	if deleteTo > 0 {
@@ -59,7 +61,7 @@ func (vt *valueTable) getLastN(streamID string, n int) []*structs.Tuple {
 		vt.values[streamID] = timeSeries
 	}
 
-	return timeSeries[i-n : i]
+	return evalSlice
 }
 
 func (vt *valueTable) insert(t *structs.Tuple) {
@@ -80,14 +82,16 @@ func (vt *valueTable) insert(t *structs.Tuple) {
 }
 
 type alarmComputationState struct {
-	definition AlarmDefinition
-	numInputs  int
-	valueTable valueTable
+	definition       AlarmDefinition
+	stringDefinition string
+	numInputs        int
+	valueTable       valueTable
 }
 
 func NewAlarmComputationState() alarmComputationState {
 	return alarmComputationState{
 		AlarmDefinition{},
+		"",
 		0,
 		newValueTable(),
 	}
@@ -101,9 +105,21 @@ func (c *AlarmComputation) GetInfo(definition string) (structs.ComputationPlugin
 			fmt.Errorf("Error parsing alarm definition: %s", err)
 	}
 	alarmDefinition := parsed.(AlarmDefinition)
-	inputs := alarmDefinition.tree.getStreamIDs()
+	leafNodes := alarmDefinition.tree.getLeafNodes()
+	inputs := make([]string, 0, len(leafNodes))
+	maxPeriods := make(map[string]int)
+	for _, leafNode := range leafNodes {
+		inputs = append(inputs, leafNode.streamID)
+		currMax := maxPeriods[leafNode.streamID]
+		if leafNode.periods > currMax {
+			maxPeriods[leafNode.streamID] = leafNode.periods
+		}
+	}
+
 	c.state.definition = alarmDefinition
+	c.state.stringDefinition = definition
 	c.state.numInputs = len(inputs)
+	c.state.valueTable.maxPeriods = maxPeriods
 	info := structs.ComputationPluginInfo{
 		Inputs:   inputs,
 		Stateful: true,
@@ -129,12 +145,15 @@ func (c *AlarmComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, erro
 	fired, values := c.state.definition.tree.eval(c.state.valueTable)
 	if fired {
 		new := &structs.Tuple{
-			Data: fmt.Sprintf("Alarm %+v fired with values %+v",
-				c.state.definition.tree, values),
+			Data: fmt.Sprintf("Alarm '%s' fired with values %+v",
+				c.state.stringDefinition, values),
 			Timestamp: t.Timestamp,
 			ID:        uuid.NewV4().String(),
 		}
 		return []*structs.Tuple{new}, nil
+	} else {
+		log.Printf("Alarm '%s' NOT fired with values %+v",
+			c.state.stringDefinition, values)
 	}
 
 	// // evaluate if the bucket has all the necessary values for evaluation

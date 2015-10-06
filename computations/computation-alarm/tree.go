@@ -18,25 +18,25 @@ const (
 
 type Node interface {
 	eval(valueTable valueTable) (bool, map[string][]float64)
-	getStreamIDs() []string
+	getLeafNodes() []LeafNode
 }
 
 type LeafNode struct {
 	streamID           string
 	relationalOperator RelationalOperator
 	threshold          float64
-	times              int
+	periods            int
 }
 
-func (n LeafNode) getStreamIDs() []string {
-	return []string{n.streamID}
+func (n LeafNode) getLeafNodes() []LeafNode {
+	return []LeafNode{n}
 }
 
 func (n LeafNode) eval(vt valueTable) (bool, map[string][]float64) {
 	result := true
 	values := make(map[string][]float64)
-	values[n.streamID] = make([]float64, n.times)
-	lastNTuples := vt.getLastN(n.streamID, n.times)
+	values[n.streamID] = make([]float64, n.periods)
+	lastNTuples := vt.getLastN(n.streamID, n.periods)
 	if len(lastNTuples) == 0 {
 		return false, values
 	}
@@ -91,6 +91,6 @@ func (n BinNode) eval(vt valueTable) (bool, map[string][]float64) {
 	return result, values
 }
 
-func (n BinNode) getStreamIDs() []string {
-	return append(n.left.getStreamIDs(), n.right.getStreamIDs()...)
+func (n BinNode) getLeafNodes() []LeafNode {
+	return append(n.left.getLeafNodes(), n.right.getLeafNodes()...)
 }
