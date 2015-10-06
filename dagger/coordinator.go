@@ -129,7 +129,7 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 			if err != nil {
 				// FIXME
 				log.Println("[ERROR][coordinator][WatchJobs]:", err)
-				continue
+				panic(err)
 			}
 			lastIndex = queryMeta.LastIndex
 
@@ -146,7 +146,7 @@ func (c *ConsulCoordinator) ManageJobs(cm ComputationManager) {
 				if err != nil {
 					// FIXME
 					log.Println("[ERROR][coordinator][WatchJobs][gotJob]:", err)
-					continue
+					panic(err)
 				}
 				if gotJob {
 					log.Println("[coordinator] Got job:", keys[i])
@@ -407,7 +407,7 @@ func (c *ConsulCoordinator) GetSubscribers(topic string) ([]string, error) {
 	tags := parseTags(topic)
 	log.Println("Publisher tags:", tags, topic)
 	topic = stripTags(topic)
-	prefix := fmt.Sprintf("dagger/subscribers/%s", topic)
+	prefix := fmt.Sprintf("dagger/subscribers/%s/", topic)
 
 	c.subscribersLock.RLock()
 	subsList := c.subscribers[prefix]
