@@ -21,13 +21,6 @@ type AlarmComputation struct {
 	state alarmComputationState
 }
 
-type Bucket struct {
-	timestamp time.Time
-	values    map[string]float64
-	evaluated bool
-	fired     bool
-}
-
 type valueTable struct {
 	values     map[string][]*structs.Tuple
 	maxPeriods map[string]int
