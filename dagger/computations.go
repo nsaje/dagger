@@ -14,6 +14,7 @@ import (
 
 	"github.com/natefinch/pie"
 	"github.com/nsaje/dagger/structs"
+	"github.com/rcrowley/go-metrics"
 )
 
 // ComputationManager manages computations that are being executed
@@ -34,18 +35,23 @@ type computationManager struct {
 	coordinator   Coordinator
 	persister     Persister
 	dispatcher    TupleProcessor
+
+	counter metrics.Counter
 }
 
 // NewComputationManager returns an object that can manage computations
 func NewComputationManager(coordinator Coordinator,
 	persister Persister,
 	dispatcher TupleProcessor) *computationManager {
+	c := metrics.NewCounter()
+	metrics.Register("processing", c)
 	return &computationManager{
 		computations:  make(map[string]Computation),
 		subscriptions: make(map[string][]TupleProcessor),
 		coordinator:   coordinator,
 		persister:     persister,
 		dispatcher:    dispatcher,
+		counter:       c,
 	}
 }
 
@@ -134,6 +140,9 @@ func (cm *computationManager) Sync(computationID string) (*structs.ComputationSn
 func (cm *computationManager) ProcessTuple(t *structs.Tuple) error {
 	comps := cm.subscriptions[t.StreamID]
 	log.Printf("[computations] Processing: %s", t)
+
+	cm.counter.Inc(1)
+	defer cm.counter.Dec(1)
 
 	// Feed the tuple into interested computations
 	return ProcessMultipleProcessors(comps, t)

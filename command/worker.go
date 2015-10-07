@@ -2,8 +2,11 @@ package command
 
 import (
 	"log"
+	"time"
 
 	"github.com/nsaje/dagger/dagger"
+	"github.com/rcrowley/go-metrics"
+	"github.com/vrischmann/go-metrics-influxdb"
 
 	"github.com/codegangsta/cli"
 )
@@ -11,6 +14,16 @@ import (
 // Worker takes on computations. It registers as a subscriber for necessary
 // topics and publishes the results of the computations
 func Worker(c *cli.Context) {
+	// set up monitoring
+	go influxdb.InfluxDB(
+		metrics.DefaultRegistry, // metrics registry
+		time.Second*1,           // interval
+		"http://localhost:8086", // the InfluxDB url
+		"dagger",                // your InfluxDB database
+		"root",                  // your InfluxDB user
+		"root",                  // your InfluxDB password
+	)
+
 	conf := dagger.DefaultConfig()
 
 	persister, err := dagger.NewPersister(conf)
