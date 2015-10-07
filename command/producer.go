@@ -37,7 +37,7 @@ func Producer(c *cli.Context) {
 		log.Fatal("Error setting up coordinator")
 	}
 
-	coordinator.RegisterAsPublisher(c.Args().Get(1))
+	// coordinator.RegisterAsPublisher(c.Args().Get(1))
 
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
 

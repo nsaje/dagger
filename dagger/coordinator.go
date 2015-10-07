@@ -215,7 +215,11 @@ func (c *ConsulCoordinator) SubscribeTo(topic string) error {
 	}
 	// ignore bool, since if it's false, it just means we're already subscribed
 	_, _, err := kv.Acquire(pair, nil)
-	go c.monitorPublishers(topic)
+
+	if strings.ContainsAny(topic, "()") {
+		// only monitor publishers if it's a computation
+		go c.monitorPublishers(topic)
+	}
 	return err
 }
 
