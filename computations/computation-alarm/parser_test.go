@@ -13,12 +13,12 @@ func TestParser(t *testing.T) {
 		"(avg(cpu_util{t1=v1,t2=v2}, 5s) > 30.0 or avg(sum(test)) > 16.0) and sum(test2) < 13",
 		"avg(cpu_util{t1=v1,t2=v2}, 5s) > 30.0 or avg(sum(test{t1=v1})) > 16.0 and sum(test2) < 13, t1",
 	}
-	expected := []AlarmDefinition{
-		AlarmDefinition{
+	expected := []alarmDefinition{
+		alarmDefinition{
 			LeafNode{"test", GT, 15.0, 3},
 			"",
 		},
-		AlarmDefinition{
+		alarmDefinition{
 			BinNode{OR,
 				LeafNode{"avg(cpu_util{t1=v1,t2=v2}, 5s)", GT, 30.0, 1},
 				BinNode{AND,
@@ -27,7 +27,7 @@ func TestParser(t *testing.T) {
 			},
 			"",
 		},
-		AlarmDefinition{
+		alarmDefinition{
 			BinNode{AND,
 				BinNode{OR,
 					LeafNode{"avg(cpu_util{t1=v1,t2=v2}, 5s)", GT, 30.0, 1},
@@ -37,7 +37,7 @@ func TestParser(t *testing.T) {
 			},
 			"",
 		},
-		AlarmDefinition{
+		alarmDefinition{
 			BinNode{OR,
 				LeafNode{"avg(cpu_util{t1=v1,t2=v2}, 5s)", GT, 30.0, 1},
 				BinNode{AND,

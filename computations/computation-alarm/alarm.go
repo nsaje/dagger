@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -11,7 +12,7 @@ import (
 	"github.com/twinj/uuid"
 )
 
-type AlarmDefinition struct {
+type alarmDefinition struct {
 	tree    Node
 	matchBy string
 }
@@ -22,8 +23,8 @@ type AlarmComputation struct {
 }
 
 type valueTable struct {
-	values     map[string][]*structs.Tuple
-	maxPeriods map[string]int
+	Values     map[string][]*structs.Tuple
+	MaxPeriods map[string]int
 	LWM        time.Time
 }
 
@@ -36,7 +37,7 @@ func newValueTable() valueTable {
 }
 
 func (vt *valueTable) getLastN(streamID string, n int) []*structs.Tuple {
-	timeSeries := vt.values[streamID]
+	timeSeries := vt.Values[streamID]
 	i := sort.Search(len(timeSeries), func(i int) bool {
 		return timeSeries[i].Timestamp.After(vt.LWM)
 	})
@@ -48,17 +49,17 @@ func (vt *valueTable) getLastN(streamID string, n int) []*structs.Tuple {
 	evalSlice := timeSeries[i-n : i]
 
 	// delete old tuples
-	deleteTo := i - vt.maxPeriods[streamID]
+	deleteTo := i - vt.MaxPeriods[streamID]
 	if deleteTo > 0 {
 		timeSeries = timeSeries[deleteTo:]
-		vt.values[streamID] = timeSeries
+		vt.Values[streamID] = timeSeries
 	}
 
 	return evalSlice
 }
 
 func (vt *valueTable) insert(t *structs.Tuple) {
-	timeSeries := vt.values[t.StreamID]
+	timeSeries := vt.Values[t.StreamID]
 	vt.LWM = t.LWM
 
 	// find the correct place for our tuple
@@ -71,33 +72,41 @@ func (vt *valueTable) insert(t *structs.Tuple) {
 	copy(timeSeries[i+1:], timeSeries[i:])
 	timeSeries[i] = t
 
-	vt.values[t.StreamID] = timeSeries
+	vt.Values[t.StreamID] = timeSeries
 }
 
 type alarmComputationState struct {
-	definition       AlarmDefinition
-	stringDefinition string
-	numInputs        int
-	valueTable       valueTable
+	definition       alarmDefinition
+	StringDefinition string
+	NumInputs        int
+	ValueTable       valueTable
 }
 
 func NewAlarmComputationState() alarmComputationState {
 	return alarmComputationState{
-		AlarmDefinition{},
+		alarmDefinition{},
 		"",
 		0,
 		newValueTable(),
 	}
 }
 
-func (c *AlarmComputation) GetInfo(definition string) (structs.ComputationPluginInfo, error) {
-	log.Println("parsing definition:", definition)
+func parseDefinition(definition string) (alarmDefinition, error) {
 	parsed, err := Parse("alarmDefinition", []byte(definition))
 	if err != nil {
-		return structs.ComputationPluginInfo{},
-			fmt.Errorf("Error parsing alarm definition: %s", err)
+		return alarmDefinition{},
+			fmt.Errorf("Error parsing alarm definition '%s': %s", definition, err)
 	}
-	alarmDefinition := parsed.(AlarmDefinition)
+	alarmDefinition := parsed.(alarmDefinition)
+	return alarmDefinition, nil
+}
+
+func (c *AlarmComputation) GetInfo(definition string) (structs.ComputationPluginInfo, error) {
+	log.Println("parsing definition:", definition)
+	alarmDefinition, err := parseDefinition(definition)
+	if err != nil {
+		return structs.ComputationPluginInfo{}, err
+	}
 	leafNodes := alarmDefinition.tree.getLeafNodes()
 	inputs := make([]string, 0, len(leafNodes))
 	maxPeriods := make(map[string]int)
@@ -110,9 +119,9 @@ func (c *AlarmComputation) GetInfo(definition string) (structs.ComputationPlugin
 	}
 
 	c.state.definition = alarmDefinition
-	c.state.stringDefinition = definition
-	c.state.numInputs = len(inputs)
-	c.state.valueTable.maxPeriods = maxPeriods
+	c.state.StringDefinition = definition
+	c.state.NumInputs = len(inputs)
+	c.state.ValueTable.MaxPeriods = maxPeriods
 	info := structs.ComputationPluginInfo{
 		Inputs:   inputs,
 		Stateful: true,
@@ -121,10 +130,21 @@ func (c *AlarmComputation) GetInfo(definition string) (structs.ComputationPlugin
 }
 
 func (c *AlarmComputation) GetState() ([]byte, error) {
-	return []byte{}, nil
+	return json.Marshal(c.state)
 }
 
 func (c *AlarmComputation) SetState(state []byte) error {
+	newState := NewAlarmComputationState()
+	err := json.Unmarshal(state, &newState)
+	if err != nil {
+		return err
+	}
+	alarmDefinition, err := parseDefinition(newState.StringDefinition)
+	if err != nil {
+		return err
+	}
+	newState.definition = alarmDefinition
+	c.state = newState
 	return nil
 }
 
@@ -134,19 +154,19 @@ func (c *AlarmComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, erro
 		return nil, fmt.Errorf("Wrong data format, expected float!")
 	}
 
-	c.state.valueTable.insert(t)
-	fired, values := c.state.definition.tree.eval(c.state.valueTable)
+	c.state.ValueTable.insert(t)
+	fired, values := c.state.definition.tree.eval(c.state.ValueTable)
 	if fired {
 		new := &structs.Tuple{
 			Data: fmt.Sprintf("Alarm '%s' fired with values %+v",
-				c.state.stringDefinition, values),
+				c.state.StringDefinition, values),
 			Timestamp: t.Timestamp,
 			ID:        uuid.NewV4().String(),
 		}
 		return []*structs.Tuple{new}, nil
 	} else {
 		log.Printf("Alarm '%s' NOT fired with values %+v",
-			c.state.stringDefinition, values)
+			c.state.StringDefinition, values)
 	}
 
 	// // evaluate if the bucket has all the necessary values for evaluation

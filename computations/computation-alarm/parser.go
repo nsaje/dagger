@@ -737,7 +737,7 @@ func (c *current) onAlarmDefinition1(e, mb interface{}) (interface{}, error) {
 	if mb != nil {
 		matchBy = mb.(string)
 	}
-	return AlarmDefinition{e.(Node), matchBy}, nil
+	return alarmDefinition{e.(Node), matchBy}, nil
 }
 
 func (p *parser) callonAlarmDefinition1() (interface{}, error) {
