@@ -14,15 +14,20 @@ import (
 // Worker takes on computations. It registers as a subscriber for necessary
 // topics and publishes the results of the computations
 func Worker(c *cli.Context) {
-	// set up monitoring
-	go influxdb.InfluxDB(
-		metrics.DefaultRegistry, // metrics registry
-		time.Second*1,           // interval
-		"http://localhost:8086", // the InfluxDB url
-		"dagger",                // your InfluxDB database
-		"root",                  // your InfluxDB user
-		"root",                  // your InfluxDB password
-	)
+
+	appmetrics := c.String("appmetrics")
+	log.Println("Appmetrics: ", appmetrics)
+	if len(appmetrics) > 0 {
+		// set up monitoring
+		go influxdb.InfluxDB(
+			metrics.DefaultRegistry, // metrics registry
+			time.Second*1,           // interval
+			appmetrics,              // the InfluxDB url
+			"dagger",                // your InfluxDB database
+			"root",                  // your InfluxDB user
+			"root",                  // your InfluxDB password
+		)
+	}
 
 	conf := dagger.DefaultConfig()
 

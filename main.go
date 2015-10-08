@@ -35,6 +35,12 @@ func main() {
 			Aliases: []string{"w"},
 			Usage:   "start dagger node as a worker",
 			Action:  command.Worker,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "appmetrics",
+					Usage: "InfluxDB URL for app metrics (how many tuples are being processed etc.)",
+				},
+			},
 		},
 		{
 			Name:    "subscriber",
