@@ -16,15 +16,15 @@ import (
 
 type HttpAPI struct {
 	dispatcher  *Dispatcher
-	subscribers httpSubscribers
+	subscribers *httpSubscribers
 }
 
 func NewHttpAPI(receiver *Receiver, dispatcher *Dispatcher) HttpAPI {
 	return HttpAPI{
 		dispatcher,
-		httpSubscribers{
+		&httpSubscribers{
 			receiver: receiver,
-			subs:     make(map[string][]chan *structs.Tuple),
+			subs:     make(map[string]map[chan *structs.Tuple]struct{}),
 			lock:     &sync.RWMutex{},
 		},
 	}
@@ -81,10 +81,8 @@ func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 	ch := make(chan *structs.Tuple)
 	disconnected := w.(http.CloseNotifier).CloseNotify()
 
-	w.Write([]byte("Subscribing to" + topicGlob + "\n"))
-	w.(http.Flusher).Flush()
-
 	api.subscribers.SubscribeTo(topicGlob, ch)
+	defer api.subscribers.UnsubscribeFrom(topicGlob, ch)
 	for {
 		select {
 		case t := <-ch:
@@ -93,7 +91,6 @@ func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("\n"))
 			w.(http.Flusher).Flush()
 		case <-disconnected:
-			api.subscribers.UnsubscribeFrom(topicGlob, ch)
 			return
 		}
 	}
@@ -101,36 +98,35 @@ func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 
 type httpSubscribers struct {
 	receiver *Receiver
-	subs     map[string][]chan *structs.Tuple
+	subs     map[string]map[chan *structs.Tuple]struct{}
 	lock     *sync.RWMutex
 }
 
-func (hs httpSubscribers) SubscribeTo(streamID string, ch chan *structs.Tuple) {
+func (hs *httpSubscribers) SubscribeTo(streamID string, ch chan *structs.Tuple) {
 	hs.lock.Lock()
 	defer hs.lock.Unlock()
-	hs.subs[streamID] = append(hs.subs[streamID], ch)
-	hs.receiver.SubscribeTo(streamID, hs)
+	subscribersSet := hs.subs[streamID]
+	if subscribersSet == nil {
+		subscribersSet = make(map[chan *structs.Tuple]struct{})
+		hs.receiver.SubscribeTo(streamID, hs)
+	}
+	subscribersSet[ch] = struct{}{}
+	hs.subs[streamID] = subscribersSet
 }
 
-func (hs httpSubscribers) UnsubscribeFrom(streamID string, ch chan *structs.Tuple) {
+func (hs *httpSubscribers) UnsubscribeFrom(streamID string, ch chan *structs.Tuple) {
 	hs.lock.Lock()
 	defer hs.lock.Unlock()
-	hs.receiver.UnsubscribeFrom(streamID, hs)
-	idx := -1
-	for i, c := range hs.subs[streamID] {
-		if c == ch {
-			idx = i
-		}
-	}
-	if idx != -1 {
-		hs.subs[streamID] = append(hs.subs[streamID][:idx], hs.subs[streamID][idx+1:]...)
+	delete(hs.subs[streamID], ch)
+	if len(hs.subs[streamID]) == 0 {
+		hs.receiver.UnsubscribeFrom(streamID, hs)
 	}
 }
 
-func (hs httpSubscribers) ProcessTuple(t *structs.Tuple) error {
+func (hs *httpSubscribers) ProcessTuple(t *structs.Tuple) error {
 	hs.lock.RLock()
 	defer hs.lock.RUnlock()
-	for _, ch := range hs.subs[t.StreamID] {
+	for ch := range hs.subs[t.StreamID] {
 		ch <- t
 	}
 	return nil

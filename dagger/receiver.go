@@ -18,7 +18,7 @@ type Receiver struct {
 	server            *rpc.Server
 	listener          net.Listener
 	computationSyncer ComputationSyncer
-	subscribers       map[string][]TupleProcessor
+	subscribers       map[string]map[TupleProcessor]struct{}
 	subscribersLock   *sync.RWMutex
 }
 
@@ -27,7 +27,7 @@ func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
 	r := &Receiver{
 		conf:            conf,
 		coordinator:     coordinator,
-		subscribers:     make(map[string][]TupleProcessor),
+		subscribers:     make(map[string]map[TupleProcessor]struct{}),
 		subscribersLock: &sync.RWMutex{},
 	}
 	r.server = rpc.NewServer()
@@ -51,33 +51,28 @@ func (r *Receiver) SubscribeTo(streamID string, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.SubscribeTo(streamID)
-	r.subscribers[streamID] = append(r.subscribers[streamID], tp)
+	subscribersSet := r.subscribers[streamID]
+	if subscribersSet == nil {
+		subscribersSet = make(map[TupleProcessor]struct{})
+	}
+	subscribersSet[tp] = struct{}{}
+	r.subscribers[streamID] = subscribersSet
 }
 
 func (r *Receiver) UnsubscribeFrom(streamID string, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.UnsubscribeFrom(streamID)
-	s := r.subscribers[streamID]
-	i := -1
-	// use slices instead of maps since we don't expect
-	// that many subscribers per stream
-	for idx, v := range s {
-		if v == tp {
-			i = idx
-		}
-	}
-	if i != -1 {
-		// delete
-		s, s[len(s)-1] = append(s[:i], s[i+1:]...), nil
-		r.subscribers[streamID] = s
-	}
+	delete(r.subscribers[streamID], tp)
 }
 
 // SubmitTuple submits a new tuple into the worker process
 func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	log.Printf("[receiver] Received: %s", t)
-	subscribers := r.subscribers[t.StreamID]
+	subscribers := make([]TupleProcessor, 0, len(r.subscribers[t.StreamID]))
+	for k := range r.subscribers[t.StreamID] {
+		subscribers = append(subscribers, k)
+	}
 	err := ProcessMultipleProcessors(subscribers, t)
 	if err != nil {
 		log.Printf("[ERROR] Processing %s failed: %s", t, err)
