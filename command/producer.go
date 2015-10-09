@@ -30,7 +30,8 @@ func Producer(c *cli.Context) {
 	// }
 	prods := []string{c.Args().First()}
 	conf := dagger.DefaultConfig()
-	coordinator := dagger.NewCoordinator(conf, conf.RPCAdvertise)
+	coordinator := dagger.NewCoordinator(conf)
+	coordinator.SetAddr(conf.RPCAdvertise)
 	err := coordinator.Start()
 	defer coordinator.Stop()
 	if err != nil {

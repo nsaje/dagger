@@ -22,10 +22,11 @@ func Subscriber(c *cli.Context) {
 	// defer persister.Close()
 
 	printer := &printer{dataonly: c.Bool("dataonly")}
-	receiver := dagger.NewReceiver(conf)
-	go receiver.ReceiveTuples(printer)
 
-	coordinator := dagger.NewCoordinator(conf, receiver.ListenAddr())
+	coordinator := dagger.NewCoordinator(conf)
+	receiver := dagger.NewReceiver(conf, coordinator)
+	go receiver.ReceiveTuples()
+
 	err := coordinator.Start()
 	defer coordinator.Stop()
 	if err != nil {
@@ -34,7 +35,7 @@ func Subscriber(c *cli.Context) {
 	log.Println("Coordinator started")
 
 	topicGlob := c.Args().First()
-	coordinator.SubscribeTo(topicGlob)
+	receiver.SubscribeTo(topicGlob, printer)
 	log.Printf("Subscribed to %s", topicGlob)
 
 	// FIXME: bring deduplicator back into subscriber

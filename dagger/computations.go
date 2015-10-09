@@ -20,7 +20,6 @@ import (
 // ComputationManager manages computations that are being executed
 type ComputationManager interface {
 	SetupComputation(string) error
-	ProcessTuple(*structs.Tuple) error
 	Has(string) bool
 }
 
@@ -30,29 +29,32 @@ type ComputationSyncer interface {
 }
 
 type computationManager struct {
-	computations  map[string]Computation
-	subscriptions map[string][]TupleProcessor
-	coordinator   Coordinator
-	persister     Persister
-	dispatcher    TupleProcessor
+	computations map[string]Computation
+	coordinator  Coordinator
+	receiver     *Receiver
+	persister    Persister
+	dispatcher   TupleProcessor
 
 	counter metrics.Counter
 }
 
 // NewComputationManager returns an object that can manage computations
 func NewComputationManager(coordinator Coordinator,
+	receiver *Receiver,
 	persister Persister,
 	dispatcher TupleProcessor) *computationManager {
 	c := metrics.NewCounter()
 	metrics.Register("processing", c)
-	return &computationManager{
-		computations:  make(map[string]Computation),
-		subscriptions: make(map[string][]TupleProcessor),
-		coordinator:   coordinator,
-		persister:     persister,
-		dispatcher:    dispatcher,
-		counter:       c,
+	cm := &computationManager{
+		computations: make(map[string]Computation),
+		coordinator:  coordinator,
+		receiver:     receiver,
+		persister:    persister,
+		dispatcher:   dispatcher,
+		counter:      c,
 	}
+	receiver.SetComputationSyncer(cm)
+	return cm
 }
 
 // ParseComputationID parses a computation definition
@@ -117,8 +119,7 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 	}
 
 	for _, input := range info.Inputs {
-		cm.coordinator.SubscribeTo(input)
-		cm.subscriptions[input] = append(cm.subscriptions[input], computation)
+		cm.receiver.SubscribeTo(input, computation)
 	}
 	cm.computations[computationID] = computation
 	return nil
@@ -135,17 +136,6 @@ func (cm *computationManager) Sync(computationID string) (*structs.ComputationSn
 		return nil, fmt.Errorf("Computation not found!")
 	}
 	return comp.Sync()
-}
-
-func (cm *computationManager) ProcessTuple(t *structs.Tuple) error {
-	comps := cm.subscriptions[t.StreamID]
-	log.Printf("[computations] Processing: %s", t)
-
-	cm.counter.Inc(1)
-	defer cm.counter.Dec(1)
-
-	// Feed the tuple into interested computations
-	return ProcessMultipleProcessors(comps, t)
 }
 
 // Computation encapsulates all the stages of processing a tuple for a single

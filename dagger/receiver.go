@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
+	"sync"
 
 	"github.com/nsaje/dagger/structs"
 )
@@ -13,16 +14,22 @@ import (
 // Receiver receives new tuples via incoming RPC calls
 type Receiver struct {
 	conf              *Config
-	incoming          chan *structs.Tuple
+	coordinator       Coordinator
 	server            *rpc.Server
 	listener          net.Listener
-	next              TupleProcessor
 	computationSyncer ComputationSyncer
+	subscribers       map[string][]TupleProcessor
+	subscribersLock   *sync.RWMutex
 }
 
 // NewReceiver initializes a new receiver
-func NewReceiver(conf *Config) *Receiver {
-	r := &Receiver{conf: conf, incoming: make(chan *structs.Tuple)}
+func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
+	r := &Receiver{
+		conf:            conf,
+		coordinator:     coordinator,
+		subscribers:     make(map[string][]TupleProcessor),
+		subscribersLock: &sync.RWMutex{},
+	}
 	r.server = rpc.NewServer()
 	r.server.Register(r)
 	r.server.HandleHTTP(rpc.DefaultRPCPath, rpc.DefaultDebugPath)
@@ -31,6 +38,7 @@ func NewReceiver(conf *Config) *Receiver {
 	if err != nil {
 		log.Fatal("[receiver] Listen error:", err)
 	}
+	coordinator.SetAddr(r.listener.Addr())
 	return r
 }
 
@@ -39,10 +47,38 @@ func (r *Receiver) ListenAddr() net.Addr {
 	return r.listener.Addr()
 }
 
+func (r *Receiver) SubscribeTo(streamID string, tp TupleProcessor) {
+	r.subscribersLock.Lock()
+	defer r.subscribersLock.Unlock()
+	r.coordinator.SubscribeTo(streamID)
+	r.subscribers[streamID] = append(r.subscribers[streamID], tp)
+}
+
+func (r *Receiver) UnsubscribeFrom(streamID string, tp TupleProcessor) {
+	r.subscribersLock.Lock()
+	defer r.subscribersLock.Unlock()
+	r.coordinator.UnsubscribeFrom(streamID)
+	s := r.subscribers[streamID]
+	i := -1
+	// use slices instead of maps since we don't expect
+	// that many subscribers per stream
+	for idx, v := range s {
+		if v == tp {
+			i = idx
+		}
+	}
+	if i != -1 {
+		// delete
+		s, s[len(s)-1] = append(s[:i], s[i+1:]...), nil
+		r.subscribers[streamID] = s
+	}
+}
+
 // SubmitTuple submits a new tuple into the worker process
 func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	log.Printf("[receiver] Received: %s", t)
-	err := r.next.ProcessTuple(t)
+	subscribers := r.subscribers[t.StreamID]
+	err := ProcessMultipleProcessors(subscribers, t)
 	if err != nil {
 		log.Printf("[ERROR] Processing %s failed: %s", t, err)
 		return err
@@ -72,8 +108,7 @@ func (r *Receiver) SetComputationSyncer(cs ComputationSyncer) {
 }
 
 // ReceiveTuples starts receiving incoming tuples over RPC
-func (r *Receiver) ReceiveTuples(next TupleProcessor) {
-	r.next = next
+func (r *Receiver) ReceiveTuples() {
 	for {
 		if conn, err := r.listener.Accept(); err != nil {
 			log.Fatal("[receiver] Accept error: " + err.Error())

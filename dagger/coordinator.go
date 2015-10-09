@@ -28,12 +28,14 @@ type Coordinator interface {
 	JobCoordinator
 	ReplicationCoordinator
 	Start() error
+	SetAddr(net.Addr)
 	Stop()
 }
 
 // SubscribeCoordinator handles the act of subscribing to a stream
 type SubscribeCoordinator interface {
 	SubscribeTo(streamID string) error
+	UnsubscribeFrom(streamID string) error
 }
 
 // PublishCoordinator handles the coordination of publishing a stream
@@ -68,16 +70,21 @@ type ConsulCoordinator struct {
 }
 
 // NewCoordinator : this may return different coordinators based on config in the future
-func NewCoordinator(config *Config, addr net.Addr) Coordinator {
+func NewCoordinator(config *Config) Coordinator {
 	client, _ := api.NewClient(api.DefaultConfig())
 	c := &ConsulCoordinator{
 		client:      client,
 		config:      config,
-		addr:        addr,
 		subscribers: make(map[string]*subscribersList),
 		stopCh:      make(chan struct{}),
 	}
 	return c
+}
+
+// SetAddr must be called before Start() and sets this process's IP and port
+func (c *ConsulCoordinator) SetAddr(addr net.Addr) {
+	// FIXME panic if start called before SetAddr
+	c.addr = addr
 }
 
 // Start creates a new session and starts synchronizing state
@@ -220,6 +227,14 @@ func (c *ConsulCoordinator) SubscribeTo(topic string) error {
 		// only monitor publishers if it's a computation
 		go c.monitorPublishers(topic)
 	}
+	return err
+}
+
+// UnsubscribeFrom unsubscribes from topics with global coordination
+func (c *ConsulCoordinator) UnsubscribeFrom(topic string) error {
+	kv := c.client.KV()
+	key := c.constructSubscriberKey(topic)
+	_, err := kv.Delete(key, nil)
 	return err
 }
 
