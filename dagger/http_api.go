@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strings"
@@ -31,26 +32,29 @@ func NewHttpAPI(receiver *Receiver, dispatcher *Dispatcher) HttpAPI {
 }
 
 func (api HttpAPI) Serve() {
-	http.HandleFunc("/submit", api.submitTuple)
+	http.HandleFunc("/submit", api.submit)
+	http.HandleFunc("/submit_raw", api.submitRaw)
 	http.HandleFunc("/listen", api.listen)
 
 	log.Fatal(http.ListenAndServe(":46632", nil))
 }
 
-func (api HttpAPI) submitTuple(w http.ResponseWriter, r *http.Request) {
+func (api HttpAPI) submit(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	var t structs.Tuple
 	err := decoder.Decode(&t)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error parsing JSON: %s", err), 400)
+		return
 	}
 
 	err = validate(&t)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Tuple validation error: %s", err), 400)
+		return
 	}
 
-	t.LWM = time.Now()
+	t.LWM = time.Now() // FIXME: think this through
 	t.ID = uuid.NewV4().String()
 	err = api.dispatcher.ProcessTuple(&t)
 	if err != nil {
@@ -73,10 +77,31 @@ func validate(t *structs.Tuple) error {
 	return nil
 }
 
+func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
+	streamID := r.FormValue("s")
+	data, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
+		return
+	}
+	t := structs.Tuple{
+		StreamID:  streamID,
+		ID:        uuid.NewV4().String(),
+		Timestamp: time.Now(),
+		LWM:       time.Now(),
+		Data:      string(data),
+	}
+	err = api.dispatcher.ProcessTuple(&t)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error dispatching tuple: %s", err), 500)
+	}
+}
+
 func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 	topicGlob := r.FormValue("s")
 	if len(topicGlob) == 0 {
 		http.Error(w, "stream id missing in URL", 400)
+		return
 	}
 	ch := make(chan *structs.Tuple)
 	disconnected := w.(http.CloseNotifier).CloseNotify()
