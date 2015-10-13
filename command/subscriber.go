@@ -13,7 +13,7 @@ import (
 // Subscriber registers as a subscriber for a certain topic(s). Useful for
 // debugging.
 func Subscriber(c *cli.Context) {
-	conf := dagger.DefaultConfig()
+	conf := dagger.DefaultConfig(c)
 
 	// persister, err := dagger.NewPersister(conf)
 	// if err != nil {

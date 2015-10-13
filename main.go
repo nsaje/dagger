@@ -16,6 +16,7 @@ func die(format string, v ...interface{}) {
 
 func dummy(ctx *cli.Context) {
 	fmt.Println("hi")
+	fmt.Println(ctx.Args())
 }
 
 func main() {
@@ -23,6 +24,12 @@ func main() {
 	app.Name = "dagger"
 	app.Usage = "user-centric real-time stream processing"
 	app.Action = dummy
+	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:  "consul",
+			Usage: "Consul URL",
+		},
+	}
 	app.Commands = []cli.Command{
 		{
 			Name:    "producer",

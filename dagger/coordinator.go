@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/hashicorp/consul/api"
 )
 
@@ -71,7 +72,12 @@ type ConsulCoordinator struct {
 
 // NewCoordinator : this may return different coordinators based on config in the future
 func NewCoordinator(config *Config) Coordinator {
-	client, _ := api.NewClient(api.DefaultConfig())
+	conf := api.DefaultConfig()
+	fmt.Println("CONSUL ADDR:", config.ConsulAddr)
+	if len(config.ConsulAddr) > 0 {
+		conf.Address = config.ConsulAddr
+	}
+	client, _ := api.NewClient(conf)
 	c := &ConsulCoordinator{
 		client:      client,
 		config:      config,
@@ -95,7 +101,14 @@ func (c *ConsulCoordinator) Start() error {
 		Behavior:  api.SessionBehaviorDelete,
 		LockDelay: 100 * time.Millisecond,
 	}
-	sessionID, _, err := session.Create(sessionOptions, nil)
+	var sessionID string
+	var err error
+	err = backoff.RetryNotify(func() error {
+		sessionID, _, err = session.Create(sessionOptions, nil)
+		return err
+	}, backoff.NewExponentialBackOff(), func(err error, t time.Duration) {
+		log.Println("Cannot create session, retrying in", t, ". Error:", err)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create consul session: %v", err)
 	}

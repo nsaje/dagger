@@ -1,6 +1,7 @@
 package command
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -29,7 +30,8 @@ func Worker(c *cli.Context) {
 		)
 	}
 
-	conf := dagger.DefaultConfig()
+	conf := dagger.DefaultConfig(c)
+	fmt.Println("ARGS:", c.GlobalFlagNames())
 
 	persister, err := dagger.NewPersister(conf)
 	if err != nil {

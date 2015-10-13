@@ -29,7 +29,7 @@ func Producer(c *cli.Context) {
 	// 	// "producer-test",
 	// }
 	prods := []string{c.Args().First()}
-	conf := dagger.DefaultConfig()
+	conf := dagger.DefaultConfig(c)
 	coordinator := dagger.NewCoordinator(conf)
 	coordinator.SetAddr(conf.RPCAdvertise)
 	err := coordinator.Start()

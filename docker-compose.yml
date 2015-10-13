@@ -1,0 +1,36 @@
+dagger1:
+  image: "dagger-scratch"
+  links:
+    - "consul1:consul1"
+  ports:
+    - "46632:46632"
+    - "46633"
+  command: "--consul consul1:8500 worker"
+
+dagger2:
+  image: "dagger-scratch"
+  links:
+    - "consul1:consul1"
+  ports:
+    - "46632"
+    - "46633"
+  command: "--consul consul1:8500 worker"
+
+dagger3:
+  image: "dagger-scratch"
+  links:
+    - "consul1:consul1"
+  ports:
+    - "46632"
+    - "46633"
+  command: "--consul consul1:8500 worker"
+
+consul1:
+  image: "progrium/consul:latest"
+  name: "consul1"
+  hostname: "consul1"
+  ports:
+    - "8400:8400"
+    - "8500:8500"
+    - "53:53"
+  command: "-server -bootstrap-expect 1 -ui-dir /ui"
