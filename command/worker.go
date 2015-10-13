@@ -45,7 +45,7 @@ func Worker(c *cli.Context) {
 	compManager := dagger.NewComputationManager(
 		coordinator, receiver, persister, dispatcher)
 	receiver.SetComputationSyncer(compManager)
-	httpAPI := dagger.NewHttpAPI(receiver, dispatcher)
+	// httpAPI := dagger.NewHttpAPI(receiver, dispatcher)
 
 	err = coordinator.Start()
 	defer coordinator.Stop()
@@ -57,7 +57,7 @@ func Worker(c *cli.Context) {
 	go receiver.ReceiveTuples()
 	go coordinator.ManageJobs(compManager)
 
-	go httpAPI.Serve()
+	// go httpAPI.Serve()
 
 	// deduplicator := dagger.NewDeduplicator(persister)
 	// deduped := deduplicator.Deduplicate(incoming)

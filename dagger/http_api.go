@@ -40,26 +40,70 @@ func (api HttpAPI) Serve() {
 }
 
 func (api HttpAPI) submit(w http.ResponseWriter, r *http.Request) {
-	decoder := json.NewDecoder(r.Body)
-	var t structs.Tuple
-	err := decoder.Decode(&t)
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error parsing JSON: %s", err), 400)
+		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
 		return
+	}
+	t, err := CreateTupleFromJSON(body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error parsing tuple: %s", err), 500)
+	}
+	err = api.dispatcher.ProcessTuple(t)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error dispatching tuple: %s", err), 500)
+	}
+}
+
+func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
+	streamID := r.FormValue("s")
+	data, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
+		return
+	}
+	t, err := CreateTuple(streamID, string(data))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error creating tuple: %s", err), 500)
+	}
+	err = api.dispatcher.ProcessTuple(t)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error dispatching tuple: %s", err), 500)
+	}
+}
+
+// CreateTupleFromJSON parses a complete tuple from JSON and adds LWM and ID
+func CreateTupleFromJSON(s []byte) (*structs.Tuple, error) {
+	var t structs.Tuple
+	err := json.Unmarshal(s, &t)
+	if err != nil {
+		return nil, fmt.Errorf("Error parsing JSON: %s", err)
 	}
 
 	err = validate(&t)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Tuple validation error: %s", err), 400)
-		return
+		return nil, fmt.Errorf("Tuple validation error: %s", err)
 	}
 
 	t.LWM = time.Now() // FIXME: think this through
 	t.ID = uuid.NewV4().String()
-	err = api.dispatcher.ProcessTuple(&t)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error dispatching tuple: %s", err), 500)
+
+	return &t, nil
+}
+
+// CreateTuple creates a new tuple with given stream ID and data
+func CreateTuple(streamID string, data string) (*structs.Tuple, error) {
+	if len(streamID) == 0 {
+		return nil, errors.New("Stream ID shouldn't be empty")
 	}
+	t := structs.Tuple{
+		StreamID:  streamID,
+		ID:        uuid.NewV4().String(),
+		Timestamp: time.Now(),
+		LWM:       time.Now(),
+		Data:      string(data),
+	}
+	return &t, nil
 }
 
 func validate(t *structs.Tuple) error {
@@ -75,26 +119,6 @@ func validate(t *structs.Tuple) error {
 	}
 
 	return nil
-}
-
-func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
-	streamID := r.FormValue("s")
-	data, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
-		return
-	}
-	t := structs.Tuple{
-		StreamID:  streamID,
-		ID:        uuid.NewV4().String(),
-		Timestamp: time.Now(),
-		LWM:       time.Now(),
-		Data:      string(data),
-	}
-	err = api.dispatcher.ProcessTuple(&t)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error dispatching tuple: %s", err), 500)
-	}
 }
 
 func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {

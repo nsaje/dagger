@@ -24,7 +24,7 @@ func DefaultConfig(c *cli.Context) *Config {
 		log.Fatal("Unable to figure out an IP address to bind to.")
 	}
 	conf := &Config{
-		RPCAdvertise:   &net.TCPAddr{IP: net.ParseIP(externalIPStr), Port: 46633},
+		RPCAdvertise:   &net.TCPAddr{IP: net.ParseIP(externalIPStr), Port: 0},
 		SubscribersTTL: time.Duration(15 * time.Second),
 		LevelDBFile:    "dagger.db",
 	}

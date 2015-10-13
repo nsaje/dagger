@@ -311,7 +311,7 @@ func (comp *statefulComputation) Sync() (*structs.ComputationSnapshot, error) {
 // StartComputationPlugin starts the plugin process
 func StartComputationPlugin(name string, compID string) (ComputationPlugin, error) {
 	log.Printf("[computations] Launching computation plugin '%s'", name)
-	path := path.Join(os.Getenv("DAGGER_PLUGIN_PATH"), ".") + "/computation-" + name
+	path := path.Join(os.Getenv("DAGGER_PLUGIN_PATH"), "computation-"+name)
 	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec,
 		os.Stderr,
 		path,

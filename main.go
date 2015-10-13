@@ -23,7 +23,6 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "dagger"
 	app.Usage = "user-centric real-time stream processing"
-	app.Action = dummy
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "consul",
@@ -31,12 +30,6 @@ func main() {
 		},
 	}
 	app.Commands = []cli.Command{
-		{
-			Name:    "producer",
-			Aliases: []string{"p"},
-			Usage:   "start dagger node as a producer",
-			Action:  command.Producer,
-		},
 		{
 			Name:    "worker",
 			Aliases: []string{"w"},
@@ -48,6 +41,18 @@ func main() {
 					Usage: "InfluxDB URL for app metrics (how many tuples are being processed etc.)",
 				},
 			},
+		},
+		{
+			Name:    "producer",
+			Aliases: []string{"p"},
+			Usage:   "start a dedicated dagger producer node, which reads data from stdin and publishes it on the given stream",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "streamID, s",
+					Usage: "Stream ID to publish tuples on",
+				},
+			},
+			Action: command.Producer,
 		},
 		{
 			Name:    "subscriber",

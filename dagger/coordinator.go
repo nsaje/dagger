@@ -73,7 +73,6 @@ type ConsulCoordinator struct {
 // NewCoordinator : this may return different coordinators based on config in the future
 func NewCoordinator(config *Config) Coordinator {
 	conf := api.DefaultConfig()
-	fmt.Println("CONSUL ADDR:", config.ConsulAddr)
 	if len(config.ConsulAddr) > 0 {
 		conf.Address = config.ConsulAddr
 	}

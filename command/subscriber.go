@@ -21,7 +21,7 @@ func Subscriber(c *cli.Context) {
 	// }
 	// defer persister.Close()
 
-	printer := &printer{dataonly: c.Bool("dataonly")}
+	prnter := &printer{dataonly: c.Bool("dataonly")}
 
 	coordinator := dagger.NewCoordinator(conf)
 	receiver := dagger.NewReceiver(conf, coordinator)
@@ -35,7 +35,7 @@ func Subscriber(c *cli.Context) {
 	log.Println("Coordinator started")
 
 	topicGlob := c.Args().First()
-	receiver.SubscribeTo(topicGlob, printer)
+	receiver.SubscribeTo(topicGlob, prnter)
 	log.Printf("Subscribed to %s", topicGlob)
 
 	// FIXME: bring deduplicator back into subscriber
@@ -44,11 +44,13 @@ func Subscriber(c *cli.Context) {
 	handleSignals()
 }
 
+//
 type printer struct {
 	dataonly bool
 }
 
 func (p *printer) ProcessTuple(t *structs.Tuple) error {
+	log.Println("in printer")
 	if p.dataonly {
 		fmt.Println(t.Data)
 	} else {
