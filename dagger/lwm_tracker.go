@@ -53,6 +53,8 @@ func (lwmT *lwmTracker) GetLWM() (time.Time, error) {
 }
 
 func (lwmT *lwmTracker) ProcessTuple(t *structs.Tuple) error {
-	lwmT.upstream[t.StreamID] = t.LWM
+	if t.LWM.After(lwmT.upstream[t.StreamID]) {
+		lwmT.upstream[t.StreamID] = t.LWM
+	}
 	return nil
 }
