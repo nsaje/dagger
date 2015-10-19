@@ -54,18 +54,20 @@ type BufferedDispatcher struct {
 	dispatcher    TupleProcessor
 	stopCh        chan struct{}
 	sentTracker   SentTracker
+	lwmTracker    LwmTracker
 	wg            sync.WaitGroup
 }
 
 // StartBufferedDispatcher creates a new buffered dispatcher and starts workers
 // that will be consuming off the queue an sending tuples
-func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTracker SentTracker,
+func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTracker SentTracker, lwmTracker LwmTracker,
 	stopCh chan struct{}) *BufferedDispatcher {
 	bd := &BufferedDispatcher{
 		computationID: compID,
 		buffer:        make(chan *structs.Tuple, 100), // FIXME: make it configurable
 		dispatcher:    dispatcher,
 		sentTracker:   sentTracker,
+		lwmTracker:    lwmTracker,
 		stopCh:        stopCh,
 	}
 
@@ -100,7 +102,8 @@ func (bd *BufferedDispatcher) dispatch() {
 			if !ok { // channel closed, no more tuples coming in
 				return
 			}
-			t.LWM = bd.lwmTracker.GetLWM()
+			lwm, _ := bd.lwmTracker.GetLWM()
+			t.LWM = lwm
 			for {
 				err := bd.dispatcher.ProcessTuple(t)
 				if err == nil {

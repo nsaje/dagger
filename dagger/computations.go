@@ -101,7 +101,7 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 		// notify both LWM tracker and persister when a tuple is successfuly sent
 		multiSentTracker := MultiSentTracker{[]SentTracker{lwmTracker, cm.persister}}
 
-		bufferedDispatcher := StartBufferedDispatcher(computationID, cm.dispatcher, multiSentTracker, stopCh)
+		bufferedDispatcher := StartBufferedDispatcher(computationID, cm.dispatcher, multiSentTracker, lwmTracker, stopCh)
 		computation = &statefulComputation{
 			computationID,
 			lwmTracker,

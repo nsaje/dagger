@@ -25,7 +25,7 @@ func Producer(c *cli.Context) {
 
 	lwmTracker := dagger.NewLWMTracker()
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
-	bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, make(chan struct{}))
+	bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
 	streamID := c.String("streamID")
 
 	reader := bufio.NewReader(os.Stdin)
