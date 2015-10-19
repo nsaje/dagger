@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"log"
 	"time"
 
 	"github.com/nsaje/dagger/structs"
@@ -28,18 +29,21 @@ func NewLWMTracker() *lwmTracker {
 func (lwmT *lwmTracker) BeforeDispatching(ts []*structs.Tuple) {
 	for _, t := range ts {
 		lwmT.inProcessing[t.ID] = t.LWM
+		log.Println("setting lwm", t.ID, t.LWM)
 	}
 }
 
 func (lwmT *lwmTracker) SentSuccessfuly(compID string, t *structs.Tuple) error {
 	delete(lwmT.inProcessing, t.ID)
+	log.Println("deleting lwm", t.ID, t.LWM)
 	return nil
 }
 
 func (lwmT *lwmTracker) GetLWM() (time.Time, error) {
-	min := time.Now().Add(1 << 62)
+	// min := time.Now().Add(1 << 62)
+	min := time.Time{}
 	for _, lwm := range lwmT.inProcessing {
-		if lwm.Before(min) {
+		if lwm.Before(min) || min.IsZero() {
 			min = lwm
 		}
 	}

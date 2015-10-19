@@ -118,8 +118,11 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 		computation = &statelessComputation{plugin, cm.dispatcher}
 	}
 
+	// run tuples through a linearizer so the computation plugin receives tuples
+	// in order
+	linearizer := NewLinearizer(computation, info.Inputs)
 	for _, input := range info.Inputs {
-		cm.receiver.SubscribeTo(input, computation)
+		cm.receiver.SubscribeTo(input, linearizer)
 	}
 	cm.computations[computationID] = computation
 	return nil
@@ -258,7 +261,8 @@ func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
 		return err
 	}
 
-	// send it to the plugin for processing
+	// send it to the plugin for processing, but through the linearizer so
+	// the plugin receives the tuples in order
 	response, err := comp.plugin.SubmitTuple(t)
 	if err != nil {
 		return err

@@ -69,6 +69,12 @@ func (r *Receiver) UnsubscribeFrom(streamID string, tp TupleProcessor) {
 // SubmitTuple submits a new tuple into the worker process
 func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	log.Printf("[receiver] Received: %s", t)
+	// fmt.Printf("[receiver] Received: %s\n", t)
+	// if rand.Float64() < 0.1 {
+	// 	fmt.Println("rejecting for test")
+	// 	time.Sleep(time.Second)
+	// 	return errors.New("rejected for test")
+	// }
 	subscribers := make([]TupleProcessor, 0, len(r.subscribedTupleProcessors[t.StreamID]))
 	for k := range r.subscribedTupleProcessors[t.StreamID] {
 		subscribers = append(subscribers, k)

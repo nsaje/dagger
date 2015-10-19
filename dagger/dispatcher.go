@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
+	"sync"
 	"time"
 
 	"github.com/nsaje/dagger/structs"
@@ -53,6 +54,7 @@ type BufferedDispatcher struct {
 	dispatcher    TupleProcessor
 	stopCh        chan struct{}
 	sentTracker   SentTracker
+	wg            sync.WaitGroup
 }
 
 // StartBufferedDispatcher creates a new buffered dispatcher and starts workers
@@ -69,10 +71,17 @@ func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTrack
 
 	// FIXME: configurable number?
 	for i := 0; i < 10; i++ {
+		bd.wg.Add(1)
 		go bd.dispatch()
 	}
 
 	return bd
+}
+
+// Stop blocks until all buffered tuples are sent
+func (bd *BufferedDispatcher) Stop() {
+	close(bd.buffer)
+	bd.wg.Wait()
 }
 
 // ProcessTuple sends the tuple to the buffered channel
@@ -82,15 +91,22 @@ func (bd *BufferedDispatcher) ProcessTuple(t *structs.Tuple) error {
 }
 
 func (bd *BufferedDispatcher) dispatch() {
+	defer bd.wg.Done()
 	for {
 		select {
 		case <-bd.stopCh:
 			return
-		case t := <-bd.buffer:
+		case t, ok := <-bd.buffer:
+			if !ok { // channel closed, no more tuples coming in
+				return
+			}
+			t.LWM = bd.lwmTracker.GetLWM()
 			for {
 				err := bd.dispatcher.ProcessTuple(t)
 				if err == nil {
-					bd.sentTracker.SentSuccessfuly(bd.computationID, t)
+					if bd.sentTracker != nil {
+						bd.sentTracker.SentSuccessfuly(bd.computationID, t)
+					}
 					break
 				}
 				time.Sleep(time.Second) // exponential backoff?
@@ -117,7 +133,8 @@ func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
 	err := s.client.Call("Receiver.SubmitTuple", t, &reply)
 	if err != nil {
 		log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)
+		return err
 	}
 	log.Printf("[dispatcher] ACK received for tuple %s", t)
-	return err
+	return nil
 }

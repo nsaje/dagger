@@ -35,7 +35,9 @@ func Subscriber(c *cli.Context) {
 	log.Println("Coordinator started")
 
 	topicGlob := c.Args().First()
-	receiver.SubscribeTo(topicGlob, prnter)
+	linearizer := dagger.NewLinearizer(prnter, []string{topicGlob})
+	go linearizer.Linearize()
+	receiver.SubscribeTo(topicGlob, linearizer)
 	log.Printf("Subscribed to %s", topicGlob)
 
 	// FIXME: bring deduplicator back into subscriber
