@@ -102,7 +102,7 @@ func (bd *BufferedDispatcher) dispatch() {
 			if !ok { // channel closed, no more tuples coming in
 				return
 			}
-			lwm, _ := bd.lwmTracker.GetLWM()
+			lwm, _ := bd.lwmTracker.GetLocalLWM()
 			t.LWM = lwm
 			for {
 				err := bd.dispatcher.ProcessTuple(t)
@@ -132,11 +132,12 @@ func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
 }
 
 func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
+START:
 	var reply string
 	err := s.client.Call("Receiver.SubmitTuple", t, &reply)
 	if err != nil {
 		log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)
-		return err
+		goto START // FIXME
 	}
 	log.Printf("[dispatcher] ACK received for tuple %s", t)
 	return nil

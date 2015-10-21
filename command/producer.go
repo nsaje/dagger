@@ -27,7 +27,10 @@ func Producer(c *cli.Context) {
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
 	bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
 	streamID := c.String("streamID")
+<<<<<<< HEAD
 
+=======
+>>>>>>> buffered
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		var line string
