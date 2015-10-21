@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	receivedKeyFormat    = "%s-r-%s" // <computationID>-r-<tupleID>
-	productionsKeyFormat = "%s-p-%s" // <computationID>-p-<tupleID>
+	receivedKeyFormat    = "%s-r-%s"    // <computationID>-r-<tupleID>
+	productionsKeyFormat = "%s-p-%s"    // <computationID>-p-<tupleID>
+	inKeyFormat          = "%s-i-%d-%s" // <computationID>-i-<timestamp>-<tupleID>
 )
 
 // Persister takes care of persisting in-flight tuples and computation state
@@ -23,6 +24,7 @@ type Persister interface {
 	CommitComputation(compID string, in *structs.Tuple, out []*structs.Tuple) error
 	GetSnapshot(compID string) (*structs.ComputationSnapshot, error)
 	ApplySnapshot(compID string, snapshot *structs.ComputationSnapshot) error
+	Insert(compID string, t *structs.Tuple) error
 	SentTracker
 	ReceivedTracker
 	StatePersister
@@ -216,4 +218,14 @@ func (p *LevelDBPersister) ReceivedAlready(comp string, t *structs.Tuple) (bool,
 func (p *LevelDBPersister) SentSuccessfuly(compID string, t *structs.Tuple) error {
 	key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.ID))
 	return p.db.Delete(key, nil)
+}
+
+func (p *LevelDBPersister) Insert(compID string, t *structs.Tuple) error {
+	serialized, err := json.Marshal(t)
+	if err != nil {
+		return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
+	}
+	key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp.Unix(), t.ID))
+	p.db.Put(key, []byte(serialized), nil)
+	return nil
 }
