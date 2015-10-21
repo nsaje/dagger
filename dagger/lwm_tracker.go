@@ -36,19 +36,23 @@ func (lwmT *lwmTracker) SentSuccessfuly(compID string, t *structs.Tuple) error {
 	return nil
 }
 
-func (lwmT *lwmTracker) GetLWM() (time.Time, error) {
+func (lwmT *lwmTracker) GetUpstreamLWM() (time.Time, error) {
 	min := time.Now().Add(1 << 62)
-	for _, lwm := range lwmT.inProcessing {
-		if lwm.Before(min) {
-			min = lwm
-		}
-	}
 	for _, lwm := range lwmT.upstream {
 		if lwm.Before(min) {
 			min = lwm
 		}
 	}
-	// log.Println("[lwm_tracker]", min, lwmT.upstream, lwmT.inProcessing)
+	return min, nil
+}
+
+func (lwmT *lwmTracker) GetLocalLWM() (time.Time, error) {
+	min, _ := lwmT.GetUpstreamLWM()
+	for _, lwm := range lwmT.inProcessing {
+		if lwm.Before(min) {
+			min = lwm
+		}
+	}
 	return min, nil
 }
 

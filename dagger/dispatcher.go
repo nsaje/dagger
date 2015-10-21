@@ -113,10 +113,12 @@ func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
 }
 
 func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
+START:
 	var reply string
 	err := s.client.Call("Receiver.SubmitTuple", t, &reply)
 	if err != nil {
 		log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)
+		goto START
 	}
 	log.Printf("[dispatcher] ACK received for tuple %s", t)
 	return err

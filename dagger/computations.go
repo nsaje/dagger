@@ -85,8 +85,9 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 	}
 
 	var computation Computation
+	var next TupleProcessor
 	if info.Stateful {
-		deduplicator, err := NewDeduplicator(computationID, cm.persister)
+		// deduplicator, err := NewDeduplicator(computationID, cm.persister)
 		if err != nil {
 			return err
 		}
@@ -103,23 +104,25 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 
 		bufferedDispatcher := StartBufferedDispatcher(computationID, cm.dispatcher, multiSentTracker, stopCh)
 		computation = &statefulComputation{
-			computationID,
-			lwmTracker,
-			plugin,
-			groupHandler,
-			deduplicator,
-			cm.persister,
-			bufferedDispatcher,
-			stopCh,
-			sync.RWMutex{},
-			false,
+			computationID:      computationID,
+			plugin:             plugin,
+			groupHandler:       groupHandler,
+			persister:          cm.persister,
+			lwmTracker:         lwmTracker,
+			bufferedDispatcher: bufferedDispatcher,
+			stopCh:             stopCh,
+			RWMutex:            sync.RWMutex{},
+			initialized:        false,
 		}
+		bufferHandler := NewBufferHandler(computationID, cm.persister, lwmTracker, computation)
+		bufferHandler.StartForwarding()
+		next = bufferHandler
 	} else {
 		computation = &statelessComputation{plugin, cm.dispatcher}
 	}
 
 	for _, input := range info.Inputs {
-		cm.receiver.SubscribeTo(input, computation)
+		cm.receiver.SubscribeTo(input, next)
 	}
 	cm.computations[computationID] = computation
 	return nil
@@ -162,13 +165,70 @@ func (comp *statelessComputation) Sync() (*structs.ComputationSnapshot, error) {
 	return nil, nil
 }
 
+type bufferHandler struct {
+	compID     string
+	persister  Persister
+	lwmTracker *lwmTracker
+	LWM        time.Time
+	lwmCh      chan time.Time
+	next       TupleProcessor
+}
+
+func NewBufferHandler(compID string, persister Persister, lwmTracker *lwmTracker, next TupleProcessor) *bufferHandler {
+	return &bufferHandler{
+		compID:     compID,
+		persister:  persister,
+		next:       next,
+		lwmTracker: lwmTracker,
+		LWM:        time.Time{},
+		lwmCh:      make(chan time.Time),
+	}
+}
+
+func (bh *bufferHandler) ProcessTuple(t *structs.Tuple) error {
+	err := bh.persister.Insert(bh.compID, t)
+	if err != nil {
+		return err
+	}
+
+	// calculate low water mark (LWM)
+	// LWM = min(oldest event in this computation, LWM across all publishers this
+	// computation is subscribed to)
+	err = bh.lwmTracker.ProcessTuple(t)
+	if err != nil {
+		return err
+	}
+	upstreamLWM, _ := bh.lwmTracker.GetUpstreamLWM()
+	log.Println("upstream LWM", upstreamLWM)
+	if upstreamLWM.After(bh.LWM) {
+		log.Println("notifying forwarder")
+		bh.LWM = upstreamLWM
+		bh.lwmCh <- upstreamLWM
+	}
+	return nil
+}
+
+func (bh *bufferHandler) StartForwarding() {
+	fromLWM := time.Time{}
+	go func() {
+		for toLWM := range bh.lwmCh {
+			tups, _ := bh.persister.ReadBuffer(bh.compID, fromLWM, toLWM)
+			for _, t := range tups {
+				log.Println("PROCESSING TUPLE", t)
+				bh.next.ProcessTuple(t)
+			}
+			fromLWM = toLWM
+		}
+	}()
+}
+
 type statefulComputation struct {
 	computationID      string
-	lwmTracker         LwmTracker
 	plugin             ComputationPlugin
 	groupHandler       GroupHandler
-	deduplicator       Deduplicator
+	bufferHandler      *bufferHandler
 	persister          Persister
+	lwmTracker         *lwmTracker
 	bufferedDispatcher TupleProcessor
 	stopCh             chan struct{}
 
@@ -212,12 +272,12 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 			if err != nil {
 				return fmt.Errorf("[computations] Error applying computation snapshot: %s", err)
 			}
-			// recreate deduplicator from newest received info
-			deduplicator, err := NewDeduplicator(comp.computationID, comp.persister)
-			if err != nil {
-				return fmt.Errorf("[computations] Error recreating deduplicator after sync: %s", err)
-			}
-			comp.deduplicator = deduplicator
+			// // recreate deduplicator from newest received info
+			// deduplicator, err := NewDeduplicator(comp.computationID, comp.persister)
+			// if err != nil {
+			// 	return fmt.Errorf("[computations] Error recreating deduplicator after sync: %s", err)
+			// }
+			// comp.deduplicator = deduplicator
 		}
 		comp.initialized = true
 	}
@@ -242,35 +302,18 @@ func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
 	defer comp.RUnlock()
 
 	// deduplication
-	seen, err := comp.deduplicator.Seen(t)
-	if err != nil {
-		return err
-	}
-	if seen {
-		return nil
-	}
-
-	// calculate low water mark (LWM)
-	// LWM = min(oldest event in this computation, LWM across all publishers this
-	// computation is subscribed to)
-	err = comp.lwmTracker.ProcessTuple(t)
-	if err != nil {
-		return err
-	}
+	// seen, err := comp.deduplicator.Seen(t)
+	// if err != nil {
+	// 	return err
+	// }
+	// if seen {
+	// 	return nil
+	// }
 
 	// send it to the plugin for processing
 	response, err := comp.plugin.SubmitTuple(t)
 	if err != nil {
 		return err
-	}
-
-	// calculate local low-water mark
-	localLWM, err := comp.lwmTracker.GetLWM()
-	if err != nil {
-		return err
-	}
-	for _, t := range response.Tuples {
-		t.LWM = localLWM
 	}
 
 	// persist info about received and produced tuples
