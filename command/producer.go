@@ -25,8 +25,8 @@ func Producer(c *cli.Context) {
 
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
 	streamID := c.String("streamID")
+	reader := bufio.NewReader(os.Stdin)
 	for {
-		reader := bufio.NewReader(os.Stdin)
 		var line string
 		line, err = reader.ReadString('\n')
 		if err != nil {
