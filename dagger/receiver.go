@@ -1,12 +1,15 @@
 package dagger
 
 import (
+	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"sync"
+	"time"
 
 	"github.com/nsaje/dagger/structs"
 )
@@ -69,16 +72,16 @@ func (r *Receiver) UnsubscribeFrom(streamID string, tp TupleProcessor) {
 // SubmitTuple submits a new tuple into the worker process
 func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	log.Printf("[receiver] Received: %s", t)
-	// fmt.Printf("[receiver] Received: %s\n", t)
-	// if rand.Float64() < 0.1 {
-	// 	fmt.Println("rejecting for test")
-	// 	time.Sleep(time.Second)
-	// 	return errors.New("rejected for test")
-	// }
+	if rand.Float64() < 0.1 {
+		fmt.Println("rejecting for test")
+		time.Sleep(time.Second)
+		return errors.New("rejected for test")
+	}
 	subscribers := make([]TupleProcessor, 0, len(r.subscribedTupleProcessors[t.StreamID]))
 	for k := range r.subscribedTupleProcessors[t.StreamID] {
 		subscribers = append(subscribers, k)
 	}
+	log.Printf("[receiver] processing %s with %+v", t, subscribers)
 	err := ProcessMultipleProcessors(subscribers, t)
 	if err != nil {
 		log.Printf("[ERROR] Processing %s failed: %s", t, err)

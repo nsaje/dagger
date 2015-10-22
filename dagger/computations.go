@@ -180,7 +180,6 @@ func NewBufferHandler(compID string, persister Persister, lwmTracker *lwmTracker
 		persister:  persister,
 		next:       next,
 		lwmTracker: lwmTracker,
-		LWM:        time.Time{},
 		lwmCh:      make(chan time.Time),
 	}
 }
@@ -199,12 +198,7 @@ func (bh *bufferHandler) ProcessTuple(t *structs.Tuple) error {
 		return err
 	}
 	upstreamLWM, _ := bh.lwmTracker.GetUpstreamLWM()
-	log.Println("upstream LWM", upstreamLWM)
-	if upstreamLWM.After(bh.LWM) {
-		log.Println("notifying forwarder")
-		bh.LWM = upstreamLWM
-		bh.lwmCh <- upstreamLWM
-	}
+	bh.lwmCh <- upstreamLWM
 	return nil
 }
 
@@ -212,6 +206,10 @@ func (bh *bufferHandler) StartForwarding() {
 	fromLWM := time.Time{}
 	go func() {
 		for toLWM := range bh.lwmCh {
+			if !toLWM.After(fromLWM) {
+				log.Println("continuing", fromLWM, toLWM)
+				continue
+			}
 			tups, _ := bh.persister.ReadBuffer(bh.compID, fromLWM, toLWM)
 			for _, t := range tups {
 				log.Println("PROCESSING TUPLE", t)

@@ -15,11 +15,11 @@ import (
 func Subscriber(c *cli.Context) {
 	conf := dagger.DefaultConfig(c)
 
-	// persister, err := dagger.NewPersister(conf)
-	// if err != nil {
-	// 	log.Fatalf("error opening database")
-	// }
-	// defer persister.Close()
+	persister, err := dagger.NewPersister(conf)
+	if err != nil {
+		log.Fatalf("error opening database")
+	}
+	defer persister.Close()
 
 	prnter := &printer{dataonly: c.Bool("dataonly")}
 
@@ -27,7 +27,7 @@ func Subscriber(c *cli.Context) {
 	receiver := dagger.NewReceiver(conf, coordinator)
 	go receiver.ReceiveTuples()
 
-	err := coordinator.Start()
+	err = coordinator.Start()
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatalf("Error starting coordinator %s", err)
@@ -35,9 +35,13 @@ func Subscriber(c *cli.Context) {
 	log.Println("Coordinator started")
 
 	topicGlob := c.Args().First()
-	linearizer := dagger.NewLinearizer(prnter, []string{topicGlob})
-	go linearizer.Linearize()
-	receiver.SubscribeTo(topicGlob, linearizer)
+	// linearizer := dagger.NewLinearizer(prnter, []string{topicGlob})
+	// go linearizer.Linearize()
+	lwmTracker := dagger.NewLWMTracker()
+	bufferHandler := dagger.NewBufferHandler("test", persister, lwmTracker, prnter)
+	bufferHandler.StartForwarding()
+	receiver.SubscribeTo(topicGlob, bufferHandler)
+	// receiver.SubscribeTo(topicGlob, linearizer)
 	log.Printf("Subscribed to %s", topicGlob)
 
 	// FIXME: bring deduplicator back into subscriber

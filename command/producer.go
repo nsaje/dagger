@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/codegangsta/cli"
 	"github.com/nsaje/dagger/dagger"
@@ -27,11 +28,9 @@ func Producer(c *cli.Context) {
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
 	bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
 	streamID := c.String("streamID")
-<<<<<<< HEAD
 
-=======
->>>>>>> buffered
 	reader := bufio.NewReader(os.Stdin)
+	var tmpT *structs.Tuple
 	for {
 		var line string
 		line, err := reader.ReadString('\n')
@@ -46,13 +45,16 @@ func Producer(c *cli.Context) {
 		}
 		log.Println("read", line)
 		lwmTracker.BeforeDispatching([]*structs.Tuple{tuple})
-		tuple.LWM, err = lwmTracker.GetLWM()
+		tuple.LWM, err = lwmTracker.GetLocalLWM()
 		if err != nil {
 			log.Println("error:", err)
 			break
 		}
 		bufferedDispatcher.ProcessTuple(tuple)
+		tmpT = tuple
 	}
 	bufferedDispatcher.Stop()
+	tmpT.LWM = time.Now().Add(time.Hour)
+	dispatcher.ProcessTuple(tmpT)
 	log.Println("EXITING")
 }

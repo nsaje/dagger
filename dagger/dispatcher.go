@@ -16,11 +16,13 @@ type Dispatcher struct {
 	conf        *Config
 	coordinator Coordinator
 	connections map[string]*subscriberHandler
+	sync.RWMutex
 }
 
 // NewDispatcher creates a new dispatcher
 func NewDispatcher(conf *Config, coordinator Coordinator) *Dispatcher {
-	return &Dispatcher{conf, coordinator, make(map[string]*subscriberHandler)}
+	return &Dispatcher{conf, coordinator, make(map[string]*subscriberHandler),
+		sync.RWMutex{}}
 }
 
 // ProcessTuple sends tuple to registered subscribers via RPC
@@ -32,14 +34,21 @@ func (d *Dispatcher) ProcessTuple(t *structs.Tuple) error {
 	}
 	subscriberHandlers := make([]TupleProcessor, len(subscribers))
 	for i, s := range subscribers {
+		d.RLock()
 		subHandler, exists := d.connections[s]
+		d.RUnlock()
 		// If a subscriber connection handler doesn't exist, create it
 		if !exists {
-			subHandler, err = newSubscriberHandler(s)
-			if err != nil {
-				return err
+			d.Lock()
+			_, exists := d.connections[s]
+			if !exists {
+				subHandler, err = newSubscriberHandler(s)
+				if err != nil {
+					return err
+				}
+				d.connections[s] = subHandler
 			}
-			d.connections[s] = subHandler
+			d.Unlock()
 		}
 		subscriberHandlers[i] = subHandler
 	}
@@ -132,11 +141,15 @@ func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
 }
 
 func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
+	var try int
 START:
 	var reply string
+	log.Println("calling for", t)
 	err := s.client.Call("Receiver.SubmitTuple", t, &reply)
 	if err != nil {
 		log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)
+		log.Println("RETRYING", try)
+		try++
 		goto START // FIXME
 	}
 	log.Printf("[dispatcher] ACK received for tuple %s", t)
