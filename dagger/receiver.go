@@ -81,7 +81,7 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	for k := range r.subscribedTupleProcessors[t.StreamID] {
 		subscribers = append(subscribers, k)
 	}
-	log.Printf("[receiver] processing %s with %+v", t, subscribers)
+	// log.Printf("[receiver] processing %s with %+v", t, subscribers)
 	err := ProcessMultipleProcessors(subscribers, t)
 	if err != nil {
 		log.Printf("[ERROR] Processing %s failed: %s", t, err)

@@ -14,9 +14,9 @@ type Tuple struct {
 	Data      interface{} `json:"data"`
 }
 
-func (t *Tuple) String() string {
-	return fmt.Sprintf("stream_id: %s, data: %v", t.StreamID, t.Data)
-}
+// func (t *Tuple) String() string {
+// 	return fmt.Sprintf("stream_id: %s, data: %v", t.StreamID, t.Data)
+// }
 
 // ComputationPluginResponse  is returned from a computation plugin to the main app
 type ComputationPluginResponse struct {

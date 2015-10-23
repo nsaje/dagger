@@ -58,13 +58,14 @@ func (d *Dispatcher) ProcessTuple(t *structs.Tuple) error {
 // BufferedDispatcher bufferes produced tuples and sends them with retrying
 // until they are ACKed
 type BufferedDispatcher struct {
-	computationID string
-	buffer        chan *structs.Tuple
-	dispatcher    TupleProcessor
-	stopCh        chan struct{}
-	sentTracker   SentTracker
-	lwmTracker    LwmTracker
-	wg            sync.WaitGroup
+	computationID     string
+	buffer            chan *structs.Tuple
+	dispatcher        TupleProcessor
+	stopCh            chan struct{}
+	sentTracker       SentTracker
+	lwmTracker        LwmTracker
+	heartbeatExtender chan *structs.Tuple
+	wg                sync.WaitGroup
 }
 
 // StartBufferedDispatcher creates a new buffered dispatcher and starts workers
@@ -72,13 +73,32 @@ type BufferedDispatcher struct {
 func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTracker SentTracker, lwmTracker LwmTracker,
 	stopCh chan struct{}) *BufferedDispatcher {
 	bd := &BufferedDispatcher{
-		computationID: compID,
-		buffer:        make(chan *structs.Tuple, 100), // FIXME: make it configurable
-		dispatcher:    dispatcher,
-		sentTracker:   sentTracker,
-		lwmTracker:    lwmTracker,
-		stopCh:        stopCh,
+		computationID:     compID,
+		buffer:            make(chan *structs.Tuple, 100), // FIXME: make it configurable
+		dispatcher:        dispatcher,
+		sentTracker:       sentTracker,
+		lwmTracker:        lwmTracker,
+		stopCh:            stopCh,
+		heartbeatExtender: make(chan *structs.Tuple),
 	}
+
+	go func() {
+		var lastSent *structs.Tuple
+		heartbeatTimer := time.NewTimer(time.Second)
+		for {
+			select {
+			case t := <-bd.heartbeatExtender:
+				lastSent = t
+			case <-heartbeatTimer.C:
+				// resend last tuple in case we havent sent anything in a while
+				// to update receiver's LWM
+				if lastSent != nil {
+					bd.dispatcher.ProcessTuple(lastSent)
+				}
+			}
+			heartbeatTimer.Reset(time.Second)
+		}
+	}()
 
 	// FIXME: configurable number?
 	for i := 0; i < 10; i++ {
@@ -105,8 +125,6 @@ func (bd *BufferedDispatcher) dispatch() {
 	defer bd.wg.Done()
 	for {
 		select {
-		case <-bd.stopCh:
-			return
 		case t, ok := <-bd.buffer:
 			if !ok { // channel closed, no more tuples coming in
 				return
@@ -119,8 +137,10 @@ func (bd *BufferedDispatcher) dispatch() {
 					if bd.sentTracker != nil {
 						bd.sentTracker.SentSuccessfuly(bd.computationID, t)
 					}
+					bd.heartbeatExtender <- t // notify the LWM heartbeat mechanism that we've sent a tuple
 					break
 				}
+				log.Println("RETRYING")
 				time.Sleep(time.Second) // exponential backoff?
 			}
 		}
@@ -141,16 +161,11 @@ func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
 }
 
 func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
-	var try int
-START:
 	var reply string
-	log.Println("calling for", t)
 	err := s.client.Call("Receiver.SubmitTuple", t, &reply)
 	if err != nil {
 		log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)
-		log.Println("RETRYING", try)
-		try++
-		goto START // FIXME
+		return err
 	}
 	log.Printf("[dispatcher] ACK received for tuple %s", t)
 	return nil
