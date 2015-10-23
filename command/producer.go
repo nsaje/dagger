@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/codegangsta/cli"
 	"github.com/nsaje/dagger/dagger"
@@ -29,7 +30,7 @@ func Producer(c *cli.Context) {
 	streamID := c.String("streamID")
 
 	reader := bufio.NewReader(os.Stdin)
-	// var tmpT *structs.Tuple
+	var tmpT *structs.Tuple
 	for {
 		var line string
 		line, err := reader.ReadString('\n')
@@ -50,10 +51,10 @@ func Producer(c *cli.Context) {
 			break
 		}
 		bufferedDispatcher.ProcessTuple(tuple)
-		// tmpT = tuple
+		tmpT = tuple
 	}
 	bufferedDispatcher.Stop()
-	// tmpT.LWM = time.Now().Add(time.Hour)
-	// dispatcher.ProcessTuple(tmpT)
+	tmpT.LWM = time.Now().Add(time.Hour)
+	dispatcher.ProcessTuple(tmpT)
 	log.Println("EXITING")
 }

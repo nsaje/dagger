@@ -88,11 +88,16 @@ func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTrack
 		for {
 			select {
 			case t := <-bd.heartbeatExtender:
-				lastSent = t
+				if lastSent == nil || t.Timestamp.After(lastSent.Timestamp) {
+					lastSent = t
+				}
 			case <-heartbeatTimer.C:
 				// resend last tuple in case we havent sent anything in a while
 				// to update receiver's LWM
 				if lastSent != nil {
+					lwm, _ := bd.lwmTracker.GetLocalLWM()
+					lastSent.LWM = lwm.Add(time.Nanosecond)
+					log.Println("SENDING HEARTBEAT")
 					bd.dispatcher.ProcessTuple(lastSent)
 				}
 			}

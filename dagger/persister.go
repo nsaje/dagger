@@ -230,7 +230,11 @@ func (p *LevelDBPersister) Insert(compID string, t *structs.Tuple) error {
 		return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
 	}
 	key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
-	p.db.Put(key, []byte(serialized), &opt.WriteOptions{Sync: true})
+	err = p.db.Put(key, []byte(serialized), &opt.WriteOptions{Sync: true})
+	if err != nil {
+		return fmt.Errorf("[persister] Error persisting tuple %v: %s", t, err)
+	}
+	log.Println("[persister] persisted tuple", t)
 	return nil
 }
 
@@ -247,9 +251,6 @@ func (p *LevelDBPersister) ReadBuffer(compID string, from time.Time, to time.Tim
 			return nil, fmt.Errorf("[persister] unmarshalling produced: %s", err)
 		}
 		tups = append(tups, &tuple)
-	}
-	if len(tups) > 1 {
-		log.Println("Returning MULTIPLE", len(tups))
 	}
 	return tups, nil
 }
