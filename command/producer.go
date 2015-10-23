@@ -44,12 +44,6 @@ func Producer(c *cli.Context) {
 			break
 		}
 		log.Println("read", line)
-		lwmTracker.BeforeDispatching([]*structs.Tuple{tuple})
-		tuple.LWM, err = lwmTracker.GetLocalLWM()
-		if err != nil {
-			log.Println("error:", err)
-			break
-		}
 		bufferedDispatcher.ProcessTuple(tuple)
 		tmpT = tuple
 	}

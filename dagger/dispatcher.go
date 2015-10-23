@@ -96,9 +96,11 @@ func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTrack
 				// to update receiver's LWM
 				if lastSent != nil {
 					lwm, _ := bd.lwmTracker.GetLocalLWM()
-					lastSent.LWM = lwm.Add(time.Nanosecond)
-					log.Println("SENDING HEARTBEAT")
-					bd.dispatcher.ProcessTuple(lastSent)
+					if lwm == maxTime {
+						lastSent.LWM = lastSent.Timestamp.Add(time.Nanosecond)
+						log.Println("SENDING HEARTBEAT")
+						bd.dispatcher.ProcessTuple(lastSent)
+					}
 				}
 			}
 			heartbeatTimer.Reset(time.Second)
@@ -122,6 +124,7 @@ func (bd *BufferedDispatcher) Stop() {
 
 // ProcessTuple sends the tuple to the buffered channel
 func (bd *BufferedDispatcher) ProcessTuple(t *structs.Tuple) error {
+	bd.lwmTracker.BeforeDispatching([]*structs.Tuple{t})
 	bd.buffer <- t
 	return nil
 }
@@ -134,8 +137,11 @@ func (bd *BufferedDispatcher) dispatch() {
 			if !ok { // channel closed, no more tuples coming in
 				return
 			}
-			lwm, _ := bd.lwmTracker.GetLocalLWM()
+			lwm, _ := bd.lwmTracker.GetCombinedLWM()
 			t.LWM = lwm
+			if lwm.After(t.Timestamp) {
+				t.LWM = t.Timestamp
+			}
 			for {
 				err := bd.dispatcher.ProcessTuple(t)
 				if err == nil {
