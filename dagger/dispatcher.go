@@ -58,14 +58,14 @@ func (d *Dispatcher) ProcessTuple(t *structs.Tuple) error {
 // BufferedDispatcher bufferes produced tuples and sends them with retrying
 // until they are ACKed
 type BufferedDispatcher struct {
-	computationID     string
-	buffer            chan *structs.Tuple
-	dispatcher        TupleProcessor
-	stopCh            chan struct{}
-	sentTracker       SentTracker
-	lwmTracker        LwmTracker
-	heartbeatExtender chan *structs.Tuple
-	wg                sync.WaitGroup
+	computationID string
+	buffer        chan *structs.Tuple
+	dispatcher    TupleProcessor
+	stopCh        chan struct{}
+	sentTracker   SentTracker
+	lwmTracker    LwmTracker
+	lwmFlush      chan *structs.Tuple
+	wg            sync.WaitGroup
 }
 
 // StartBufferedDispatcher creates a new buffered dispatcher and starts workers
@@ -73,39 +73,16 @@ type BufferedDispatcher struct {
 func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTracker SentTracker, lwmTracker LwmTracker,
 	stopCh chan struct{}) *BufferedDispatcher {
 	bd := &BufferedDispatcher{
-		computationID:     compID,
-		buffer:            make(chan *structs.Tuple, 100), // FIXME: make it configurable
-		dispatcher:        dispatcher,
-		sentTracker:       sentTracker,
-		lwmTracker:        lwmTracker,
-		stopCh:            stopCh,
-		heartbeatExtender: make(chan *structs.Tuple),
+		computationID: compID,
+		buffer:        make(chan *structs.Tuple, 100), // FIXME: make it configurable
+		dispatcher:    dispatcher,
+		sentTracker:   sentTracker,
+		lwmTracker:    lwmTracker,
+		stopCh:        stopCh,
+		lwmFlush:      make(chan *structs.Tuple),
 	}
 
-	go func() {
-		var lastSent *structs.Tuple
-		heartbeatTimer := time.NewTimer(time.Second)
-		for {
-			select {
-			case t := <-bd.heartbeatExtender:
-				if lastSent == nil || t.Timestamp.After(lastSent.Timestamp) {
-					lastSent = t
-				}
-			case <-heartbeatTimer.C:
-				// resend last tuple in case we havent sent anything in a while
-				// to update receiver's LWM
-				if lastSent != nil {
-					lwm := bd.lwmTracker.GetLocalLWM()
-					if lwm == maxTime {
-						lastSent.LWM = lastSent.Timestamp.Add(time.Nanosecond)
-						log.Println("SENDING HEARTBEAT")
-						bd.dispatcher.ProcessTuple(lastSent)
-					}
-				}
-			}
-			heartbeatTimer.Reset(time.Second)
-		}
-	}()
+	go bd.lwmFlusher()
 
 	// FIXME: configurable number?
 	for i := 0; i < 10; i++ {
@@ -129,6 +106,38 @@ func (bd *BufferedDispatcher) ProcessTuple(t *structs.Tuple) error {
 	return nil
 }
 
+func (bd *BufferedDispatcher) lwmFlusher() {
+	var lastSent *structs.Tuple
+	flushAfter := 500 * time.Millisecond
+	lwmFlushTimer := time.NewTimer(flushAfter)
+	for {
+		select {
+		case t := <-bd.lwmFlush:
+			if lastSent == nil || t.Timestamp.After(lastSent.Timestamp) {
+				lastSent = t
+			}
+			lwmFlushTimer.Reset(flushAfter)
+		case <-lwmFlushTimer.C:
+			// resend last tuple in case we havent sent anything in a while
+			// to update receiver's LWM
+			if lastSent != nil {
+				lwm := bd.lwmTracker.GetLocalLWM()
+				if lwm == maxTime {
+					lastSent.LWM = lastSent.Timestamp.Add(time.Nanosecond)
+					log.Println("[dispatcher] flushing LWM on stream", bd.computationID)
+					for {
+						err := bd.dispatcher.ProcessTuple(lastSent)
+						if err != nil {
+							continue
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
 func (bd *BufferedDispatcher) dispatch() {
 	defer bd.wg.Done()
 	for {
@@ -137,22 +146,19 @@ func (bd *BufferedDispatcher) dispatch() {
 			if !ok { // channel closed, no more tuples coming in
 				return
 			}
-			lwm := bd.lwmTracker.GetCombinedLWM()
-			t.LWM = lwm
-			if lwm.After(t.Timestamp) {
-				t.LWM = t.Timestamp
-			}
+			t.LWM = bd.lwmTracker.GetCombinedLWM()
 			for {
 				err := bd.dispatcher.ProcessTuple(t)
-				if err == nil {
-					if bd.sentTracker != nil {
-						bd.sentTracker.SentSuccessfuly(bd.computationID, t)
-					}
-					bd.heartbeatExtender <- t // notify the LWM heartbeat mechanism that we've sent a tuple
-					break
+				if err != nil {
+					log.Println("[dispatcher] Retrying tuple", t)
+					time.Sleep(time.Second) // exponential backoff?
+					continue
 				}
-				log.Println("RETRYING")
-				time.Sleep(time.Second) // exponential backoff?
+				if bd.sentTracker != nil {
+					bd.sentTracker.SentSuccessfuly(bd.computationID, t)
+				}
+				bd.lwmFlush <- t // notify the LWM heartbeat mechanism that we've sent a tuple
+				break
 			}
 		}
 	}
