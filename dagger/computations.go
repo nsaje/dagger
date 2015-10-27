@@ -199,7 +199,7 @@ func (bh *bufferHandler) ProcessTuple(t *structs.Tuple) error {
 	if err != nil {
 		return err
 	}
-	upstreamLWM, _ := bh.lwmTracker.GetUpstreamLWM()
+	upstreamLWM := bh.lwmTracker.GetUpstreamLWM()
 	bh.lwmCh <- upstreamLWM
 	bh.tmpT <- t
 	return nil

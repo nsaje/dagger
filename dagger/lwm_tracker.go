@@ -14,9 +14,9 @@ type LwmTracker interface {
 	TupleProcessor
 	SentTracker
 	BeforeDispatching([]*structs.Tuple)
-	GetCombinedLWM() (time.Time, error)
-	GetLocalLWM() (time.Time, error)
-	GetUpstreamLWM() (time.Time, error)
+	GetCombinedLWM() time.Time
+	GetLocalLWM() time.Time
+	GetUpstreamLWM() time.Time
 }
 
 type lwmTracker struct {
@@ -50,7 +50,7 @@ func (lwmT *lwmTracker) SentSuccessfuly(compID string, t *structs.Tuple) error {
 	return nil
 }
 
-func (lwmT *lwmTracker) GetUpstreamLWM() (time.Time, error) {
+func (lwmT *lwmTracker) GetUpstreamLWM() time.Time {
 	lwmT.RLock()
 	defer lwmT.RUnlock()
 	min := maxTime
@@ -59,10 +59,10 @@ func (lwmT *lwmTracker) GetUpstreamLWM() (time.Time, error) {
 			min = lwm
 		}
 	}
-	return min, nil
+	return min
 }
 
-func (lwmT *lwmTracker) GetLocalLWM() (time.Time, error) {
+func (lwmT *lwmTracker) GetLocalLWM() time.Time {
 	lwmT.RLock()
 	defer lwmT.RUnlock()
 	min := maxTime
@@ -71,16 +71,16 @@ func (lwmT *lwmTracker) GetLocalLWM() (time.Time, error) {
 			min = lwm
 		}
 	}
-	return min, nil
+	return min
 }
 
-func (lwmT *lwmTracker) GetCombinedLWM() (time.Time, error) {
-	min, _ := lwmT.GetUpstreamLWM()
-	min2, _ := lwmT.GetLocalLWM()
+func (lwmT *lwmTracker) GetCombinedLWM() time.Time {
+	min := lwmT.GetUpstreamLWM()
+	min2 := lwmT.GetLocalLWM()
 	if min.Before(min2) {
-		return min, nil
+		return min
 	}
-	return min2, nil
+	return min2
 }
 
 func (lwmT *lwmTracker) ProcessTuple(t *structs.Tuple) error {

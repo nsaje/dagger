@@ -238,6 +238,7 @@ func (p *LevelDBPersister) Insert(compID string, t *structs.Tuple) error {
 	return nil
 }
 
+// ReadBuffer returns a piece of the input buffer between specified timestamps
 func (p *LevelDBPersister) ReadBuffer(compID string, from time.Time, to time.Time) ([]*structs.Tuple, error) {
 	var tups []*structs.Tuple
 	start := []byte(fmt.Sprintf("%s-i-%d", compID, from.UnixNano()))

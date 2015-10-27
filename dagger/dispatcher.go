@@ -95,7 +95,7 @@ func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTrack
 				// resend last tuple in case we havent sent anything in a while
 				// to update receiver's LWM
 				if lastSent != nil {
-					lwm, _ := bd.lwmTracker.GetLocalLWM()
+					lwm := bd.lwmTracker.GetLocalLWM()
 					if lwm == maxTime {
 						lastSent.LWM = lastSent.Timestamp.Add(time.Nanosecond)
 						log.Println("SENDING HEARTBEAT")
@@ -137,7 +137,7 @@ func (bd *BufferedDispatcher) dispatch() {
 			if !ok { // channel closed, no more tuples coming in
 				return
 			}
-			lwm, _ := bd.lwmTracker.GetCombinedLWM()
+			lwm := bd.lwmTracker.GetCombinedLWM()
 			t.LWM = lwm
 			if lwm.After(t.Timestamp) {
 				t.LWM = t.Timestamp
