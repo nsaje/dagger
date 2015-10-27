@@ -13,22 +13,22 @@ import (
 
 // Receiver receives new tuples via incoming RPC calls
 type Receiver struct {
-	conf              *Config
-	coordinator       Coordinator
-	server            *rpc.Server
-	listener          net.Listener
-	computationSyncer ComputationSyncer
-	subscribers       map[string]map[TupleProcessor]struct{}
-	subscribersLock   *sync.RWMutex
+	conf                      *Config
+	coordinator               Coordinator
+	server                    *rpc.Server
+	listener                  net.Listener
+	computationSyncer         ComputationSyncer
+	subscribedTupleProcessors map[string]map[TupleProcessor]struct{}
+	subscribersLock           *sync.RWMutex
 }
 
 // NewReceiver initializes a new receiver
 func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
 	r := &Receiver{
-		conf:            conf,
-		coordinator:     coordinator,
-		subscribers:     make(map[string]map[TupleProcessor]struct{}),
-		subscribersLock: &sync.RWMutex{},
+		conf:                      conf,
+		coordinator:               coordinator,
+		subscribedTupleProcessors: make(map[string]map[TupleProcessor]struct{}),
+		subscribersLock:           &sync.RWMutex{},
 	}
 	r.server = rpc.NewServer()
 	r.server.Register(r)
@@ -51,28 +51,34 @@ func (r *Receiver) SubscribeTo(streamID string, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.SubscribeTo(streamID)
-	subscribersSet := r.subscribers[streamID]
+	subscribersSet := r.subscribedTupleProcessors[streamID]
 	if subscribersSet == nil {
 		subscribersSet = make(map[TupleProcessor]struct{})
 	}
 	subscribersSet[tp] = struct{}{}
-	r.subscribers[streamID] = subscribersSet
+	r.subscribedTupleProcessors[streamID] = subscribersSet
 }
 
 func (r *Receiver) UnsubscribeFrom(streamID string, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.UnsubscribeFrom(streamID)
-	delete(r.subscribers[streamID], tp)
+	delete(r.subscribedTupleProcessors[streamID], tp)
 }
 
 // SubmitTuple submits a new tuple into the worker process
 func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	log.Printf("[receiver] Received: %s", t)
-	subscribers := make([]TupleProcessor, 0, len(r.subscribers[t.StreamID]))
-	for k := range r.subscribers[t.StreamID] {
+	// if rand.Float64() < 0.1 {
+	// 	fmt.Println("rejecting for test")
+	// 	time.Sleep(time.Second)
+	// 	return errors.New("rejected for test")
+	// }
+	subscribers := make([]TupleProcessor, 0, len(r.subscribedTupleProcessors[t.StreamID]))
+	for k := range r.subscribedTupleProcessors[t.StreamID] {
 		subscribers = append(subscribers, k)
 	}
+	// log.Printf("[receiver] processing %s with %+v", t, subscribers)
 	err := ProcessMultipleProcessors(subscribers, t)
 	if err != nil {
 		log.Printf("[ERROR] Processing %s failed: %s", t, err)

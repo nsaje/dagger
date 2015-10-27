@@ -5,10 +5,11 @@ import (
 	"log"
 	"os"
 	"strings"
-
-	"github.com/nsaje/dagger/dagger"
+	"time"
 
 	"github.com/codegangsta/cli"
+	"github.com/nsaje/dagger/dagger"
+	"github.com/nsaje/dagger/structs"
 )
 
 // Producer reads tuples from stdin and submits them
@@ -23,17 +24,31 @@ func Producer(c *cli.Context) {
 		log.Fatal("Error setting up coordinator")
 	}
 
+	lwmTracker := dagger.NewLWMTracker()
 	dispatcher := dagger.NewDispatcher(conf, coordinator)
+	bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
 	streamID := c.String("streamID")
+
 	reader := bufio.NewReader(os.Stdin)
+	var tmpT *structs.Tuple
 	for {
 		var line string
-		line, err = reader.ReadString('\n')
+		line, err := reader.ReadString('\n')
 		if err != nil {
 			log.Println("error:", err)
-			return
+			break
 		}
-		tuple, _ := dagger.CreateTuple(streamID, strings.TrimSpace(line))
-		dispatcher.ProcessTuple(tuple)
+		tuple, err := dagger.CreateTuple(streamID, strings.TrimSpace(line))
+		if err != nil {
+			log.Println("error:", err)
+			break
+		}
+		log.Println("read", line)
+		bufferedDispatcher.ProcessTuple(tuple)
+		tmpT = tuple
 	}
+	bufferedDispatcher.Stop()
+	tmpT.LWM = time.Now().Add(time.Hour)
+	dispatcher.ProcessTuple(tmpT)
+	log.Println("EXITING")
 }

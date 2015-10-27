@@ -96,11 +96,12 @@ func CreateTuple(streamID string, data string) (*structs.Tuple, error) {
 	if len(streamID) == 0 {
 		return nil, errors.New("Stream ID shouldn't be empty")
 	}
+	now := time.Now()
 	t := structs.Tuple{
 		StreamID:  streamID,
 		ID:        uuid.NewV4().String(),
-		Timestamp: time.Now(),
-		LWM:       time.Now(),
+		Timestamp: now,
+		LWM:       now,
 		Data:      string(data),
 	}
 	return &t, nil

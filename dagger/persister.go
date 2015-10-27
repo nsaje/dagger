@@ -5,16 +5,19 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/nsaje/dagger/structs"
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
 	"github.com/twinj/uuid"
 )
 
 const (
-	receivedKeyFormat    = "%s-r-%s" // <computationID>-r-<tupleID>
-	productionsKeyFormat = "%s-p-%s" // <computationID>-p-<tupleID>
+	receivedKeyFormat    = "%s-r-%s"    // <computationID>-r-<tupleID>
+	productionsKeyFormat = "%s-p-%s"    // <computationID>-p-<tupleID>
+	inKeyFormat          = "%s-i-%d-%s" // <computationID>-i-<timestamp>-<tupleID>
 )
 
 // Persister takes care of persisting in-flight tuples and computation state
@@ -23,6 +26,8 @@ type Persister interface {
 	CommitComputation(compID string, in *structs.Tuple, out []*structs.Tuple) error
 	GetSnapshot(compID string) (*structs.ComputationSnapshot, error)
 	ApplySnapshot(compID string, snapshot *structs.ComputationSnapshot) error
+	Insert(compID string, t *structs.Tuple) error
+	ReadBuffer(compID string, from time.Time, to time.Time) ([]*structs.Tuple, error)
 	SentTracker
 	ReceivedTracker
 	StatePersister
@@ -216,4 +221,37 @@ func (p *LevelDBPersister) ReceivedAlready(comp string, t *structs.Tuple) (bool,
 func (p *LevelDBPersister) SentSuccessfuly(compID string, t *structs.Tuple) error {
 	key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.ID))
 	return p.db.Delete(key, nil)
+}
+
+// Insert inserts a received tuple into the ordered queue for a computation
+func (p *LevelDBPersister) Insert(compID string, t *structs.Tuple) error {
+	serialized, err := json.Marshal(t)
+	if err != nil {
+		return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
+	}
+	key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
+	err = p.db.Put(key, []byte(serialized), &opt.WriteOptions{Sync: true})
+	if err != nil {
+		return fmt.Errorf("[persister] Error persisting tuple %v: %s", t, err)
+	}
+	log.Println("[persister] persisted tuple", t)
+	return nil
+}
+
+// ReadBuffer returns a piece of the input buffer between specified timestamps
+func (p *LevelDBPersister) ReadBuffer(compID string, from time.Time, to time.Time) ([]*structs.Tuple, error) {
+	var tups []*structs.Tuple
+	start := []byte(fmt.Sprintf("%s-i-%d", compID, from.UnixNano()))
+	limit := []byte(fmt.Sprintf("%s-i-%d", compID, to.UnixNano()))
+	log.Println("reading from, to", string(start), string(limit))
+	iter := p.db.NewIterator(&util.Range{Start: start, Limit: limit}, nil)
+	for iter.Next() {
+		var tuple structs.Tuple
+		err := json.Unmarshal(iter.Value(), &tuple)
+		if err != nil {
+			return nil, fmt.Errorf("[persister] unmarshalling produced: %s", err)
+		}
+		tups = append(tups, &tuple)
+	}
+	return tups, nil
 }
