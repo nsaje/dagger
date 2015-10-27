@@ -38,13 +38,15 @@ type ComputationPluginState struct {
 // ComputationSnapshot is used for synchronizing computation state between workers
 type ComputationSnapshot struct {
 	Received    []string
+	InputBuffer []*Tuple
 	Produced    []*Tuple
 	PluginState *ComputationPluginState
 }
 
 func (s *ComputationSnapshot) String() string {
-	return fmt.Sprintf("Received: %v, Produced: %v, PluginState: %s",
-		s.Received,
+	return fmt.Sprintf("InputBuffer: %v, Received: %v, Produced: %v, PluginState: %s",
+		len(s.Received),
+		len(s.InputBuffer),
 		s.Produced,
 		string(s.PluginState.State))
 }

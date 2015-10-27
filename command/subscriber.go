@@ -38,8 +38,13 @@ func Subscriber(c *cli.Context) {
 	// linearizer := dagger.NewLinearizer(prnter, []string{topicGlob})
 	// go linearizer.Linearize()
 	lwmTracker := dagger.NewLWMTracker()
-	bufferHandler := dagger.NewLinearizer("test", persister, lwmTracker, prnter)
-	bufferHandler.StartForwarding()
+	bufferHandler := dagger.NewLinearizer("test", persister, lwmTracker)
+	go bufferHandler.StartForwarding()
+	go func() {
+		for t := range bufferHandler.Linearized {
+			prnter.ProcessTuple(t)
+		}
+	}()
 	receiver.SubscribeTo(topicGlob, bufferHandler)
 	// receiver.SubscribeTo(topicGlob, linearizer)
 	log.Printf("Subscribed to %s", topicGlob)

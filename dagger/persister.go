@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/nsaje/dagger/structs"
@@ -135,19 +134,34 @@ func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnaps
 	iter2 := dbSnapshot.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
 	defer iter2.Release()
 	for iter2.Next() {
-		if !strings.HasPrefix(string(iter.Key()), keyPrefix) {
-			continue
-		}
 		var tuple structs.Tuple
-		err := json.Unmarshal(iter.Value(), &tuple)
+		err := json.Unmarshal(iter2.Value(), &tuple)
 		if err != nil {
 			return nil, fmt.Errorf("[persister] unmarshalling produced: %s", err)
 		}
 		snapshot.Produced = append(snapshot.Produced, &tuple)
 	}
-	err = iter.Error()
+	err = iter2.Error()
 	if err != nil {
 		return nil, fmt.Errorf("[persister] iterating produced: %s", err)
+	}
+
+	// get input buffer tuples
+	snapshot.InputBuffer = make([]*structs.Tuple, 0)
+	keyPrefix = fmt.Sprintf("%s-i-", compID)
+	iter3 := dbSnapshot.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
+	defer iter3.Release()
+	for iter3.Next() {
+		var tuple structs.Tuple
+		err := json.Unmarshal(iter3.Value(), &tuple)
+		if err != nil {
+			return nil, fmt.Errorf("[persister] unmarshalling produced: %s", err)
+		}
+		snapshot.InputBuffer = append(snapshot.InputBuffer, &tuple)
+	}
+	err = iter.Error()
+	if err != nil {
+		return nil, fmt.Errorf("[persister] iterating input buffer: %s", err)
 	}
 	return &snapshot, err
 }
@@ -176,6 +190,16 @@ func (p *LevelDBPersister) ApplySnapshot(compID string, snapshot *structs.Comput
 			return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
 		}
 		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.ID))
+		batch.Put(key, []byte(serialized))
+	}
+
+	// save input buffer
+	for _, t := range snapshot.InputBuffer {
+		serialized, err := json.Marshal(t)
+		if err != nil {
+			return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
+		}
+		key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
 		batch.Put(key, []byte(serialized))
 	}
 	return p.db.Write(batch, nil)

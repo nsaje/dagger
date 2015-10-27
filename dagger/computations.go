@@ -42,7 +42,7 @@ type computationManager struct {
 func NewComputationManager(coordinator Coordinator,
 	receiver *Receiver,
 	persister Persister,
-	dispatcher TupleProcessor) ComputationManager {
+	dispatcher TupleProcessor) *computationManager {
 	c := metrics.NewCounter()
 	metrics.Register("processing", c)
 	cm := &computationManager{
@@ -85,7 +85,6 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 	}
 
 	var computation Computation
-	var next TupleProcessor
 	if info.Stateful {
 		// deduplicator, err := NewDeduplicator(computationID, cm.persister)
 		if err != nil {
@@ -102,6 +101,7 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 		// notify both LWM tracker and persister when a tuple is successfuly sent
 		multiSentTracker := MultiSentTracker{[]SentTracker{lwmTracker, cm.persister}}
 
+		linearizer := NewLinearizer(computationID, cm.persister, lwmTracker)
 		bufferedDispatcher := StartBufferedDispatcher(computationID, cm.dispatcher, multiSentTracker, lwmTracker, stopCh)
 		computation = &statefulComputation{
 			computationID:      computationID,
@@ -109,20 +109,19 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 			groupHandler:       groupHandler,
 			persister:          cm.persister,
 			lwmTracker:         lwmTracker,
+			linearizer:         linearizer,
 			bufferedDispatcher: bufferedDispatcher,
 			stopCh:             stopCh,
 			RWMutex:            sync.RWMutex{},
 			initialized:        false,
 		}
-		bufferHandler := NewLinearizer(computationID, cm.persister, lwmTracker, computation)
-		bufferHandler.StartForwarding()
-		next = bufferHandler
 	} else {
 		computation = &statelessComputation{plugin, cm.dispatcher}
 	}
+	computation.Init()
 
 	for _, input := range info.Inputs {
-		cm.receiver.SubscribeTo(input, next)
+		cm.receiver.SubscribeTo(input, computation)
 	}
 	cm.computations[computationID] = computation
 	return nil
@@ -145,6 +144,7 @@ func (cm *computationManager) Sync(computationID string) (*structs.ComputationSn
 // computation
 type Computation interface {
 	TupleProcessor
+	Init() error
 	Sync() (*structs.ComputationSnapshot, error)
 }
 
@@ -165,11 +165,15 @@ func (comp *statelessComputation) Sync() (*structs.ComputationSnapshot, error) {
 	return nil, nil
 }
 
+func (comp *statelessComputation) Init() error {
+	return nil
+}
+
 type statefulComputation struct {
 	computationID      string
 	plugin             ComputationPlugin
 	groupHandler       GroupHandler
-	bufferHandler      *Linearizer
+	linearizer         *Linearizer
 	persister          Persister
 	lwmTracker         LWMTracker
 	bufferedDispatcher TupleProcessor
@@ -177,6 +181,16 @@ type statefulComputation struct {
 
 	sync.RWMutex // a reader/writer lock for blocking new tuples on sync request
 	initialized  bool
+}
+
+func (comp *statefulComputation) Init() error {
+	err := comp.syncStateWithMaster()
+	if err != nil {
+		return err
+	}
+	go comp.linearizer.StartForwarding()
+	go comp.StartProcessing()
+	return nil
 }
 
 func (comp *statefulComputation) syncStateWithMaster() error {
@@ -228,56 +242,67 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 }
 
 func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
-	comp.RLock()
-	if !comp.initialized {
-		comp.RUnlock()
-		err := comp.syncStateWithMaster()
-		if err != nil {
-			return err
-		}
-	} else {
-		comp.RUnlock()
-	}
+	// comp.RLock()
+	// if !comp.initialized {
+	// 	comp.RUnlock()
+	// 	err := comp.syncStateWithMaster()
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// } else {
+	// 	comp.RUnlock()
+	// }
 
 	// acquire a reader lock, so we wait in case there's synchronization with
 	// a slave going on
 	comp.RLock()
 	defer comp.RUnlock()
 
-	// deduplication
-	// seen, err := comp.deduplicator.Seen(t)
-	// if err != nil {
-	// 	return err
-	// }
-	// if seen {
-	// 	return nil
-	// }
-
-	// send it to the plugin for processing, but through the linearizer so
-	// the plugin receives the tuples in order
-	response, err := comp.plugin.SubmitTuple(t)
+	err := comp.linearizer.ProcessTuple(t)
 	if err != nil {
 		return err
 	}
-
-	// persist info about received and produced tuples
-	err = comp.persister.CommitComputation(comp.computationID, t, response.Tuples)
-	if err != nil {
-		return err
-	}
-
-	areWeLeader, _, err := comp.groupHandler.GetStatus()
-	if err != nil {
-		return err
-	}
-
-	if areWeLeader {
-		comp.lwmTracker.BeforeDispatching(response.Tuples)
-		// send to asynchronous dispatcher and return immediately
-		return ProcessMultipleTuples(comp.bufferedDispatcher, response.Tuples)
-	}
-	// don't send downstream if we're not the leader of our group
 	return nil
+}
+
+func (comp *statefulComputation) StartProcessing() {
+	for t := range comp.linearizer.Linearized {
+		comp.RLock()
+		// deduplication
+		// seen, err := comp.deduplicator.Seen(t)
+		// if err != nil {
+		// 	return err
+		// }
+		// if seen {
+		// 	return nil
+		// }
+
+		// send it to the plugin for processing, but through the linearizer so
+		// the plugin receives the tuples in order
+		response, err := comp.plugin.SubmitTuple(t)
+		if err != nil {
+			// return err
+		}
+
+		// persist info about received and produced tuples
+		err = comp.persister.CommitComputation(comp.computationID, t, response.Tuples)
+		if err != nil {
+			// return err
+		}
+
+		areWeLeader, _, err := comp.groupHandler.GetStatus()
+		if err != nil {
+			// return err
+		}
+
+		if areWeLeader {
+			comp.lwmTracker.BeforeDispatching(response.Tuples)
+			// send to asynchronous dispatcher and return immediately
+			ProcessMultipleTuples(comp.bufferedDispatcher, response.Tuples)
+		}
+		// don't send downstream if we're not the leader of our group
+		comp.RUnlock()
+	}
 }
 
 func (comp *statefulComputation) Sync() (*structs.ComputationSnapshot, error) {

@@ -23,24 +23,25 @@ type Linearizer struct {
 	LWM        time.Time
 	lwmCh      chan time.Time
 	tmpT       chan *structs.Tuple
-	next       TupleProcessor
+
+	Linearized chan *structs.Tuple
 }
 
 // NewLinearizer creates a new linearizer for a certain computation
-func NewLinearizer(compID string, store LinearizerStore, lwmTracker LWMTracker, next TupleProcessor) *Linearizer {
+func NewLinearizer(compID string, store LinearizerStore, lwmTracker LWMTracker) *Linearizer {
 	return &Linearizer{
 		compID:     compID,
 		store:      store,
-		next:       next,
 		lwmTracker: lwmTracker,
 		lwmCh:      make(chan time.Time),
 		tmpT:       make(chan *structs.Tuple),
+		Linearized: make(chan *structs.Tuple),
 	}
 }
 
 // ProcessTuple inserts the tuple into the buffer sorted by timestamps
-func (bh *Linearizer) ProcessTuple(t *structs.Tuple) error {
-	err := bh.store.Insert(bh.compID, t)
+func (l *Linearizer) ProcessTuple(t *structs.Tuple) error {
+	err := l.store.Insert(l.compID, t)
 	if err != nil {
 		return err
 	}
@@ -48,37 +49,35 @@ func (bh *Linearizer) ProcessTuple(t *structs.Tuple) error {
 	// calculate low water mark (LWM)
 	// LWM = min(oldest event in this computation, LWM across all publishers this
 	// computation is subscribed to)
-	err = bh.lwmTracker.ProcessTuple(t)
+	err = l.lwmTracker.ProcessTuple(t)
 	if err != nil {
 		return err
 	}
-	upstreamLWM := bh.lwmTracker.GetUpstreamLWM()
-	bh.lwmCh <- upstreamLWM
-	bh.tmpT <- t
+	upstreamLWM := l.lwmTracker.GetUpstreamLWM()
+	l.lwmCh <- upstreamLWM
+	l.tmpT <- t
 	return nil
 }
 
 // StartForwarding starts a goroutine that forwards the tuples from the buffer
 // to the next TupleProcessor when LWM tells us no more tuples will arrive in
 // the forwarded time frame
-func (bh *Linearizer) StartForwarding() {
+func (l *Linearizer) StartForwarding() {
 	fromLWM := time.Time{}
-	go func() {
-		for toLWM := range bh.lwmCh {
-			t := <-bh.tmpT
-			if !toLWM.After(fromLWM) {
-				log.Println("LWM not increased", t)
-				continue
-			}
-			tups, _ := bh.store.ReadBuffer(bh.compID, fromLWM, toLWM)
-			log.Printf("PROCESSING %s as result of ", t)
-			for _, t := range tups {
-				log.Println(t)
-			}
-			for _, t := range tups {
-				bh.next.ProcessTuple(t)
-			}
-			fromLWM = toLWM
+	for toLWM := range l.lwmCh {
+		t := <-l.tmpT
+		if !toLWM.After(fromLWM) {
+			log.Println("LWM not increased", t)
+			continue
 		}
-	}()
+		tups, _ := l.store.ReadBuffer(l.compID, fromLWM, toLWM)
+		log.Printf("PROCESSING %s as result of ", t)
+		for _, t := range tups {
+			log.Println(t)
+		}
+		for _, t := range tups {
+			l.Linearized <- t
+		}
+		fromLWM = toLWM
+	}
 }
