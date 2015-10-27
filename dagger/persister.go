@@ -230,7 +230,7 @@ func (p *LevelDBPersister) Insert(compID string, t *structs.Tuple) error {
 		return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
 	}
 	key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
-	err = p.db.Put(key, []byte(serialized), &opt.WriteOptions{Sync: true})
+	err = p.db.Put(key, []byte(serialized), &opt.WriteOptions{Sync: false})
 	if err != nil {
 		return fmt.Errorf("[persister] Error persisting tuple %v: %s", t, err)
 	}
