@@ -42,7 +42,7 @@ type computationManager struct {
 func NewComputationManager(coordinator Coordinator,
 	receiver *Receiver,
 	persister Persister,
-	dispatcher TupleProcessor) *computationManager {
+	dispatcher TupleProcessor) ComputationManager {
 	c := metrics.NewCounter()
 	metrics.Register("processing", c)
 	cm := &computationManager{
@@ -114,7 +114,7 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 			RWMutex:            sync.RWMutex{},
 			initialized:        false,
 		}
-		bufferHandler := NewBufferHandler(computationID, cm.persister, lwmTracker, computation)
+		bufferHandler := NewLinearizer(computationID, cm.persister, lwmTracker, computation)
 		bufferHandler.StartForwarding()
 		next = bufferHandler
 	} else {
@@ -165,75 +165,13 @@ func (comp *statelessComputation) Sync() (*structs.ComputationSnapshot, error) {
 	return nil, nil
 }
 
-type bufferHandler struct {
-	compID     string
-	persister  Persister
-	lwmTracker *lwmTracker
-	LWM        time.Time
-	lwmCh      chan time.Time
-	tmpT       chan *structs.Tuple
-	next       TupleProcessor
-}
-
-func NewBufferHandler(compID string, persister Persister, lwmTracker *lwmTracker, next TupleProcessor) *bufferHandler {
-	return &bufferHandler{
-		compID:     compID,
-		persister:  persister,
-		next:       next,
-		lwmTracker: lwmTracker,
-		lwmCh:      make(chan time.Time),
-		tmpT:       make(chan *structs.Tuple),
-	}
-}
-
-func (bh *bufferHandler) ProcessTuple(t *structs.Tuple) error {
-	err := bh.persister.Insert(bh.compID, t)
-	if err != nil {
-		return err
-	}
-
-	// calculate low water mark (LWM)
-	// LWM = min(oldest event in this computation, LWM across all publishers this
-	// computation is subscribed to)
-	err = bh.lwmTracker.ProcessTuple(t)
-	if err != nil {
-		return err
-	}
-	upstreamLWM := bh.lwmTracker.GetUpstreamLWM()
-	bh.lwmCh <- upstreamLWM
-	bh.tmpT <- t
-	return nil
-}
-
-func (bh *bufferHandler) StartForwarding() {
-	fromLWM := time.Time{}
-	go func() {
-		for toLWM := range bh.lwmCh {
-			t := <-bh.tmpT
-			if !toLWM.After(fromLWM) {
-				log.Println("LWM not increased", t)
-				continue
-			}
-			tups, _ := bh.persister.ReadBuffer(bh.compID, fromLWM, toLWM)
-			log.Println("PROCESSING %d as result of ", t)
-			for _, t := range tups {
-				log.Println(t)
-			}
-			for _, t := range tups {
-				bh.next.ProcessTuple(t)
-			}
-			fromLWM = toLWM
-		}
-	}()
-}
-
 type statefulComputation struct {
 	computationID      string
 	plugin             ComputationPlugin
 	groupHandler       GroupHandler
-	bufferHandler      *bufferHandler
+	bufferHandler      *Linearizer
 	persister          Persister
-	lwmTracker         *lwmTracker
+	lwmTracker         LWMTracker
 	bufferedDispatcher TupleProcessor
 	stopCh             chan struct{}
 

@@ -10,7 +10,7 @@ import (
 
 var maxTime = time.Unix(1<<63-62135596801, 999999999)
 
-type LwmTracker interface {
+type LWMTracker interface {
 	TupleProcessor
 	SentTracker
 	BeforeDispatching([]*structs.Tuple)
@@ -25,7 +25,7 @@ type lwmTracker struct {
 	sync.RWMutex
 }
 
-func NewLWMTracker() *lwmTracker {
+func NewLWMTracker() LWMTracker {
 	return &lwmTracker{
 		make(map[string]time.Time),
 		make(map[string]time.Time),

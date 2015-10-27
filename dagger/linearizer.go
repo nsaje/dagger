@@ -1,106 +1,84 @@
 package dagger
 
 import (
-	"container/heap"
-	"fmt"
+	"log"
 	"time"
 
 	"github.com/nsaje/dagger/structs"
 )
 
-type linearizer struct {
-	next        TupleProcessor
-	input       chan submission
-	upstreamLWM map[string]time.Time
+// LinearizerStore represents a sorted persistent buffer of tuples
+type LinearizerStore interface {
+	Insert(compID string, t *structs.Tuple) error
+	ReadBuffer(compID string, from time.Time, to time.Time) ([]*structs.Tuple, error)
 }
 
-func NewLinearizer(next TupleProcessor, streams []string) *linearizer {
-	l := linearizer{
-		next:        next,
-		input:       make(chan submission),
-		upstreamLWM: make(map[string]time.Time),
+// Linearizer buffers tuples and forwards them to the next TupleProcessor sorted
+// by timestamp, while making sure all the tuples in a certain time frame have
+// already arrived
+type Linearizer struct {
+	compID     string
+	store      LinearizerStore
+	lwmTracker LWMTracker
+	LWM        time.Time
+	lwmCh      chan time.Time
+	tmpT       chan *structs.Tuple
+	next       TupleProcessor
+}
+
+// NewLinearizer creates a new linearizer for a certain computation
+func NewLinearizer(compID string, store LinearizerStore, lwmTracker LWMTracker, next TupleProcessor) *Linearizer {
+	return &Linearizer{
+		compID:     compID,
+		store:      store,
+		next:       next,
+		lwmTracker: lwmTracker,
+		lwmCh:      make(chan time.Time),
+		tmpT:       make(chan *structs.Tuple),
 	}
-	for _, s := range streams {
-		l.upstreamLWM[s] = time.Time{}
+}
+
+// ProcessTuple inserts the tuple into the buffer sorted by timestamps
+func (bh *Linearizer) ProcessTuple(t *structs.Tuple) error {
+	err := bh.store.Insert(bh.compID, t)
+	if err != nil {
+		return err
 	}
-	return &l
-}
 
-type submission struct {
-	t     *structs.Tuple
-	errCh chan error
-}
-
-// min-heap of submissions
-type submissionHeap []submission
-
-func (h submissionHeap) Len() int           { return len(h) }
-func (h submissionHeap) Less(i, j int) bool { return h[i].t.Timestamp.Before(h[j].t.Timestamp) }
-func (h submissionHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-
-func (h *submissionHeap) Push(x interface{}) {
-	*h = append(*h, x.(submission))
-}
-
-func (h *submissionHeap) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
-
-func (l *linearizer) ProcessTuple(t *structs.Tuple) error {
-	subm := submission{t, make(chan error)}
-	l.input <- subm
-	// err := <-subm.errCh
-	// return err
+	// calculate low water mark (LWM)
+	// LWM = min(oldest event in this computation, LWM across all publishers this
+	// computation is subscribed to)
+	err = bh.lwmTracker.ProcessTuple(t)
+	if err != nil {
+		return err
+	}
+	upstreamLWM := bh.lwmTracker.GetUpstreamLWM()
+	bh.lwmCh <- upstreamLWM
+	bh.tmpT <- t
 	return nil
 }
 
-func (l *linearizer) Linearize() {
-	submHeap := &submissionHeap{}
-	heap.Init(submHeap)
-
-	for subm := range l.input {
-		// update upstream LWM
-		if subm.t.LWM.After(l.upstreamLWM[subm.t.StreamID]) {
-			l.upstreamLWM[subm.t.StreamID] = subm.t.LWM
-		}
-
-		// insert into heap
-		heap.Push(submHeap, subm)
-
-		// recalculate LWM
-		min := time.Now().Add(1 << 62)
-		for _, lwm := range l.upstreamLWM {
-			if lwm.Before(min) {
-				min = lwm
+// StartForwarding starts a goroutine that forwards the tuples from the buffer
+// to the next TupleProcessor when LWM tells us no more tuples will arrive in
+// the forwarded time frame
+func (bh *Linearizer) StartForwarding() {
+	fromLWM := time.Time{}
+	go func() {
+		for toLWM := range bh.lwmCh {
+			t := <-bh.tmpT
+			if !toLWM.After(fromLWM) {
+				log.Println("LWM not increased", t)
+				continue
 			}
-		}
-
-		// flush tuples that have timestamp < lwm, but we can't flush if we
-		// haven't seen at least one tuple from each upstream stream
-		if !min.IsZero() {
-			if submHeap.Len() > 1 {
-				fmt.Println("MORETHAN1")
-				tups := make([]submission, 0, submHeap.Len())
-				for submHeap.Len() > 0 {
-					tups = append(tups, heap.Pop(submHeap).(submission))
-				}
-				for _, tup := range tups {
-					fmt.Print(tup.t.Data)
-					fmt.Print(" ")
-					heap.Push(submHeap, tup)
-				}
-				fmt.Println()
+			tups, _ := bh.store.ReadBuffer(bh.compID, fromLWM, toLWM)
+			log.Printf("PROCESSING %s as result of ", t)
+			for _, t := range tups {
+				log.Println(t)
 			}
-			for submHeap.Len() > 0 && (*submHeap)[0].t.Timestamp.Before(min) {
-				fmt.Println("FLUSHING")
-				subm := heap.Pop(submHeap).(submission)
-				// subm.errCh <- l.next.ProcessTuple(subm.t)
-				l.next.ProcessTuple(subm.t)
+			for _, t := range tups {
+				bh.next.ProcessTuple(t)
 			}
+			fromLWM = toLWM
 		}
-	}
+	}()
 }

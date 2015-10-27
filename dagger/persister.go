@@ -26,8 +26,7 @@ type Persister interface {
 	CommitComputation(compID string, in *structs.Tuple, out []*structs.Tuple) error
 	GetSnapshot(compID string) (*structs.ComputationSnapshot, error)
 	ApplySnapshot(compID string, snapshot *structs.ComputationSnapshot) error
-	Insert(compID string, t *structs.Tuple) error
-	ReadBuffer(compID string, from time.Time, to time.Time) ([]*structs.Tuple, error)
+	LinearizerStore
 	SentTracker
 	ReceivedTracker
 	StatePersister

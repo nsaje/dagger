@@ -63,14 +63,14 @@ type BufferedDispatcher struct {
 	dispatcher    TupleProcessor
 	stopCh        chan struct{}
 	sentTracker   SentTracker
-	lwmTracker    LwmTracker
+	lwmTracker    LWMTracker
 	lwmFlush      chan *structs.Tuple
 	wg            sync.WaitGroup
 }
 
 // StartBufferedDispatcher creates a new buffered dispatcher and starts workers
 // that will be consuming off the queue an sending tuples
-func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTracker SentTracker, lwmTracker LwmTracker,
+func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTracker SentTracker, lwmTracker LWMTracker,
 	stopCh chan struct{}) *BufferedDispatcher {
 	bd := &BufferedDispatcher{
 		computationID: compID,
