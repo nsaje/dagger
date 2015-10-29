@@ -16,7 +16,7 @@ type Tuple struct {
 
 func (t *Tuple) String() string {
 	// return fmt.Sprintf("stream_id: %s, data: %v", t.StreamID, t.Data)
-	return fmt.Sprintf("lwm: %s, timestamp:%s, data: %v", t.LWM, t.Timestamp, t.Data)
+	return fmt.Sprintf("lwm: %s, timestamp:%s, data: %v", t.LWM.UnixNano(), t.Timestamp.UnixNano(), t.Data)
 }
 
 // ComputationPluginResponse  is returned from a computation plugin to the main app
@@ -37,10 +37,11 @@ type ComputationPluginState struct {
 
 // ComputationSnapshot is used for synchronizing computation state between workers
 type ComputationSnapshot struct {
-	Received    []string
-	InputBuffer []*Tuple
-	Produced    []*Tuple
-	PluginState *ComputationPluginState
+	Received      []string
+	InputBuffer   []*Tuple
+	LastTimestamp time.Time
+	Produced      []*Tuple
+	PluginState   *ComputationPluginState
 }
 
 func (s *ComputationSnapshot) String() string {

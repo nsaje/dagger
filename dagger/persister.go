@@ -92,7 +92,12 @@ func (p *LevelDBPersister) CommitComputation(compID string, in *structs.Tuple, o
 	batch := new(leveldb.Batch)
 	// mark incoming tuple as received
 	log.Println("[persister] Committing tuple", *in, ", productions:", out)
-	batch.Put([]byte(fmt.Sprintf(receivedKeyFormat, compID, in.ID)), nil)
+	// batch.Put([]byte(fmt.Sprintf(receivedKeyFormat, compID, in.ID)), nil)
+	lastTimestamp, err := json.Marshal(in.Timestamp)
+	if err != nil {
+		return err
+	}
+	batch.Put([]byte(fmt.Sprintf("%s-last", compID)), lastTimestamp)
 
 	// save productions
 	for _, t := range out {
@@ -159,10 +164,21 @@ func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnaps
 		}
 		snapshot.InputBuffer = append(snapshot.InputBuffer, &tuple)
 	}
-	err = iter.Error()
+	err = iter3.Error()
 	if err != nil {
 		return nil, fmt.Errorf("[persister] iterating input buffer: %s", err)
 	}
+
+	lastTimestamp, err := dbSnapshot.Get([]byte(fmt.Sprintf("%s-last", compID)), nil)
+	if err != nil {
+		return nil, fmt.Errorf("[persister] reading last timestamp: %s", err)
+	}
+	var lastTimestampUnmarshalled time.Time
+	err = json.Unmarshal(lastTimestamp, &lastTimestampUnmarshalled)
+	if err != nil {
+		return nil, fmt.Errorf("[persister] reading last timestamp: %s", err)
+	}
+	snapshot.LastTimestamp = lastTimestampUnmarshalled
 	return &snapshot, err
 }
 
@@ -202,6 +218,14 @@ func (p *LevelDBPersister) ApplySnapshot(compID string, snapshot *structs.Comput
 		key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
 		batch.Put(key, []byte(serialized))
 	}
+
+	// save last timestamp
+	serialized, err := json.Marshal(snapshot.LastTimestamp)
+	if err != nil {
+		return fmt.Errorf("[persister] Error marshalling time %s", err)
+	}
+	batch.Put([]byte(fmt.Sprintf("%s-last", compID)), serialized)
+
 	return p.db.Write(batch, nil)
 }
 
@@ -257,7 +281,7 @@ func (p *LevelDBPersister) Insert(compID string, t *structs.Tuple) error {
 	if err != nil {
 		return fmt.Errorf("[persister] Error persisting tuple %v: %s", t, err)
 	}
-	log.Println("[persister] persisted tuple", t)
+	log.Println("[persister] persisted tuple", string(key), t)
 	return nil
 }
 
@@ -275,6 +299,12 @@ func (p *LevelDBPersister) ReadBuffer(compID string, from time.Time, to time.Tim
 			return nil, fmt.Errorf("[persister] unmarshalling produced: %s", err)
 		}
 		tups = append(tups, &tuple)
+	}
+	if len(tups) == 0 {
+		log.Println("SOMETHING FUNNY")
+		iter := p.db.NewIterator(util.BytesPrefix(start), nil)
+		iter.Next()
+		log.Println(iter.Value())
 	}
 	return tups, nil
 }

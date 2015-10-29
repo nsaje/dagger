@@ -22,9 +22,9 @@ type Linearizer struct {
 	lwmTracker LWMTracker
 	LWM        time.Time
 	lwmCh      chan time.Time
+	startAtLWM time.Time
+	ltp        LinearizedTupleProcessor
 	tmpT       chan *structs.Tuple
-
-	Linearized chan *structs.Tuple
 }
 
 // NewLinearizer creates a new linearizer for a certain computation
@@ -35,8 +35,17 @@ func NewLinearizer(compID string, store LinearizerStore, lwmTracker LWMTracker) 
 		lwmTracker: lwmTracker,
 		lwmCh:      make(chan time.Time),
 		tmpT:       make(chan *structs.Tuple),
-		Linearized: make(chan *structs.Tuple),
 	}
+}
+
+// SetProcessor sets the processor that received linearized tuiples
+func (l *Linearizer) SetProcessor(ltp LinearizedTupleProcessor) {
+	l.ltp = ltp
+}
+
+// SetStartLWM sets the LWM at which we start processing
+func (l *Linearizer) SetStartLWM(time time.Time) {
+	l.startAtLWM = time
 }
 
 // ProcessTuple inserts the tuple into the buffer sorted by timestamps
@@ -63,7 +72,7 @@ func (l *Linearizer) ProcessTuple(t *structs.Tuple) error {
 // to the next TupleProcessor when LWM tells us no more tuples will arrive in
 // the forwarded time frame
 func (l *Linearizer) StartForwarding() {
-	fromLWM := time.Time{}
+	fromLWM := l.startAtLWM
 	for toLWM := range l.lwmCh {
 		t := <-l.tmpT
 		if !toLWM.After(fromLWM) {
@@ -71,12 +80,12 @@ func (l *Linearizer) StartForwarding() {
 			continue
 		}
 		tups, _ := l.store.ReadBuffer(l.compID, fromLWM, toLWM)
-		log.Printf("PROCESSING %s as result of ", t)
+		log.Printf("PROCESSING as result of %s", t)
 		for _, t := range tups {
 			log.Println(t)
 		}
 		for _, t := range tups {
-			l.Linearized <- t
+			l.ltp.ProcessTupleLinearized(t)
 		}
 		fromLWM = toLWM
 	}

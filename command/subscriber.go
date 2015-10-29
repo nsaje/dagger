@@ -38,14 +38,10 @@ func Subscriber(c *cli.Context) {
 	// linearizer := dagger.NewLinearizer(prnter, []string{topicGlob})
 	// go linearizer.Linearize()
 	lwmTracker := dagger.NewLWMTracker()
-	bufferHandler := dagger.NewLinearizer("test", persister, lwmTracker)
-	go bufferHandler.StartForwarding()
-	go func() {
-		for t := range bufferHandler.Linearized {
-			prnter.ProcessTuple(t)
-		}
-	}()
-	receiver.SubscribeTo(topicGlob, bufferHandler)
+	linearizer := dagger.NewLinearizer("test", persister, lwmTracker)
+	linearizer.SetProcessor(prnter)
+	go linearizer.StartForwarding()
+	receiver.SubscribeTo(topicGlob, linearizer)
 	// receiver.SubscribeTo(topicGlob, linearizer)
 	log.Printf("Subscribed to %s", topicGlob)
 
@@ -60,7 +56,7 @@ type printer struct {
 	dataonly bool
 }
 
-func (p *printer) ProcessTuple(t *structs.Tuple) error {
+func (p *printer) ProcessTupleLinearized(t *structs.Tuple) error {
 	log.Println("in printer")
 	if p.dataonly {
 		fmt.Println(t.Data)

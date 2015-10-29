@@ -7,6 +7,12 @@ type TupleProcessor interface {
 	ProcessTuple(*structs.Tuple) error
 }
 
+// LinearizedTupleProcessor is an object capable of processing a list of ordered
+// tuples
+type LinearizedTupleProcessor interface {
+	ProcessTupleLinearized(*structs.Tuple) error
+}
+
 // ProcessMultipleTuples processes multiple tuples with a single tuple processor
 func ProcessMultipleTuples(tp TupleProcessor, tuples []*structs.Tuple) error {
 	errCh := make(chan error)
