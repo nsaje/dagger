@@ -11,6 +11,155 @@ import (
 	"github.com/nsaje/dagger/structs"
 )
 
+// StreamDispatcher dispatches tuples from a single stream to registered subscribers
+type StreamDispatcher struct {
+	computationID string
+	persister     Persister
+	iterators     map[string]*StreamIterator
+	notifyCh      chan *structs.Tuple
+	stopCh        chan struct{}
+	new           chan string
+	dropped       chan string
+	last          *structs.Tuple
+}
+
+func NewStreamDispatcher(streamID string, coordinator Coordinator,
+	persister Persister) *StreamDispatcher {
+	stopCh := make(chan struct{})
+	new, dropped := coordinator.WatchSubscribers(streamID, stopCh)
+	return &StreamDispatcher{
+		computationID: streamID,
+		persister:     persister,
+		iterators:     make(map[string]*StreamIterator),
+		notifyCh:      make(chan *structs.Tuple),
+		stopCh:        stopCh,
+		new:           new,
+		dropped:       dropped,
+	}
+}
+
+func (sd *StreamDispatcher) ProcessTuple(t *structs.Tuple) error {
+	sd.notifyCh <- t
+	return nil
+}
+
+func (sd *StreamDispatcher) Run() {
+	log.Println("RUNNING DISPATCHER")
+	for {
+		select {
+		case <-sd.stopCh:
+			return
+		case t := <-sd.notifyCh:
+			log.Println("[streamDispatcher] notifying iterators")
+			sd.last = t
+			for _, iter := range sd.iterators {
+				iter.ProcessTuple(t)
+			}
+		case subscriber := <-sd.new:
+			log.Println("[streamDispatcher] adding subscriber", subscriber)
+			subscriberHandler, _ := newSubscriberHandler(subscriber) //FIXME err
+			iter := &StreamIterator{
+				sd.computationID,
+				make(chan time.Time),
+				make(chan struct{}),
+				sd.persister,
+				subscriberHandler,
+			}
+			sd.iterators[subscriber] = iter
+			go iter.Dispatch(time.Time{})
+			// notify the new iterator of how far we've gotten
+			if sd.last != nil {
+				iter.ProcessTuple(sd.last)
+			}
+		case subscriber := <-sd.dropped:
+			log.Println("[streamDispatcher] removing subscriber", subscriber)
+			subIterator := sd.iterators[subscriber]
+			if subIterator != nil {
+				subIterator.Stop()
+			}
+			delete(sd.iterators, subscriber)
+		}
+	}
+}
+
+type StreamIterator struct {
+	compID            string
+	lwmCh             chan time.Time
+	stopCh            chan struct{}
+	persister         Persister
+	subscriberHandler *subscriberHandler
+}
+
+func (si *StreamIterator) ProcessTuple(t *structs.Tuple) error {
+	log.Println("[iterator] processing", t)
+	si.lwmCh <- t.LWM
+	return nil
+}
+
+func (si *StreamIterator) Stop() {
+	close(si.stopCh)
+}
+
+func (si *StreamIterator) Dispatch(startAt time.Time) {
+	from := startAt
+	to := maxTime
+	var newTo, newFrom time.Time
+	newDataReadyCh := make(chan struct{}, 1)
+	readCompletedCh := make(chan struct{}, 1)
+	var newDataReady, readCompleted bool
+	startNewRead := make(chan struct{}, 1)
+	sentSuccessfuly := make(chan time.Time, 1)
+	startNewRead <- struct{}{}
+	for {
+		select {
+		case <-si.stopCh:
+			return
+		case newFrom = <-sentSuccessfuly:
+			log.Println("[iterator] newFrom updated:", newFrom)
+		case newTo = <-si.lwmCh:
+			log.Println("[iterator] newTo updated:", newTo)
+			newDataReadyCh <- struct{}{}
+		case <-newDataReadyCh:
+			log.Println("[iterator] newDataReadyCh", newDataReady, readCompleted)
+			newDataReady = true
+			if newDataReady && readCompleted {
+				log.Println("starting new read...")
+				startNewRead <- struct{}{}
+				log.Println("...new read started")
+			}
+		case <-readCompletedCh:
+			log.Println("[iterator] readCompletedCh", newDataReady, readCompleted)
+			readCompleted = true
+			if newDataReady && readCompleted {
+				log.Println("starting new read...")
+				startNewRead <- struct{}{}
+				log.Println("...new read started")
+			}
+		case <-startNewRead:
+			log.Println("[iterator] reading:", from, to)
+			newDataReady = false
+			readCompleted = false
+			from = to
+			to = newTo
+			go func() {
+				tupleStream, _ := si.persister.ReadBuffer1(si.compID, "p", from, to)
+				for t := range tupleStream {
+					log.Println("[iterator] sending tuple:", t)
+					t.LWM = t.Timestamp.Add(time.Nanosecond)
+					err := si.subscriberHandler.ProcessTuple(t)
+					if err != nil {
+						panic(err)
+					}
+					log.Println("tryingRENTSUCCESSFULY")
+					sentSuccessfuly <- t.Timestamp
+					log.Println("SENTSUCCESSFULY")
+				}
+				readCompletedCh <- struct{}{}
+			}()
+		}
+	}
+}
+
 // Dispatcher dispatches tuples to registered subscribers
 type Dispatcher struct {
 	conf        *Config

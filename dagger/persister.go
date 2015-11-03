@@ -15,7 +15,7 @@ import (
 
 const (
 	receivedKeyFormat    = "%s-r-%s"    // <computationID>-r-<tupleID>
-	productionsKeyFormat = "%s-p-%s"    // <computationID>-p-<tupleID>
+	productionsKeyFormat = "%s-p-%d-%s" // <computationID>-p-<timestamp>-<tupleID>
 	inKeyFormat          = "%s-i-%d-%s" // <computationID>-i-<timestamp>-<tupleID>
 )
 
@@ -26,9 +26,15 @@ type Persister interface {
 	GetSnapshot(compID string) (*structs.ComputationSnapshot, error)
 	ApplySnapshot(compID string, snapshot *structs.ComputationSnapshot) error
 	LinearizerStore
+	StreamBuffer
 	SentTracker
 	ReceivedTracker
 	StatePersister
+}
+
+type StreamBuffer interface {
+	Insert1(compID string, bufID string, t *structs.Tuple) error
+	ReadBuffer1(compID string, bufID string, from time.Time, to time.Time) (chan *structs.Tuple, chan error)
 }
 
 // SentTracker deletes production entries that have been ACKed from the DB
@@ -105,7 +111,7 @@ func (p *LevelDBPersister) CommitComputation(compID string, in *structs.Tuple, o
 		if err != nil {
 			return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
 		}
-		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.ID))
+		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
 		batch.Put(key, []byte(serialized))
 	}
 	return p.db.Write(batch, nil)
@@ -135,7 +141,8 @@ func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnaps
 
 	// get produced tuples
 	snapshot.Produced = make([]*structs.Tuple, 0)
-	keyPrefix = fmt.Sprintf(productionsKeyFormat, compID, "")
+	// keyPrefix = fmt.Sprintf(productionsKeyFormat, compID, "")
+	keyPrefix = fmt.Sprintf("%s-p-", compID)
 	iter2 := dbSnapshot.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
 	defer iter2.Release()
 	for iter2.Next() {
@@ -205,7 +212,7 @@ func (p *LevelDBPersister) ApplySnapshot(compID string, snapshot *structs.Comput
 		if err != nil {
 			return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
 		}
-		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.ID))
+		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
 		batch.Put(key, []byte(serialized))
 	}
 
@@ -266,7 +273,7 @@ func (p *LevelDBPersister) ReceivedAlready(comp string, t *structs.Tuple) (bool,
 
 // SentSuccessfuly deletes the production from the DB after it's been ACKed
 func (p *LevelDBPersister) SentSuccessfuly(compID string, t *structs.Tuple) error {
-	key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.ID))
+	key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
 	return p.db.Delete(key, nil)
 }
 
@@ -308,3 +315,51 @@ func (p *LevelDBPersister) ReadBuffer(compID string, from time.Time, to time.Tim
 	}
 	return tups, nil
 }
+
+// type StreamIterator interface {
+// 	Upto(time.Time) chan *structs.Tuple
+// }
+
+// Insert inserts a received tuple into the ordered queue for a computation
+func (p *LevelDBPersister) Insert1(compID string, bufID string, t *structs.Tuple) error {
+	serialized, err := json.Marshal(t)
+	if err != nil {
+		return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
+	}
+	key := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, t.Timestamp.UnixNano(), t.ID))
+	err = p.db.Put(key, []byte(serialized), &opt.WriteOptions{Sync: false})
+	if err != nil {
+		return fmt.Errorf("[persister] Error persisting tuple %v: %s", t, err)
+	}
+	log.Println("[persister] persisted tuple", string(key), t)
+	return nil
+}
+
+// ReadBuffer returns a piece of the input buffer between specified timestamps
+func (p *LevelDBPersister) ReadBuffer1(compID string, bufID string, from time.Time, to time.Time) (tupCh chan *structs.Tuple, errCh chan error) {
+	tupCh = make(chan *structs.Tuple)
+	errCh = make(chan error)
+	start := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, from.UnixNano()))
+	limit := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, to.UnixNano()))
+	go func() {
+		log.Println("reading from, to", string(start), string(limit))
+		iter := p.db.NewIterator(&util.Range{Start: start, Limit: limit}, nil)
+		for iter.Next() {
+			var tuple structs.Tuple
+			err := json.Unmarshal(iter.Value(), &tuple)
+			log.Println("read tuple", tuple)
+			if err != nil {
+				log.Println("ERRRROR", err)
+				// errCh <- fmt.Errorf("[persister] unmarshalling produced: %s", err)
+			}
+			tupCh <- &tuple
+		}
+		log.Println("closing tuple channel{}")
+		close(tupCh)
+	}()
+	return
+}
+
+// type StreamIterator interface {
+// 	Upto(time.Time) chan *structs.Tuple
+// }

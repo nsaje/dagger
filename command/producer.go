@@ -9,7 +9,6 @@ import (
 
 	"github.com/codegangsta/cli"
 	"github.com/nsaje/dagger/dagger"
-	"github.com/nsaje/dagger/structs"
 )
 
 // Producer reads tuples from stdin and submits them
@@ -24,13 +23,20 @@ func Producer(c *cli.Context) {
 		log.Fatal("Error setting up coordinator")
 	}
 
-	lwmTracker := dagger.NewLWMTracker()
-	dispatcher := dagger.NewDispatcher(conf, coordinator)
-	bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
+	// lwmTracker := dagger.NewLWMTracker()
+	// dispatcher := dagger.NewDispatcher(conf, coordinator)
+	// bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
 	streamID := c.String("streamID")
+	persister, err := dagger.NewPersister(conf)
+	if err != nil {
+		log.Fatalf("error opening database")
+	}
+	defer persister.Close()
+	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister)
+	go dispatcher.Run()
 
 	reader := bufio.NewReader(os.Stdin)
-	var tmpT *structs.Tuple
+	// var tmpT *structs.Tuple
 	for {
 		var line string
 		line, err := reader.ReadString('\n')
@@ -44,11 +50,14 @@ func Producer(c *cli.Context) {
 			break
 		}
 		log.Println("read", line)
-		bufferedDispatcher.ProcessTuple(tuple)
-		tmpT = tuple
+		// bufferedDispatcher.ProcessTuple(tuple)
+		persister.Insert1(streamID, "p", tuple)
+		dispatcher.ProcessTuple(tuple)
+		// tmpT = tuple
 	}
-	bufferedDispatcher.Stop()
-	tmpT.LWM = time.Now().Add(time.Hour)
-	dispatcher.ProcessTuple(tmpT)
+	// bufferedDispatcher.Stop()
+	// tmpT.LWM = time.Now().Add(time.Hour)
+	// dispatcher.ProcessTuple(tmpT)
+	time.Sleep(10 * time.Second)
 	log.Println("EXITING")
 }

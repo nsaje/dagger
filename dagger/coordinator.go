@@ -42,6 +42,7 @@ type SubscribeCoordinator interface {
 // PublishCoordinator handles the coordination of publishing a stream
 type PublishCoordinator interface {
 	GetSubscribers(streamID string) ([]string, error)
+	WatchSubscribers(streamID string, stopCh chan struct{}) (chan string, chan string)
 	RegisterAsPublisher(streamID string)
 }
 
@@ -431,6 +432,70 @@ func stripTags(topic string) string {
 		return topic[:idx0]
 	}
 	return topic
+}
+
+func (c *ConsulCoordinator) WatchSubscribers(topic string, stopCh chan struct{}) (new chan string, dropped chan string) {
+	tags := parseTags(topic)
+	topic = stripTags(topic)
+	prefix := fmt.Sprintf("dagger/subscribers/%s/", topic)
+
+	new = make(chan string)
+	dropped = make(chan string)
+
+	go func() {
+		var lastIndex uint64
+		oldSubscribers := make([]string, 0)
+		kv := c.client.KV()
+		// fmt.Println("Executing blocking consul.Keys method, lastIndex: ", sl.lastIndex)
+		for {
+			select {
+			case <-stopCh:
+				return
+			default:
+				// do a blocking query
+				keys, queryMeta, err := kv.Keys(prefix, "", &api.QueryOptions{WaitIndex: lastIndex})
+				log.Println("[coordinator] WatchSubscribers updated in ", prefix)
+				// fmt.Println("consul.Keys method returned, New LastIndex: ", queryMeta.LastIndex)
+				if err != nil {
+					log.Println(err) // FIXME
+				}
+				lastIndex = queryMeta.LastIndex
+
+				// prepare a diff set so we can know which subscribers are newly
+				// subscribed and which are dropped
+				diffSet := make(map[string]struct{})
+				for _, s := range oldSubscribers {
+					diffSet[s] = struct{}{}
+				}
+				oldSubscribers = make([]string, 0)
+			SUBSCRIBER_LOOP:
+				for _, key := range keys {
+					subscriberTags := parseTags(key)
+					log.Println("[coordinator][tags] Publisher", tags, ", subscriber", subscriberTags)
+					for k, v := range subscriberTags {
+						if tags[k] != v {
+							continue SUBSCRIBER_LOOP
+						}
+					}
+					if idx := strings.LastIndex(key, "/"); idx > 0 {
+						subscriber := key[idx+1:]
+						_, exists := diffSet[subscriber]
+						if !exists {
+							diffSet[subscriber] = struct{}{}
+							log.Println("coordinator new subscriber", subscriber)
+							new <- subscriber
+						}
+						oldSubscribers = append(oldSubscribers, subscriber)
+						delete(diffSet, subscriber)
+					}
+				}
+				for s := range diffSet {
+					dropped <- s
+				}
+			}
+		}
+	}()
+	return
 }
 
 // GetSubscribers returns the addresses of subscribers interested in a certain topic
