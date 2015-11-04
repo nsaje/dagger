@@ -23,7 +23,7 @@ func Producer(c *cli.Context) {
 		log.Fatal("Error setting up coordinator")
 	}
 
-	// lwmTracker := dagger.NewLWMTracker()
+	lwmTracker := dagger.NewLWMTracker()
 	// dispatcher := dagger.NewDispatcher(conf, coordinator)
 	// bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
 	streamID := c.String("streamID")
@@ -32,7 +32,7 @@ func Producer(c *cli.Context) {
 		log.Fatalf("error opening database")
 	}
 	defer persister.Close()
-	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister)
+	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister, lwmTracker)
 	go dispatcher.Run()
 
 	reader := bufio.NewReader(os.Stdin)

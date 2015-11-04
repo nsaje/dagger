@@ -1,23 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/nsaje/dagger/command"
 
 	"github.com/codegangsta/cli"
 )
-
-func die(format string, v ...interface{}) {
-	fmt.Fprintln(os.Stderr, fmt.Sprintf(format, v...))
-	os.Exit(1)
-}
-
-func dummy(ctx *cli.Context) {
-	fmt.Println("hi")
-	fmt.Println(ctx.Args())
-}
 
 func main() {
 	app := cli.NewApp()

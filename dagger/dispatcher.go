@@ -15,6 +15,7 @@ import (
 type StreamDispatcher struct {
 	computationID string
 	persister     Persister
+	lwmTracker    LWMTracker
 	iterators     map[string]*StreamIterator
 	notifyCh      chan *structs.Tuple
 	stopCh        chan struct{}
@@ -24,12 +25,13 @@ type StreamDispatcher struct {
 }
 
 func NewStreamDispatcher(streamID string, coordinator Coordinator,
-	persister Persister) *StreamDispatcher {
+	persister Persister, lwmTracker LWMTracker) *StreamDispatcher {
 	stopCh := make(chan struct{})
 	new, dropped := coordinator.WatchSubscribers(streamID, stopCh)
 	return &StreamDispatcher{
 		computationID: streamID,
 		persister:     persister,
+		lwmTracker:    lwmTracker,
 		iterators:     make(map[string]*StreamIterator),
 		notifyCh:      make(chan *structs.Tuple),
 		stopCh:        stopCh,
@@ -39,6 +41,7 @@ func NewStreamDispatcher(streamID string, coordinator Coordinator,
 }
 
 func (sd *StreamDispatcher) ProcessTuple(t *structs.Tuple) error {
+	sd.lwmTracker.BeforeDispatching([]*structs.Tuple{t})
 	sd.notifyCh <- t
 	return nil
 }
@@ -57,10 +60,14 @@ func (sd *StreamDispatcher) Run() {
 			}
 		case subscriber := <-sd.new:
 			log.Println("[streamDispatcher] adding subscriber", subscriber)
-			subscriberHandler, _ := newSubscriberHandler(subscriber) //FIXME err
+			subscriberHandler, err := newSubscriberHandler(subscriber)
+			if err != nil {
+
+			}
 			iter := &StreamIterator{
 				sd.computationID,
-				make(chan time.Time),
+				sd.lwmTracker,
+				make(chan *structs.Tuple),
 				make(chan struct{}),
 				sd.persister,
 				subscriberHandler,
@@ -84,7 +91,8 @@ func (sd *StreamDispatcher) Run() {
 
 type StreamIterator struct {
 	compID            string
-	lwmCh             chan time.Time
+	lwmTracker        LWMTracker
+	notify            chan *structs.Tuple
 	stopCh            chan struct{}
 	persister         Persister
 	subscriberHandler *subscriberHandler
@@ -92,7 +100,7 @@ type StreamIterator struct {
 
 func (si *StreamIterator) ProcessTuple(t *structs.Tuple) error {
 	log.Println("[iterator] processing", t)
-	si.lwmCh <- t.LWM
+	si.notify <- t
 	return nil
 }
 
@@ -108,16 +116,33 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 	readCompletedCh := make(chan struct{}, 1)
 	var newDataReady, readCompleted bool
 	startNewRead := make(chan struct{}, 1)
-	sentSuccessfuly := make(chan time.Time, 1)
+	sentSuccessfuly := make(chan *structs.Tuple, 1)
 	startNewRead <- struct{}{}
+
+	var lastSent *structs.Tuple
+	flushAfter := 500 * time.Millisecond
+	lwmFlushTimer := time.NewTimer(flushAfter)
+	lwmFlushTimer.Stop()
+
 	for {
 		select {
 		case <-si.stopCh:
 			return
-		case newFrom = <-sentSuccessfuly:
-			log.Println("[iterator] newFrom updated:", newFrom)
-		case newTo = <-si.lwmCh:
-			log.Println("[iterator] newTo updated:", newTo)
+		case <-lwmFlushTimer.C:
+			log.Println("[iterator] flush timer firing")
+			lastSent.LWM = lastSent.Timestamp.Add(time.Nanosecond)
+			err := si.subscriberHandler.ProcessTuple(lastSent)
+			if err != nil {
+				log.Println("ERROR:", err)
+			}
+		case t := <-sentSuccessfuly:
+			newFrom = t.Timestamp
+			si.lwmTracker.SentSuccessfuly("FIXME", t)
+			log.Println("[iterator] newFrom updated:", t, newFrom.UnixNano())
+		case t := <-si.notify:
+			newTo = t.Timestamp
+			lastSent = t
+			log.Println("[iterator] newTo updated:", t)
 			newDataReadyCh <- struct{}{}
 		case <-newDataReadyCh:
 			log.Println("[iterator] newDataReadyCh", newDataReady, readCompleted)
@@ -130,6 +155,7 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 		case <-readCompletedCh:
 			log.Println("[iterator] readCompletedCh", newDataReady, readCompleted)
 			readCompleted = true
+			lwmFlushTimer.Reset(flushAfter)
 			if newDataReady && readCompleted {
 				log.Println("starting new read...")
 				startNewRead <- struct{}{}
@@ -137,6 +163,7 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			}
 		case <-startNewRead:
 			log.Println("[iterator] reading:", from, to)
+			lwmFlushTimer.Stop()
 			newDataReady = false
 			readCompleted = false
 			from = to
@@ -146,12 +173,29 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 				for t := range tupleStream {
 					log.Println("[iterator] sending tuple:", t)
 					t.LWM = t.Timestamp.Add(time.Nanosecond)
-					err := si.subscriberHandler.ProcessTuple(t)
-					if err != nil {
-						panic(err)
-					}
+					// compLWM := si.lwmTracker.GetCombinedLWM()
+					// if compLWM.Before(t.Timestamp) {
+					// 	t.LWM = compLWM
+					// } else {
+					// 	t.LWM = t.Timestamp
+					// }
+					// t.LWM = bd.lwmTracker.GetCombinedLWM()
+					go si.subscriberHandler.ProcessTuple(t)
+					// if err != nil {
+					// 	panic(err)
+					// }
 					log.Println("tryingRENTSUCCESSFULY")
-					sentSuccessfuly <- t.Timestamp
+					ttimer := time.NewTimer(time.Second)
+					tstop := make(chan struct{})
+					go func() {
+						select {
+						case <-ttimer.C:
+							panic("FROZEN")
+						case <-tstop:
+							return
+						}
+					}()
+					sentSuccessfuly <- t
 					log.Println("SENTSUCCESSFULY")
 				}
 				readCompletedCh <- struct{}{}
