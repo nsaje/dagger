@@ -112,17 +112,56 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 	from := startAt
 	to := maxTime
 	var newTo, newFrom time.Time
-	newDataReadyCh := make(chan struct{}, 1)
-	readCompletedCh := make(chan struct{}, 1)
+	readCompletedCh := make(chan struct{})
 	var newDataReady, readCompleted bool
-	startNewRead := make(chan struct{}, 1)
-	sentSuccessfuly := make(chan *structs.Tuple, 1)
-	startNewRead <- struct{}{}
+	sentSuccessfuly := make(chan *structs.Tuple)
 
 	var lastSent *structs.Tuple
 	flushAfter := 500 * time.Millisecond
 	lwmFlushTimer := time.NewTimer(flushAfter)
 	lwmFlushTimer.Stop()
+
+	startNewRead := func() {
+		log.Println("[iterator] reading:", from, to)
+		lwmFlushTimer.Stop()
+		newDataReady = false
+		readCompleted = false
+		from = to
+		to = newTo
+		go func() {
+			tupleStream, _ := si.persister.ReadBuffer1(si.compID, "p", from, to)
+			for t := range tupleStream {
+				log.Println("[iterator] sending tuple:", t)
+				t.LWM = t.Timestamp.Add(time.Nanosecond)
+				// compLWM := si.lwmTracker.GetCombinedLWM()
+				// if compLWM.Before(t.Timestamp) {
+				// 	t.LWM = compLWM
+				// } else {
+				// 	t.LWM = t.Timestamp
+				// }
+				// t.LWM = bd.lwmTracker.GetCombinedLWM()
+				go si.subscriberHandler.ProcessTuple(t)
+				// if err != nil {
+				// 	panic(err)
+				// }
+				log.Println("tryingRENTSUCCESSFULY")
+				// ttimer := time.NewTimer(time.Second)
+				// tstop := make(chan struct{})
+				// go func() {
+				// 	select {
+				// 	case <-ttimer.C:
+				// 		panic("FROZEN")
+				// 	case <-tstop:
+				// 		return
+				// 	}
+				// }()
+				sentSuccessfuly <- t
+				log.Println("SENTSUCCESSFULY")
+			}
+			readCompletedCh <- struct{}{}
+		}()
+	}
+	startNewRead()
 
 	for {
 		select {
@@ -143,13 +182,12 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			newTo = t.Timestamp
 			lastSent = t
 			log.Println("[iterator] newTo updated:", t)
-			newDataReadyCh <- struct{}{}
-		case <-newDataReadyCh:
-			log.Println("[iterator] newDataReadyCh", newDataReady, readCompleted)
 			newDataReady = true
+			log.Println("[iterator] newDataReadyCh", newDataReady, readCompleted)
 			if newDataReady && readCompleted {
 				log.Println("starting new read...")
-				startNewRead <- struct{}{}
+				// startNewRead <- struct{}{}
+				startNewRead()
 				log.Println("...new read started")
 			}
 		case <-readCompletedCh:
@@ -158,48 +196,9 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			lwmFlushTimer.Reset(flushAfter)
 			if newDataReady && readCompleted {
 				log.Println("starting new read...")
-				startNewRead <- struct{}{}
+				startNewRead()
 				log.Println("...new read started")
 			}
-		case <-startNewRead:
-			log.Println("[iterator] reading:", from, to)
-			lwmFlushTimer.Stop()
-			newDataReady = false
-			readCompleted = false
-			from = to
-			to = newTo
-			go func() {
-				tupleStream, _ := si.persister.ReadBuffer1(si.compID, "p", from, to)
-				for t := range tupleStream {
-					log.Println("[iterator] sending tuple:", t)
-					t.LWM = t.Timestamp.Add(time.Nanosecond)
-					// compLWM := si.lwmTracker.GetCombinedLWM()
-					// if compLWM.Before(t.Timestamp) {
-					// 	t.LWM = compLWM
-					// } else {
-					// 	t.LWM = t.Timestamp
-					// }
-					// t.LWM = bd.lwmTracker.GetCombinedLWM()
-					go si.subscriberHandler.ProcessTuple(t)
-					// if err != nil {
-					// 	panic(err)
-					// }
-					log.Println("tryingRENTSUCCESSFULY")
-					ttimer := time.NewTimer(time.Second)
-					tstop := make(chan struct{})
-					go func() {
-						select {
-						case <-ttimer.C:
-							panic("FROZEN")
-						case <-tstop:
-							return
-						}
-					}()
-					sentSuccessfuly <- t
-					log.Println("SENTSUCCESSFULY")
-				}
-				readCompletedCh <- struct{}{}
-			}()
 		}
 	}
 }
