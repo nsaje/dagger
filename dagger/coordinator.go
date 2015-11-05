@@ -100,6 +100,7 @@ func (c *ConsulCoordinator) Start() error {
 	sessionOptions := &api.SessionEntry{
 		Behavior:  api.SessionBehaviorDelete,
 		LockDelay: 100 * time.Millisecond,
+		TTL:       "10s",
 	}
 	var sessionID string
 	var err error
@@ -116,7 +117,7 @@ func (c *ConsulCoordinator) Start() error {
 	// set up a long-running goroutine for renewing the session
 	c.sessionRenew = make(chan struct{})
 	c.sessionID = sessionID
-	go session.RenewPeriodic(api.DefaultLockSessionTTL, sessionID, nil, c.sessionRenew)
+	go session.RenewPeriodic("5s", sessionID, nil, c.sessionRenew)
 
 	log.Println("[coordinator] Coordinator ready")
 

@@ -132,31 +132,16 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			tupleStream, _ := si.persister.ReadBuffer1(si.compID, "p", from, to)
 			for t := range tupleStream {
 				log.Println("[iterator] sending tuple:", t)
-				t.LWM = t.Timestamp.Add(time.Nanosecond)
-				// compLWM := si.lwmTracker.GetCombinedLWM()
-				// if compLWM.Before(t.Timestamp) {
-				// 	t.LWM = compLWM
-				// } else {
-				// 	t.LWM = t.Timestamp
-				// }
+				// t.LWM = t.Timestamp.Add(time.Nanosecond)
+				compLWM := si.lwmTracker.GetCombinedLWM()
+				if compLWM.Before(t.Timestamp) {
+					t.LWM = compLWM
+				} else {
+					t.LWM = t.Timestamp
+				}
 				// t.LWM = bd.lwmTracker.GetCombinedLWM()
 				go si.subscriberHandler.ProcessTuple(t)
-				// if err != nil {
-				// 	panic(err)
-				// }
-				log.Println("tryingRENTSUCCESSFULY")
-				// ttimer := time.NewTimer(time.Second)
-				// tstop := make(chan struct{})
-				// go func() {
-				// 	select {
-				// 	case <-ttimer.C:
-				// 		panic("FROZEN")
-				// 	case <-tstop:
-				// 		return
-				// 	}
-				// }()
 				sentSuccessfuly <- t
-				log.Println("SENTSUCCESSFULY")
 			}
 			readCompletedCh <- struct{}{}
 		}()
@@ -169,10 +154,12 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			return
 		case <-lwmFlushTimer.C:
 			log.Println("[iterator] flush timer firing")
-			lastSent.LWM = lastSent.Timestamp.Add(time.Nanosecond)
-			err := si.subscriberHandler.ProcessTuple(lastSent)
-			if err != nil {
-				log.Println("ERROR:", err)
+			if lastSent != nil {
+				lastSent.LWM = lastSent.Timestamp.Add(time.Nanosecond)
+				err := si.subscriberHandler.ProcessTuple(lastSent)
+				if err != nil {
+					log.Println("ERROR:", err)
+				}
 			}
 		case t := <-sentSuccessfuly:
 			newFrom = t.Timestamp

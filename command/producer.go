@@ -58,6 +58,6 @@ func Producer(c *cli.Context) {
 	// bufferedDispatcher.Stop()
 	// tmpT.LWM = time.Now().Add(time.Hour)
 	// dispatcher.ProcessTuple(tmpT)
-	time.Sleep(10 * time.Second)
+	time.Sleep(10000 * time.Second)
 	log.Println("EXITING")
 }
