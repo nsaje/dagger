@@ -48,9 +48,9 @@ func NewComputationManager(coordinator Coordinator,
 	cm := &computationManager{
 		computations: make(map[string]Computation),
 		coordinator:  coordinator,
+		dispatcher:   dispatcher,
 		receiver:     receiver,
 		persister:    persister,
-		dispatcher:   dispatcher,
 		counter:      c,
 	}
 	receiver.SetComputationSyncer(cm)
@@ -86,7 +86,7 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 
 	var computation Computation
 	if info.Stateful {
-		computation, err = newStatefulComputation(computationID, cm.coordinator, cm.persister, cm.dispatcher, plugin)
+		computation, err = newStatefulComputation(computationID, cm.coordinator, cm.persister, plugin)
 		if err != nil {
 			return err
 		}
@@ -144,21 +144,21 @@ func (comp *statelessComputation) Init() error {
 }
 
 type statefulComputation struct {
-	computationID      string
-	plugin             ComputationPlugin
-	groupHandler       GroupHandler
-	linearizer         *Linearizer
-	persister          Persister
-	lwmTracker         LWMTracker
-	bufferedDispatcher TupleProcessor
-	stopCh             chan struct{}
+	computationID string
+	plugin        ComputationPlugin
+	groupHandler  GroupHandler
+	linearizer    *Linearizer
+	persister     Persister
+	lwmTracker    LWMTracker
+	dispatcher    TupleProcessor
+	stopCh        chan struct{}
 
 	sync.RWMutex // a reader/writer lock for blocking new tuples on sync request
 	initialized  bool
 }
 
 func newStatefulComputation(computationID string, coordinator Coordinator,
-	persister Persister, dispatcher *Dispatcher, plugin ComputationPlugin) (Computation, error) {
+	persister Persister, plugin ComputationPlugin) (Computation, error) {
 	groupHandler, err := coordinator.JoinGroup(computationID)
 	if err != nil {
 		return nil, err
@@ -167,22 +167,24 @@ func newStatefulComputation(computationID string, coordinator Coordinator,
 
 	lwmTracker := NewLWMTracker()
 	// notify both LWM tracker and persister when a tuple is successfuly sent
-	multiSentTracker := MultiSentTracker{[]SentTracker{lwmTracker, persister}}
+	// multiSentTracker := MultiSentTracker{[]SentTracker{lwmTracker, persister}}
 
 	linearizer := NewLinearizer(computationID, persister, lwmTracker)
-	bufferedDispatcher := StartBufferedDispatcher(computationID, dispatcher, multiSentTracker, lwmTracker, stopCh)
+	// bufferedDispatcher := StartBufferedDispatcher(computationID, dispatcher, multiSentTracker, lwmTracker, stopCh)
+	dispatcher := NewStreamDispatcher(computationID, coordinator, persister, lwmTracker)
+	go dispatcher.Run()
 
 	computation := &statefulComputation{
-		computationID:      computationID,
-		plugin:             plugin,
-		groupHandler:       groupHandler,
-		persister:          persister,
-		lwmTracker:         lwmTracker,
-		linearizer:         linearizer,
-		bufferedDispatcher: bufferedDispatcher,
-		stopCh:             stopCh,
-		RWMutex:            sync.RWMutex{},
-		initialized:        false,
+		computationID: computationID,
+		plugin:        plugin,
+		groupHandler:  groupHandler,
+		persister:     persister,
+		lwmTracker:    lwmTracker,
+		linearizer:    linearizer,
+		dispatcher:    dispatcher,
+		stopCh:        stopCh,
+		RWMutex:       sync.RWMutex{},
+		initialized:   false,
 	}
 
 	linearizer.SetProcessor(computation)
@@ -287,7 +289,7 @@ func (comp *statefulComputation) ProcessTupleLinearized(t *structs.Tuple) error 
 		log.Println("WE ARE LEADER")
 		comp.lwmTracker.BeforeDispatching(response.Tuples)
 		// send to asynchronous dispatcher and return immediately
-		ProcessMultipleTuples(comp.bufferedDispatcher, response.Tuples)
+		ProcessMultipleTuples(comp.dispatcher, response.Tuples)
 	}
 	// don't send downstream if we're not the leader of our group
 	return nil
