@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"sync"
+	"time"
 
 	"github.com/nsaje/dagger/structs"
 )
@@ -47,10 +48,10 @@ func (r *Receiver) ListenAddr() net.Addr {
 	return r.listener.Addr()
 }
 
-func (r *Receiver) SubscribeTo(streamID string, tp TupleProcessor) {
+func (r *Receiver) SubscribeTo(streamID string, from time.Time, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
-	r.coordinator.SubscribeTo(streamID)
+	r.coordinator.SubscribeTo(streamID, from)
 	subscribersSet := r.subscribedTupleProcessors[streamID]
 	if subscribersSet == nil {
 		subscribersSet = make(map[TupleProcessor]struct{})
@@ -95,7 +96,7 @@ func (r *Receiver) Sync(compID string, reply *structs.ComputationSnapshot) error
 	if r.computationSyncer == nil {
 		return fmt.Errorf("[receiver] Computation manager doesn't exist!")
 	}
-	snapshot, err := r.computationSyncer.Sync(compID)
+	snapshot, err := r.computationSyncer.GetSnapshot(compID)
 	log.Printf("[receiver] Replying with snapshot: %v, err: %v", snapshot, err)
 	if err != nil {
 		return err

@@ -3,6 +3,8 @@ package command
 import (
 	"fmt"
 	"log"
+	"strconv"
+	"time"
 
 	"github.com/nsaje/dagger/dagger"
 	"github.com/nsaje/dagger/structs"
@@ -41,7 +43,11 @@ func Subscriber(c *cli.Context) {
 	linearizer := dagger.NewLinearizer("test", persister, lwmTracker)
 	linearizer.SetProcessor(prnter)
 	go linearizer.StartForwarding()
-	receiver.SubscribeTo(topicGlob, linearizer)
+	from, err := strconv.ParseInt(c.String("from"), 10, 64)
+	if err != nil {
+		panic(err)
+	}
+	receiver.SubscribeTo(topicGlob, time.Unix(0, from), linearizer)
 	// receiver.SubscribeTo(topicGlob, linearizer)
 	log.Printf("Subscribed to %s", topicGlob)
 

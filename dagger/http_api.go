@@ -158,7 +158,7 @@ func (hs *httpSubscribers) SubscribeTo(streamID string, ch chan *structs.Tuple) 
 	subscribersSet := hs.subs[streamID]
 	if subscribersSet == nil {
 		subscribersSet = make(map[chan *structs.Tuple]struct{})
-		hs.receiver.SubscribeTo(streamID, hs)
+		hs.receiver.SubscribeTo(streamID, time.Time{}, hs)
 	}
 	subscribersSet[ch] = struct{}{}
 	hs.subs[streamID] = subscribersSet

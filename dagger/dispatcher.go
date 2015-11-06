@@ -19,7 +19,7 @@ type StreamDispatcher struct {
 	iterators     map[string]*StreamIterator
 	notifyCh      chan *structs.Tuple
 	stopCh        chan struct{}
-	new           chan string
+	new           chan newSubscriber
 	dropped       chan string
 	last          *structs.Tuple
 }
@@ -60,7 +60,7 @@ func (sd *StreamDispatcher) Run() {
 			}
 		case subscriber := <-sd.new:
 			log.Println("[streamDispatcher] adding subscriber", subscriber)
-			subscriberHandler, err := newSubscriberHandler(subscriber)
+			subscriberHandler, err := newSubscriberHandler(subscriber.addr)
 			if err != nil {
 
 			}
@@ -72,8 +72,9 @@ func (sd *StreamDispatcher) Run() {
 				sd.persister,
 				subscriberHandler,
 			}
-			sd.iterators[subscriber] = iter
-			go iter.Dispatch(time.Time{})
+			sd.iterators[subscriber.addr] = iter
+			log.Println("STARTING DISPATCH FROM", subscriber.from)
+			go iter.Dispatch(subscriber.from)
 			// notify the new iterator of how far we've gotten
 			if sd.last != nil {
 				iter.ProcessTuple(sd.last)
@@ -110,8 +111,9 @@ func (si *StreamIterator) Stop() {
 
 func (si *StreamIterator) Dispatch(startAt time.Time) {
 	from := startAt
-	to := maxTime
+	to := time.Unix(0, 2^63-1)
 	var newTo, newFrom time.Time
+	newTo = to
 	readCompletedCh := make(chan struct{})
 	var newDataReady, readCompleted bool
 	sentSuccessfuly := make(chan *structs.Tuple)
@@ -126,8 +128,6 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 		lwmFlushTimer.Stop()
 		newDataReady = false
 		readCompleted = false
-		from = to
-		to = newTo
 		go func() {
 			tupleStream, _ := si.persister.ReadBuffer1(si.compID, "p", from, to)
 			for t := range tupleStream {
@@ -174,6 +174,8 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			if newDataReady && readCompleted {
 				log.Println("starting new read...")
 				// startNewRead <- struct{}{}
+				from = to
+				to = newTo
 				startNewRead()
 				log.Println("...new read started")
 			}
@@ -183,6 +185,8 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			lwmFlushTimer.Reset(flushAfter)
 			if newDataReady && readCompleted {
 				log.Println("starting new read...")
+				from = to
+				to = newTo
 				startNewRead()
 				log.Println("...new read started")
 			}

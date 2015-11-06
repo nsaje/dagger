@@ -45,7 +45,8 @@ type ComputationSnapshot struct {
 }
 
 func (s *ComputationSnapshot) String() string {
-	return fmt.Sprintf("InputBuffer: %v, Received: %v, Produced: %v, PluginState: %s",
+	return fmt.Sprintf("LastTimestamp: %v, InputBuffer: %v, Received: %v, Produced: %v, PluginState: %s",
+		s.LastTimestamp,
 		len(s.Received),
 		len(s.InputBuffer),
 		s.Produced,

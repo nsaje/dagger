@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,14 +36,14 @@ type Coordinator interface {
 
 // SubscribeCoordinator handles the act of subscribing to a stream
 type SubscribeCoordinator interface {
-	SubscribeTo(streamID string) error
+	SubscribeTo(streamID string, from time.Time) error
 	UnsubscribeFrom(streamID string) error
 }
 
 // PublishCoordinator handles the coordination of publishing a stream
 type PublishCoordinator interface {
 	GetSubscribers(streamID string) ([]string, error)
-	WatchSubscribers(streamID string, stopCh chan struct{}) (chan string, chan string)
+	WatchSubscribers(streamID string, stopCh chan struct{}) (chan newSubscriber, chan string)
 	RegisterAsPublisher(streamID string)
 }
 
@@ -228,10 +229,11 @@ func (c *ConsulCoordinator) RegisterAsPublisher(compID string) {
 }
 
 // SubscribeTo subscribes to topics with global coordination
-func (c *ConsulCoordinator) SubscribeTo(topic string) error {
+func (c *ConsulCoordinator) SubscribeTo(topic string, from time.Time) error {
 	kv := c.client.KV()
 	pair := &api.KVPair{
 		Key:     c.constructSubscriberKey(topic),
+		Value:   []byte(fmt.Sprintf("%d", from.UnixNano())),
 		Session: c.sessionID,
 	}
 	// ignore bool, since if it's false, it just means we're already subscribed
@@ -435,12 +437,17 @@ func stripTags(topic string) string {
 	return topic
 }
 
-func (c *ConsulCoordinator) WatchSubscribers(topic string, stopCh chan struct{}) (new chan string, dropped chan string) {
+type newSubscriber struct {
+	addr string
+	from time.Time
+}
+
+func (c *ConsulCoordinator) WatchSubscribers(topic string, stopCh chan struct{}) (new chan newSubscriber, dropped chan string) {
 	tags := parseTags(topic)
 	topic = stripTags(topic)
 	prefix := fmt.Sprintf("dagger/subscribers/%s/", topic)
 
-	new = make(chan string)
+	new = make(chan newSubscriber)
 	dropped = make(chan string)
 
 	go func() {
@@ -459,6 +466,7 @@ func (c *ConsulCoordinator) WatchSubscribers(topic string, stopCh chan struct{})
 				// fmt.Println("consul.Keys method returned, New LastIndex: ", queryMeta.LastIndex)
 				if err != nil {
 					log.Println(err) // FIXME
+					continue
 				}
 				lastIndex = queryMeta.LastIndex
 
@@ -484,7 +492,15 @@ func (c *ConsulCoordinator) WatchSubscribers(topic string, stopCh chan struct{})
 						if !exists {
 							diffSet[subscriber] = struct{}{}
 							log.Println("coordinator new subscriber", subscriber)
-							new <- subscriber
+							pair, _, err := kv.Get(key, nil)
+							if err != nil {
+								panic(err)
+							}
+							from, err := strconv.ParseInt(string(pair.Value), 10, 64)
+							if err != nil {
+								panic(err)
+							}
+							new <- newSubscriber{subscriber, time.Unix(0, from)}
 						}
 						oldSubscribers = append(oldSubscribers, subscriber)
 						delete(diffSet, subscriber)

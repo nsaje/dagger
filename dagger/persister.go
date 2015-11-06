@@ -297,7 +297,7 @@ func (p *LevelDBPersister) ReadBuffer(compID string, from time.Time, to time.Tim
 	var tups []*structs.Tuple
 	start := []byte(fmt.Sprintf("%s-i-%d", compID, from.UnixNano()))
 	limit := []byte(fmt.Sprintf("%s-i-%d", compID, to.UnixNano()))
-	log.Println("reading from, to", string(start), string(limit))
+	log.Println("reading0 from, to", string(start), string(limit))
 	iter := p.db.NewIterator(&util.Range{Start: start, Limit: limit}, nil)
 	for iter.Next() {
 		var tuple structs.Tuple

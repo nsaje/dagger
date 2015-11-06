@@ -25,7 +25,7 @@ type ComputationManager interface {
 
 // ComputationSyncer allows synchronizing computation status between workers
 type ComputationSyncer interface {
-	Sync(string) (*structs.ComputationSnapshot, error)
+	GetSnapshot(string) (*structs.ComputationSnapshot, error)
 }
 
 type computationManager struct {
@@ -68,6 +68,10 @@ func ParseComputationID(c string) (string, string, error) {
 }
 
 func (cm *computationManager) SetupComputation(computationID string) error {
+	// tokens := strings.Split(jobSpec, "@")
+	// 	computationID := tokens[0]
+	// 	fromNsec, _ := strconv.ParseInt(tokens[1], 10, 64)
+	// 	from := time.Unix(0, fromNsec)
 	name, definition, err := ParseComputationID(computationID)
 	if err != nil {
 		return err
@@ -94,11 +98,16 @@ func (cm *computationManager) SetupComputation(computationID string) error {
 		computation = &statelessComputation{plugin, cm.dispatcher}
 	}
 
+	from, err := computation.Sync()
+	if err != nil {
+		return err
+	}
+
 	for _, input := range info.Inputs {
-		cm.receiver.SubscribeTo(input, computation)
+		cm.receiver.SubscribeTo(input, from, computation)
 	}
 	cm.computations[computationID] = computation
-	return computation.Init()
+	return nil
 }
 
 func (cm *computationManager) Has(computationID string) bool {
@@ -106,20 +115,20 @@ func (cm *computationManager) Has(computationID string) bool {
 	return has
 }
 
-func (cm *computationManager) Sync(computationID string) (*structs.ComputationSnapshot, error) {
+func (cm *computationManager) GetSnapshot(computationID string) (*structs.ComputationSnapshot, error) {
 	comp, has := cm.computations[computationID]
 	if !has {
 		return nil, fmt.Errorf("Computation not found!")
 	}
-	return comp.Sync()
+	return comp.GetSnapshot()
 }
 
 // Computation encapsulates all the stages of processing a tuple for a single
 // computation
 type Computation interface {
 	TupleProcessor
-	Init() error
-	Sync() (*structs.ComputationSnapshot, error)
+	Sync() (time.Time, error)
+	GetSnapshot() (*structs.ComputationSnapshot, error)
 }
 
 type statelessComputation struct {
@@ -135,12 +144,12 @@ func (comp *statelessComputation) ProcessTuple(t *structs.Tuple) error {
 	return ProcessMultipleTuples(comp.dispatcher, response.Tuples)
 }
 
-func (comp *statelessComputation) Sync() (*structs.ComputationSnapshot, error) {
-	return nil, nil
+func (comp *statelessComputation) Sync() (time.Time, error) {
+	return time.Time{}, nil
 }
 
-func (comp *statelessComputation) Init() error {
-	return nil
+func (comp *statelessComputation) GetSnapshot() (*structs.ComputationSnapshot, error) {
+	return nil, nil
 }
 
 type statefulComputation struct {
@@ -188,59 +197,50 @@ func newStatefulComputation(computationID string, coordinator Coordinator,
 	}
 
 	linearizer.SetProcessor(computation)
+
 	return computation, nil
 }
 
-func (comp *statefulComputation) Init() error {
-	time.Sleep(2 * time.Second)
-	err := comp.syncStateWithMaster()
-	if err != nil {
-		return err
-	}
-	log.Println("SYNCED!")
-	go comp.linearizer.StartForwarding()
-	// go comp.StartProcessing()
-	return nil
-}
-
-func (comp *statefulComputation) syncStateWithMaster() error {
+func (comp *statefulComputation) Sync() (time.Time, error) {
 	comp.Lock()
 	defer comp.Unlock()
+	var from time.Time
 	for !comp.initialized {
 		log.Printf("[computations] Computation %s not initialized, syncing with group",
 			comp.computationID)
 		areWeLeader, currentLeader, err := comp.groupHandler.GetStatus()
 		if err != nil {
-			return err
+			return from, err
 		}
 		if currentLeader == "" {
 			// wait until a leader is chosen
 			log.Println("[computations] Leader of ", comp.computationID, "not yet chosen, waiting")
-			time.Sleep(time.Second)
+			time.Sleep(time.Second) // FIXME do this as a blocking call
 			continue
 		}
 		if !areWeLeader {
 			if err != nil {
-				return err
+				return from, err
 			}
 			leaderHandler, err := newMasterHandler(currentLeader)
 			if err != nil {
-				return fmt.Errorf("[computations] Error creating master handler: %s", err)
+				return from, fmt.Errorf("[computations] Error creating master handler: %s", err)
 			}
 			snapshot, err := leaderHandler.Sync(comp.computationID)
 			if err != nil {
-				return fmt.Errorf("[computations] Error syncing computation with master: %s", err)
+				return from, fmt.Errorf("[computations] Error syncing computation with master: %s", err)
 			}
 			err = comp.plugin.SetState(snapshot.PluginState)
 			if err != nil {
-				return fmt.Errorf("[computations] Error setting computation plugin state: %s", err)
+				return from, fmt.Errorf("[computations] Error setting computation plugin state: %s", err)
 			}
 			err = comp.persister.ApplySnapshot(comp.computationID, snapshot)
 			if err != nil {
-				return fmt.Errorf("[computations] Error applying computation snapshot: %s", err)
+				return from, fmt.Errorf("[computations] Error applying computation snapshot: %s", err)
 			}
 			// add one nanosecond so we don't take the last processed tuple again
 			comp.linearizer.SetStartLWM(snapshot.LastTimestamp.Add(time.Nanosecond))
+			from = snapshot.LastTimestamp.Add(time.Nanosecond)
 			// // recreate deduplicator from newest received info
 			// deduplicator, err := NewDeduplicator(comp.computationID, comp.persister)
 			// if err != nil {
@@ -250,7 +250,10 @@ func (comp *statefulComputation) syncStateWithMaster() error {
 		}
 		comp.initialized = true
 	}
-	return nil
+
+	go comp.linearizer.StartForwarding()
+
+	return from, nil
 }
 
 func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
@@ -295,7 +298,7 @@ func (comp *statefulComputation) ProcessTupleLinearized(t *structs.Tuple) error 
 	return nil
 }
 
-func (comp *statefulComputation) Sync() (*structs.ComputationSnapshot, error) {
+func (comp *statefulComputation) GetSnapshot() (*structs.ComputationSnapshot, error) {
 	log.Println("[computations] trying to acquire sync lock...")
 	comp.Lock()
 	log.Println("[computations] ... sync lock acquired!")

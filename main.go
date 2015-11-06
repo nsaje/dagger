@@ -53,6 +53,11 @@ func main() {
 					Name:  "dataonly",
 					Usage: "print only the 'Data' field of the tuple if true",
 				},
+				cli.StringFlag{
+					Name:  "from",
+					Value: "0",
+					Usage: "subscribe to tuples from specified Unix nanosecond timestamp onward",
+				},
 			},
 		},
 	}
