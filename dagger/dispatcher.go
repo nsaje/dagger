@@ -115,6 +115,7 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 	var newTo, newFrom time.Time
 	newTo = to
 	readCompletedCh := make(chan struct{})
+	toSend := make(chan *structs.Tuple)
 	var newDataReady, readCompleted bool
 	sentSuccessfuly := make(chan *structs.Tuple)
 
@@ -128,23 +129,7 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 		lwmFlushTimer.Stop()
 		newDataReady = false
 		readCompleted = false
-		go func() {
-			tupleStream, _ := si.persister.ReadBuffer1(si.compID, "p", from, to)
-			for t := range tupleStream {
-				log.Println("[iterator] sending tuple:", t)
-				// t.LWM = t.Timestamp.Add(time.Nanosecond)
-				compLWM := si.lwmTracker.GetCombinedLWM()
-				if compLWM.Before(t.Timestamp) {
-					t.LWM = compLWM
-				} else {
-					t.LWM = t.Timestamp
-				}
-				// t.LWM = bd.lwmTracker.GetCombinedLWM()
-				go si.subscriberHandler.ProcessTuple(t)
-				sentSuccessfuly <- t
-			}
-			readCompletedCh <- struct{}{}
-		}()
+		si.persister.ReadBuffer1(si.compID, "p", from, to, toSend, readCompletedCh)
 	}
 	startNewRead()
 
@@ -152,6 +137,17 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 		select {
 		case <-si.stopCh:
 			return
+		case t := <-toSend:
+			log.Println("[iterator] sending tuple:", t)
+			// t.LWM = t.Timestamp.Add(time.Nanosecond)
+			compLWM := si.lwmTracker.GetCombinedLWM()
+			if compLWM.Before(t.Timestamp) {
+				t.LWM = compLWM
+			} else {
+				t.LWM = t.Timestamp
+			}
+			// t.LWM = bd.lwmTracker.GetCombinedLWM()
+			si.subscriberHandler.ProcessTupleAsync(t, sentSuccessfuly)
 		case <-lwmFlushTimer.C:
 			log.Println("[iterator] flush timer firing")
 			if lastSent != nil {
@@ -163,11 +159,11 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			}
 		case t := <-sentSuccessfuly:
 			newFrom = t.Timestamp
+			lastSent = t
 			si.lwmTracker.SentSuccessfuly("FIXME", t)
 			log.Println("[iterator] newFrom updated:", t, newFrom.UnixNano())
 		case t := <-si.notify:
 			newTo = t.Timestamp
-			lastSent = t
 			log.Println("[iterator] newTo updated:", t)
 			newDataReady = true
 			log.Println("[iterator] newDataReadyCh", newDataReady, readCompleted)
@@ -369,4 +365,21 @@ func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
 	}
 	log.Printf("[dispatcher] ACK received for tuple %s", t)
 	return nil
+}
+
+func (s *subscriberHandler) ProcessTupleAsync(t *structs.Tuple, sentSuccessfuly chan *structs.Tuple) {
+	var reply string
+	call := s.client.Go("Receiver.SubmitTuple", t, &reply, nil)
+	go func() {
+		<-call.Done
+		err := call.Error
+		if err != nil {
+			log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)
+			// FIXME error handling
+			// return err
+			return
+		}
+		sentSuccessfuly <- t
+		log.Printf("[dispatcher] ACK received for tuple %s", t)
+	}()
 }

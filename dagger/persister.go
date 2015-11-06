@@ -34,7 +34,7 @@ type Persister interface {
 
 type StreamBuffer interface {
 	Insert1(compID string, bufID string, t *structs.Tuple) error
-	ReadBuffer1(compID string, bufID string, from time.Time, to time.Time) (chan *structs.Tuple, chan error)
+	ReadBuffer1(compID string, bufID string, from time.Time, to time.Time, tupCh chan *structs.Tuple, readCompleted chan struct{})
 }
 
 // SentTracker deletes production entries that have been ACKed from the DB
@@ -336,11 +336,11 @@ func (p *LevelDBPersister) Insert1(compID string, bufID string, t *structs.Tuple
 }
 
 // ReadBuffer returns a piece of the input buffer between specified timestamps
-func (p *LevelDBPersister) ReadBuffer1(compID string, bufID string, from time.Time, to time.Time) (tupCh chan *structs.Tuple, errCh chan error) {
-	tupCh = make(chan *structs.Tuple)
-	errCh = make(chan error)
+func (p *LevelDBPersister) ReadBuffer1(compID string, bufID string,
+	from time.Time, to time.Time, tupCh chan *structs.Tuple,
+	readCompletedCh chan struct{}) { // FIXME: add errCh
 	start := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, from.UnixNano()))
-	limit := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, to.UnixNano()))
+	limit := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, to.UnixNano()+1))
 	go func() {
 		log.Println("reading from, to", string(start), string(limit))
 		iter := p.db.NewIterator(&util.Range{Start: start, Limit: limit}, nil)
@@ -354,8 +354,7 @@ func (p *LevelDBPersister) ReadBuffer1(compID string, bufID string, from time.Ti
 			}
 			tupCh <- &tuple
 		}
-		log.Println("closing tuple channel{}")
-		close(tupCh)
+		readCompletedCh <- struct{}{}
 	}()
 	return
 }
