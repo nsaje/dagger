@@ -617,3 +617,51 @@ func (sl *subscribersList) fetch() error {
 	sl.subscribers = subscribers
 	return nil
 }
+
+func (c *ConsulCoordinator) WatchSubscriberPosition(topic string, subscriber string, stopCh chan struct{}, position chan time.Time) {
+	key := fmt.Sprintf("dagger/subscribers/%s/%s", topic, subscriber)
+	value := c.watch(key, stopCh, nil)
+	for {
+		select {
+		case <-stopCh:
+			return
+		case v := <-value:
+			posNsec, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				panic(err) // FIXME
+			}
+			pos := time.Unix(0, posNsec)
+			position <- pos
+		}
+	}
+}
+
+func (c *ConsulCoordinator) watch(key string, stopCh chan struct{}, value chan string) chan string {
+	if value == nil {
+		value = make(chan string)
+	}
+	lastIndex := uint64(0)
+	// keys, queryMeta, err := kv.Keys(sl.prefix, "", &api.QueryOptions{WaitIndex: sl.lastIndex})
+	kv := c.client.KV()
+	oldVal := ""
+	go func() {
+		for {
+			select {
+			case <-stopCh:
+				return
+			default:
+				pair, queryMeta, err := kv.Get(key, &api.QueryOptions{WaitIndex: lastIndex})
+				if err != nil {
+					log.Println("[ERROR] consul watch", err) // FIXME
+				}
+				newVal := string(pair.Value)
+				if newVal != oldVal {
+					oldVal = newVal
+					value <- newVal
+				}
+				lastIndex = queryMeta.LastIndex
+			}
+		}
+	}()
+	return value
+}

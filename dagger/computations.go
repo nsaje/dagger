@@ -180,7 +180,7 @@ func newStatefulComputation(computationID string, coordinator Coordinator,
 
 	linearizer := NewLinearizer(computationID, persister, lwmTracker)
 	// bufferedDispatcher := StartBufferedDispatcher(computationID, dispatcher, multiSentTracker, lwmTracker, stopCh)
-	dispatcher := NewStreamDispatcher(computationID, coordinator, persister, lwmTracker)
+	dispatcher := NewStreamDispatcher(computationID, coordinator, persister, lwmTracker, groupHandler)
 	go dispatcher.Run()
 
 	computation := &statefulComputation{
@@ -293,6 +293,8 @@ func (comp *statefulComputation) ProcessTupleLinearized(t *structs.Tuple) error 
 		comp.lwmTracker.BeforeDispatching(response.Tuples)
 		// send to asynchronous dispatcher and return immediately
 		ProcessMultipleTuples(comp.dispatcher, response.Tuples)
+	} else {
+		log.Println("WE ARE NOT LEADER", t)
 	}
 	// don't send downstream if we're not the leader of our group
 	return nil

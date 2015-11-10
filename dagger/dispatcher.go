@@ -2,6 +2,7 @@ package dagger
 
 import (
 	"log"
+	"math"
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
@@ -16,6 +17,7 @@ type StreamDispatcher struct {
 	computationID string
 	persister     Persister
 	lwmTracker    LWMTracker
+	groupHandler  GroupHandler
 	iterators     map[string]*StreamIterator
 	notifyCh      chan *structs.Tuple
 	stopCh        chan struct{}
@@ -25,13 +27,14 @@ type StreamDispatcher struct {
 }
 
 func NewStreamDispatcher(streamID string, coordinator Coordinator,
-	persister Persister, lwmTracker LWMTracker) *StreamDispatcher {
+	persister Persister, lwmTracker LWMTracker, groupHandler GroupHandler) *StreamDispatcher {
 	stopCh := make(chan struct{})
 	new, dropped := coordinator.WatchSubscribers(streamID, stopCh)
 	return &StreamDispatcher{
 		computationID: streamID,
 		persister:     persister,
 		lwmTracker:    lwmTracker,
+		groupHandler:  groupHandler,
 		iterators:     make(map[string]*StreamIterator),
 		notifyCh:      make(chan *structs.Tuple),
 		stopCh:        stopCh,
@@ -67,6 +70,7 @@ func (sd *StreamDispatcher) Run() {
 			iter := &StreamIterator{
 				sd.computationID,
 				sd.lwmTracker,
+				sd.groupHandler,
 				make(chan *structs.Tuple),
 				make(chan struct{}),
 				sd.persister,
@@ -93,6 +97,7 @@ func (sd *StreamDispatcher) Run() {
 type StreamIterator struct {
 	compID            string
 	lwmTracker        LWMTracker
+	groupHandler      GroupHandler
 	notify            chan *structs.Tuple
 	stopCh            chan struct{}
 	persister         Persister
@@ -111,7 +116,7 @@ func (si *StreamIterator) Stop() {
 
 func (si *StreamIterator) Dispatch(startAt time.Time) {
 	from := startAt
-	to := time.Unix(0, 2^63-1)
+	to := time.Unix(0, int64(math.Pow(2, 63)-1))
 	var newTo, newFrom time.Time
 	newTo = to
 	readCompletedCh := make(chan struct{})
@@ -129,6 +134,10 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 		lwmFlushTimer.Stop()
 		newDataReady = false
 		readCompleted = false
+		// areWeLeader, _, _ := si.groupHandler.GetStatus()
+		// if !areWeLeader {
+		// 	return
+		// }
 		si.persister.ReadBuffer1(si.compID, "p", from, to, toSend, readCompletedCh)
 	}
 	startNewRead()
@@ -344,7 +353,8 @@ func (bd *BufferedDispatcher) dispatch() {
 }
 
 type subscriberHandler struct {
-	client *rpc.Client
+	client    *rpc.Client
+	semaphore chan struct{}
 }
 
 func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
@@ -353,7 +363,7 @@ func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
 		return nil, err
 	}
 	client := jsonrpc.NewClient(conn)
-	return &subscriberHandler{client}, nil
+	return &subscriberHandler{client, make(chan struct{}, 10)}, nil // FIXME: make configurable
 }
 
 func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
@@ -369,9 +379,11 @@ func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
 
 func (s *subscriberHandler) ProcessTupleAsync(t *structs.Tuple, sentSuccessfuly chan *structs.Tuple) {
 	var reply string
+	s.semaphore <- struct{}{}
 	call := s.client.Go("Receiver.SubmitTuple", t, &reply, nil)
 	go func() {
 		<-call.Done
+		<-s.semaphore
 		err := call.Error
 		if err != nil {
 			log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)

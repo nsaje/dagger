@@ -32,7 +32,7 @@ func Producer(c *cli.Context) {
 		log.Fatalf("error opening database")
 	}
 	defer persister.Close()
-	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister, lwmTracker)
+	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, nil)
 	go dispatcher.Run()
 
 	reader := bufio.NewReader(os.Stdin)
