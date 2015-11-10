@@ -17,6 +17,7 @@ type StreamDispatcher struct {
 	computationID string
 	persister     Persister
 	lwmTracker    LWMTracker
+	coordinator   Coordinator
 	groupHandler  GroupHandler
 	iterators     map[string]*StreamIterator
 	notifyCh      chan *structs.Tuple
@@ -34,6 +35,7 @@ func NewStreamDispatcher(streamID string, coordinator Coordinator,
 		computationID: streamID,
 		persister:     persister,
 		lwmTracker:    lwmTracker,
+		coordinator:   coordinator,
 		groupHandler:  groupHandler,
 		iterators:     make(map[string]*StreamIterator),
 		notifyCh:      make(chan *structs.Tuple),
@@ -67,12 +69,16 @@ func (sd *StreamDispatcher) Run() {
 			if err != nil {
 
 			}
+			stopCh := make(chan struct{})
+			posUpdates := make(chan time.Time)
+			go sd.coordinator.WatchSubscriberPosition(sd.computationID, subscriber.addr, stopCh, posUpdates)
 			iter := &StreamIterator{
 				sd.computationID,
 				sd.lwmTracker,
 				sd.groupHandler,
+				posUpdates,
 				make(chan *structs.Tuple),
-				make(chan struct{}),
+				stopCh,
 				sd.persister,
 				subscriberHandler,
 			}
@@ -98,6 +104,7 @@ type StreamIterator struct {
 	compID            string
 	lwmTracker        LWMTracker
 	groupHandler      GroupHandler
+	positionUpdates   chan time.Time
 	notify            chan *structs.Tuple
 	stopCh            chan struct{}
 	persister         Persister
@@ -117,8 +124,8 @@ func (si *StreamIterator) Stop() {
 func (si *StreamIterator) Dispatch(startAt time.Time) {
 	from := startAt
 	to := time.Unix(0, int64(math.Pow(2, 63)-1))
-	var newTo, newFrom time.Time
-	newTo = to
+	// var newTo, newFrom time.Time
+	// newTo = to
 	readCompletedCh := make(chan struct{})
 	toSend := make(chan *structs.Tuple)
 	var newDataReady, readCompleted bool
@@ -129,15 +136,19 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 	lwmFlushTimer := time.NewTimer(flushAfter)
 	lwmFlushTimer.Stop()
 
+	// updatePosCh := si.groupHandler.
+
 	startNewRead := func() {
 		log.Println("[iterator] reading:", from, to)
 		lwmFlushTimer.Stop()
 		newDataReady = false
 		readCompleted = false
-		// areWeLeader, _, _ := si.groupHandler.GetStatus()
-		// if !areWeLeader {
-		// 	return
-		// }
+		if si.groupHandler != nil {
+			areWeLeader, _, _ := si.groupHandler.GetStatus()
+			if !areWeLeader {
+				return // don't send if we aren't the leader
+			}
+		}
 		si.persister.ReadBuffer1(si.compID, "p", from, to, toSend, readCompletedCh)
 	}
 	startNewRead()
@@ -146,6 +157,9 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 		select {
 		case <-si.stopCh:
 			return
+		case updatedPos := <-si.positionUpdates:
+			log.Println("[iterator] updating position to:", updatedPos)
+			from = updatedPos
 		case t := <-toSend:
 			log.Println("[iterator] sending tuple:", t)
 			// t.LWM = t.Timestamp.Add(time.Nanosecond)
@@ -167,20 +181,20 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 				}
 			}
 		case t := <-sentSuccessfuly:
-			newFrom = t.Timestamp
+			from = t.Timestamp
 			lastSent = t
 			si.lwmTracker.SentSuccessfuly("FIXME", t)
-			log.Println("[iterator] newFrom updated:", t, newFrom.UnixNano())
+			log.Println("[iterator] newFrom updated:", t, from.UnixNano())
 		case t := <-si.notify:
-			newTo = t.Timestamp
+			to = t.Timestamp
 			log.Println("[iterator] newTo updated:", t)
 			newDataReady = true
 			log.Println("[iterator] newDataReadyCh", newDataReady, readCompleted)
 			if newDataReady && readCompleted {
 				log.Println("starting new read...")
 				// startNewRead <- struct{}{}
-				from = to
-				to = newTo
+				// from = to
+				// to = newTo
 				startNewRead()
 				log.Println("...new read started")
 			}
@@ -190,8 +204,8 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			lwmFlushTimer.Reset(flushAfter)
 			if newDataReady && readCompleted {
 				log.Println("starting new read...")
-				from = to
-				to = newTo
+				// from = to
+				// to = newTo
 				startNewRead()
 				log.Println("...new read started")
 			}

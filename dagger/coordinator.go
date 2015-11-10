@@ -37,6 +37,7 @@ type Coordinator interface {
 // SubscribeCoordinator handles the act of subscribing to a stream
 type SubscribeCoordinator interface {
 	SubscribeTo(streamID string, from time.Time) error
+	CheckpointPosition(streamID string, from time.Time) error
 	UnsubscribeFrom(streamID string) error
 }
 
@@ -44,6 +45,7 @@ type SubscribeCoordinator interface {
 type PublishCoordinator interface {
 	GetSubscribers(streamID string) ([]string, error)
 	WatchSubscribers(streamID string, stopCh chan struct{}) (chan newSubscriber, chan string)
+	WatchSubscriberPosition(topic string, subscriber string, stopCh chan struct{}, position chan time.Time)
 	RegisterAsPublisher(streamID string)
 }
 
@@ -242,6 +244,20 @@ func (c *ConsulCoordinator) SubscribeTo(topic string, from time.Time) error {
 	if strings.ContainsAny(topic, "()") {
 		// only monitor publishers if it's a computation
 		go c.monitorPublishers(topic)
+	}
+	return err
+}
+
+func (c *ConsulCoordinator) CheckpointPosition(topic string, from time.Time) error {
+	kv := c.client.KV()
+	pair := &api.KVPair{
+		Key:     c.constructSubscriberKey(topic),
+		Value:   []byte(fmt.Sprintf("%d", from.UnixNano())),
+		Session: c.sessionID,
+	}
+	_, err := kv.Put(pair, nil)
+	if err != nil {
+		log.Println("[checkpoint] error", err)
 	}
 	return err
 }
@@ -654,7 +670,11 @@ func (c *ConsulCoordinator) watch(key string, stopCh chan struct{}, value chan s
 				if err != nil {
 					log.Println("[ERROR] consul watch", err) // FIXME
 				}
-				newVal := string(pair.Value)
+				var newVal string
+				if pair.Value != nil {
+					newVal = string(pair.Value)
+				}
+				log.Println("[watch] new val:", newVal)
 				if newVal != oldVal {
 					oldVal = newVal
 					value <- newVal

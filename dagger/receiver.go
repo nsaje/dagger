@@ -57,7 +57,7 @@ func (r *Receiver) SubscribeTo(streamID string, from time.Time, tp TupleProcesso
 	subscribersSet := r.subscribedTupleProcessors[streamID]
 	if subscribersSet == nil {
 		subscribersSet = make(map[TupleProcessor]struct{})
-		r.checkpointTimers[streamID] = time.NewTimer(5 * time.Second) // FIXME: configurable
+		r.checkpointTimers[streamID] = time.NewTimer(time.Second) // FIXME: configurable
 	}
 	subscribersSet[tp] = struct{}{}
 	r.subscribedTupleProcessors[streamID] = subscribersSet
@@ -94,8 +94,8 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	select {
 	case <-r.checkpointTimers[t.StreamID].C:
 		log.Printf("[receiver] checkpointing position of stream %s at %s", t.StreamID, t.Timestamp)
-		r.coordinator.SubscribeTo(t.StreamID, t.Timestamp)
-		r.checkpointTimers[t.StreamID].Reset(5 * time.Second)
+		r.coordinator.CheckpointPosition(t.StreamID, t.Timestamp)
+		r.checkpointTimers[t.StreamID].Reset(time.Second)
 	default:
 	}
 	*reply = "ok"
