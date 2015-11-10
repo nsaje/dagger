@@ -368,7 +368,7 @@ func (gh *groupHandler) fetch() error {
 	}
 	gh.RUnlock()
 	pair, queryMeta, err := kv.Get(key, qOpts)
-	// log.Println("[coordinator][groupHandler] Fetch returned new data")
+	log.Println("[coordinator][groupHandler] Fetch returned new data")
 	if err != nil {
 		log.Println("FETCH ERROR")
 		return err
@@ -644,7 +644,7 @@ func (c *ConsulCoordinator) WatchSubscriberPosition(topic string, subscriber str
 		case v := <-value:
 			posNsec, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
-				panic(err) // FIXME
+				posNsec = 0
 			}
 			pos := time.Unix(0, posNsec)
 			position <- pos
@@ -671,7 +671,7 @@ func (c *ConsulCoordinator) watch(key string, stopCh chan struct{}, value chan s
 					log.Println("[ERROR] consul watch", err) // FIXME
 				}
 				var newVal string
-				if pair.Value != nil {
+				if pair != nil {
 					newVal = string(pair.Value)
 				}
 				log.Println("[watch] new val:", newVal)

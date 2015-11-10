@@ -176,14 +176,16 @@ func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnaps
 		return nil, fmt.Errorf("[persister] iterating input buffer: %s", err)
 	}
 
+	var lastTimestampUnmarshalled time.Time
 	lastTimestamp, err := dbSnapshot.Get([]byte(fmt.Sprintf("%s-last", compID)), nil)
 	if err != nil {
-		return nil, fmt.Errorf("[persister] reading last timestamp: %s", err)
-	}
-	var lastTimestampUnmarshalled time.Time
-	err = json.Unmarshal(lastTimestamp, &lastTimestampUnmarshalled)
-	if err != nil {
-		return nil, fmt.Errorf("[persister] reading last timestamp: %s", err)
+		// return nil, fmt.Errorf("[persister] reading last timestamp: %s", err)
+		err = nil // FIXME sigh...
+	} else {
+		err = json.Unmarshal(lastTimestamp, &lastTimestampUnmarshalled)
+		if err != nil {
+			return nil, fmt.Errorf("[persister] reading last timestamp: %s", err)
+		}
 	}
 	snapshot.LastTimestamp = lastTimestampUnmarshalled
 	return &snapshot, err

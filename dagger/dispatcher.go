@@ -151,7 +151,8 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 		}
 		si.persister.ReadBuffer1(si.compID, "p", from, to, toSend, readCompletedCh)
 	}
-	startNewRead()
+	readCompleted = true
+	// startNewRead()
 
 	for {
 		select {
