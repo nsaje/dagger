@@ -20,6 +20,7 @@ type Receiver struct {
 	listener                  net.Listener
 	computationSyncer         ComputationSyncer
 	subscribedTupleProcessors map[string]map[TupleProcessor]struct{}
+	checkpointTimers          map[string]*time.Timer
 	subscribersLock           *sync.RWMutex
 }
 
@@ -29,6 +30,7 @@ func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
 		conf:                      conf,
 		coordinator:               coordinator,
 		subscribedTupleProcessors: make(map[string]map[TupleProcessor]struct{}),
+		checkpointTimers:          make(map[string]*time.Timer),
 		subscribersLock:           &sync.RWMutex{},
 	}
 	r.server = rpc.NewServer()
@@ -55,6 +57,7 @@ func (r *Receiver) SubscribeTo(streamID string, from time.Time, tp TupleProcesso
 	subscribersSet := r.subscribedTupleProcessors[streamID]
 	if subscribersSet == nil {
 		subscribersSet = make(map[TupleProcessor]struct{})
+		r.checkpointTimers[streamID] = time.NewTimer(5 * time.Second) // FIXME: configurable
 	}
 	subscribersSet[tp] = struct{}{}
 	r.subscribedTupleProcessors[streamID] = subscribersSet
@@ -64,11 +67,13 @@ func (r *Receiver) UnsubscribeFrom(streamID string, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.UnsubscribeFrom(streamID)
-	delete(r.subscribedTupleProcessors[streamID], tp)
+	delete(r.subscribedTupleProcessors[streamID], tp) // FIXME: delete streamID from all maps when empty
 }
 
 // SubmitTuple submits a new tuple into the worker process
 func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
+	r.subscribersLock.RLock()
+	defer r.subscribersLock.RUnlock()
 	log.Printf("[receiver] Received: %s", t)
 	// if rand.Float64() < 0.1 {
 	// 	fmt.Println("rejecting for test")
@@ -84,6 +89,14 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 	if err != nil {
 		log.Printf("[ERROR] Processing %s failed: %s", t, err)
 		return err
+	}
+	// if enough time has passed, create a checkpoint in coordination system
+	select {
+	case <-r.checkpointTimers[t.StreamID].C:
+		log.Printf("[receiver] checkpointing position of stream %s at %s", t.StreamID, t.Timestamp)
+		r.coordinator.SubscribeTo(t.StreamID, t.Timestamp)
+		r.checkpointTimers[t.StreamID].Reset(5 * time.Second)
+	default:
 	}
 	*reply = "ok"
 	log.Printf("[receiver] ACKed: %s", t)
