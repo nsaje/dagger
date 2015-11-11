@@ -22,7 +22,7 @@ type StreamDispatcher struct {
 	iterators     map[string]*StreamIterator
 	notifyCh      chan *structs.Tuple
 	stopCh        chan struct{}
-	new           chan newSubscriber
+	new           chan NewSubscriber
 	dropped       chan string
 	last          *structs.Tuple
 }

@@ -41,7 +41,6 @@ func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
 	if err != nil {
 		log.Fatal("[receiver] Listen error:", err)
 	}
-	coordinator.SetAddr(r.listener.Addr())
 	return r
 }
 

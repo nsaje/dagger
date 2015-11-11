@@ -47,7 +47,7 @@ func Worker(c *cli.Context) {
 	receiver.SetComputationSyncer(compManager)
 	// httpAPI := dagger.NewHttpAPI(receiver, dispatcher)
 
-	err = coordinator.Start()
+	err = coordinator.Start(receiver.ListenAddr())
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatalf("Error starting coordinator %s", err)

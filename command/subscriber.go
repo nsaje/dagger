@@ -29,7 +29,7 @@ func Subscriber(c *cli.Context) {
 	receiver := dagger.NewReceiver(conf, coordinator)
 	go receiver.ReceiveTuples()
 
-	err = coordinator.Start()
+	err = coordinator.Start(receiver.ListenAddr())
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatalf("Error starting coordinator %s", err)

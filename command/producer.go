@@ -16,8 +16,7 @@ import (
 func Producer(c *cli.Context) {
 	conf := dagger.DefaultConfig(c)
 	coordinator := dagger.NewCoordinator(conf)
-	coordinator.SetAddr(conf.RPCAdvertise)
-	err := coordinator.Start()
+	err := coordinator.Start(conf.RPCAdvertise)
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatal("Error setting up coordinator")
