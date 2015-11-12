@@ -3,8 +3,6 @@ package dagger
 import (
 	"net"
 	"time"
-
-	"github.com/nsaje/dagger/dagger"
 )
 
 const (
@@ -17,8 +15,8 @@ type Tags map[string]string
 
 // NewSubscriber encapsulates information about a new subscription
 type NewSubscriber struct {
-	addr string
-	from time.Time
+	Addr string
+	From time.Time
 }
 
 // Coordinator coordinates topics, their publishers and subscribers
@@ -35,22 +33,17 @@ type Coordinator interface {
 
 // SubscribeCoordinator handles the act of subscribing to a stream
 type SubscribeCoordinator interface {
-	SubscribeTo(streamID string, from time.Time) error
-	CheckpointPosition(streamID string, from time.Time) error
-	UnsubscribeFrom(streamID string) error
+	SubscribeTo(streamID StreamID, from time.Time) error
+	CheckpointPosition(streamID StreamID, from time.Time) error
+	UnsubscribeFrom(streamID StreamID) error
 }
 
 // PublishCoordinator handles the coordination of publishing a stream
 type PublishCoordinator interface {
-	GetSubscribers(streamID string) ([]string, error)
-	WatchSubscribers(streamID string, stopCh chan struct{}) (chan dagger.NewSubscriber, chan string)
-	WatchSubscriberPosition(topic string, subscriber string, stopCh chan struct{}, position chan time.Time)
-	RegisterAsPublisher(streamID string)
-}
-
-// JobCoordinator coordinates accepts, starts and stops jobs DEPRECATED
-type JobCoordinator interface {
-	ManageJobs(ComputationManager)
+	GetSubscribers(streamID StreamID) ([]string, error) // DEPRECATE
+	WatchSubscribers(streamID StreamID, stopCh chan struct{}) (chan NewSubscriber, chan string)
+	WatchSubscriberPosition(topic StreamID, subscriber string, stopCh chan struct{}, position chan time.Time)
+	RegisterAsPublisher(streamID StreamID)
 }
 
 // GroupHandler handles leadership status of a group
@@ -65,18 +58,18 @@ type TaskCoordinator interface {
 	NewTaskWatcher() TaskWatcher
 	// AcquireTask tries to take a task from the task list. If another worker
 	// manages to take the task, the call returns false.
-	AcquireTask(Task) (bool, error)
+	AcquireTask(StreamID) (bool, error)
 	// TaskAcquired marks the task as successfuly acquired
-	TaskAcquired(Task)
+	TaskAcquired(StreamID)
 	// ReleaseTask releases the lock on the task so others can try to acquire it
-	ReleaseTask(Task) (bool, error)
+	ReleaseTask(StreamID) (bool, error)
 }
 
 // TaskWatcher watches for and notifies of new available tasks
 type TaskWatcher interface {
 	Watcher
-	New() chan Task
-	Dropped() chan Task
+	New() chan StreamID
+	Dropped() chan StreamID
 }
 
 // Watcher watches for changes in coordination store
@@ -88,5 +81,5 @@ type Watcher interface {
 // ReplicationCoordinator coordinates replication of tuples onto multiple
 // computations on multiple hosts for high availability
 type ReplicationCoordinator interface {
-	JoinGroup(streamID string) (GroupHandler, error)
+	JoinGroup(streamID StreamID) (GroupHandler, error)
 }

@@ -56,7 +56,7 @@ func (api HttpAPI) submit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
-	streamID := r.FormValue("s")
+	streamID := StreamID(r.FormValue("s"))
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
@@ -92,7 +92,7 @@ func CreateTupleFromJSON(s []byte) (*structs.Tuple, error) {
 }
 
 // CreateTuple creates a new tuple with given stream ID and data
-func CreateTuple(streamID string, data string) (*structs.Tuple, error) {
+func CreateTuple(streamID StreamID, data string) (*structs.Tuple, error) {
 	if len(streamID) == 0 {
 		return nil, errors.New("Stream ID shouldn't be empty")
 	}
@@ -152,7 +152,7 @@ type httpSubscribers struct {
 	lock     *sync.RWMutex
 }
 
-func (hs *httpSubscribers) SubscribeTo(streamID string, ch chan *structs.Tuple) {
+func (hs *httpSubscribers) SubscribeTo(streamID StreamID, ch chan *structs.Tuple) {
 	hs.lock.Lock()
 	defer hs.lock.Unlock()
 	subscribersSet := hs.subs[streamID]
@@ -164,7 +164,7 @@ func (hs *httpSubscribers) SubscribeTo(streamID string, ch chan *structs.Tuple) 
 	hs.subs[streamID] = subscribersSet
 }
 
-func (hs *httpSubscribers) UnsubscribeFrom(streamID string, ch chan *structs.Tuple) {
+func (hs *httpSubscribers) UnsubscribeFrom(streamID StreamID, ch chan *structs.Tuple) {
 	hs.lock.Lock()
 	defer hs.lock.Unlock()
 	delete(hs.subs[streamID], ch)

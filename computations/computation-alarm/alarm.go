@@ -36,7 +36,7 @@ func newValueTable() valueTable {
 	}
 }
 
-func (vt *valueTable) getLastN(streamID string, n int) []*structs.Tuple {
+func (vt *valueTable) getLastN(streamID StreamID, n int) []*structs.Tuple {
 	timeSeries := vt.Values[streamID]
 	i := sort.Search(len(timeSeries), func(i int) bool {
 		return timeSeries[i].Timestamp.After(vt.LWM)

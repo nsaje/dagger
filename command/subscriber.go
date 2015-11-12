@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/nsaje/dagger/consul"
 	"github.com/nsaje/dagger/dagger"
 	"github.com/nsaje/dagger/structs"
 
@@ -25,9 +26,11 @@ func Subscriber(c *cli.Context) {
 
 	prnter := &printer{dataonly: c.Bool("dataonly")}
 
-	coordinator := dagger.NewCoordinator(conf)
+	consulConf := consul.DefaultConfig()
+	consulConf.Address = conf.ConsulAddr
+	coordinator := consul.NewCoordinator(consulConf)
 	receiver := dagger.NewReceiver(conf, coordinator)
-	go receiver.ReceiveTuples()
+	go receiver.Listen()
 
 	err = coordinator.Start(receiver.ListenAddr())
 	defer coordinator.Stop()

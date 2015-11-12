@@ -18,7 +18,7 @@ type Receiver struct {
 	coordinator               Coordinator
 	server                    *rpc.Server
 	listener                  net.Listener
-	computationSyncer         ComputationSyncer
+	taskManager               *TaskManager
 	subscribedTupleProcessors map[string]map[TupleProcessor]struct{}
 	checkpointTimers          map[string]*time.Timer
 	subscribersLock           *sync.RWMutex
@@ -49,7 +49,7 @@ func (r *Receiver) ListenAddr() net.Addr {
 	return r.listener.Addr()
 }
 
-func (r *Receiver) SubscribeTo(streamID string, from time.Time, tp TupleProcessor) {
+func (r *Receiver) SubscribeTo(streamID StreamID, from time.Time, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.SubscribeTo(streamID, from)
@@ -62,7 +62,7 @@ func (r *Receiver) SubscribeTo(streamID string, from time.Time, tp TupleProcesso
 	r.subscribedTupleProcessors[streamID] = subscribersSet
 }
 
-func (r *Receiver) UnsubscribeFrom(streamID string, tp TupleProcessor) {
+func (r *Receiver) UnsubscribeFrom(streamID StreamID, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.UnsubscribeFrom(streamID)
@@ -103,12 +103,12 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 }
 
 // Sync is the RPC method called by slave workers wanting to sync a computation
-func (r *Receiver) Sync(compID string, reply *structs.ComputationSnapshot) error {
+func (r *Receiver) Sync(compID StreamID, reply *structs.ComputationSnapshot) error {
 	log.Printf("[receiver] Sync request for %s", compID)
-	if r.computationSyncer == nil {
-		return fmt.Errorf("[receiver] Computation manager doesn't exist!")
+	if r.taskManager == nil {
+		return fmt.Errorf("[receiver] Task manager doesn't exist")
 	}
-	snapshot, err := r.computationSyncer.GetSnapshot(compID)
+	snapshot, err := r.taskManager.GetSnapshot(compID)
 	log.Printf("[receiver] Replying with snapshot: %v, err: %v", snapshot, err)
 	if err != nil {
 		return err
@@ -117,12 +117,13 @@ func (r *Receiver) Sync(compID string, reply *structs.ComputationSnapshot) error
 	return err
 }
 
-func (r *Receiver) SetComputationSyncer(cs ComputationSyncer) {
-	r.computationSyncer = cs
+// SetTaskManager sets the task manager that is forwarded task sync requests
+func (r *Receiver) SetTaskManager(tm *TaskManager) {
+	r.taskManager = tm
 }
 
-// ReceiveTuples starts receiving incoming tuples over RPC
-func (r *Receiver) ReceiveTuples() {
+// Listen starts receiving incoming tuples over RPC
+func (r *Receiver) Listen() {
 	for {
 		if conn, err := r.listener.Accept(); err != nil {
 			log.Fatal("[receiver] Accept error: " + err.Error())

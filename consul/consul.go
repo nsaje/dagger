@@ -19,6 +19,11 @@ const (
 	taskPrefix = "dagger/tasks/"
 )
 
+// DefaultConfig returns the default config for Consul
+func DefaultConfig() *api.Config {
+	return api.DefaultConfig()
+}
+
 // Coordinator implementation based on Consul.io
 type consulCoordinator struct {
 	client *api.Client
@@ -33,13 +38,13 @@ type consulCoordinator struct {
 }
 
 // NewCoordinator creates a new instance of Consul coordinator
-func NewCoordinator(conf *api.Config) Coordinator {
+func NewCoordinator(conf *api.Config) dagger.Coordinator {
 	client, _ := api.NewClient(conf)
 	c := &consulCoordinator{
-		client: client,
-		stopCh: make(chan struct{}),
-		make(map[string]*subscribersList),
-		new(sync.RWMutex),
+		client:          client,
+		stopCh:          make(chan struct{}),
+		subscribers:     make(map[string]*subscribersList),
+		subscribersLock: sync.RWMutex{},
 	}
 	return c
 }
@@ -88,15 +93,15 @@ func (c *consulCoordinator) Stop() {
 
 type taskWatcher struct {
 	*setWatcher
-	new     chan dagger.Task
-	dropped chan dagger.Task
+	new     chan dagger.StreamID
+	dropped chan dagger.StreamID
 }
 
 func (c *consulCoordinator) NewTaskWatcher() dagger.TaskWatcher {
 	w := &taskWatcher{
 		setWatcher: c.newSetWatcher(taskPrefix),
-		new:        make(chan dagger.Task),
-		dropped:    make(chan dagger.Task),
+		new:        make(chan dagger.StreamID),
+		dropped:    make(chan dagger.StreamID),
 	}
 	go w.watch()
 	return w
@@ -108,22 +113,22 @@ func (w *taskWatcher) watch() {
 		case <-w.setWatcher.done:
 			return
 		case newJob := <-w.setWatcher.new:
-			w.new <- dagger.Task(newJob[len(taskPrefix):])
+			w.new <- dagger.StreamID(newJob[len(taskPrefix):])
 		case droppedJob := <-w.setWatcher.dropped:
-			w.dropped <- dagger.Task(droppedJob[len(taskPrefix):])
+			w.dropped <- dagger.StreamID(droppedJob[len(taskPrefix):])
 		}
 	}
 }
 
-func (w *taskWatcher) New() chan dagger.Task {
+func (w *taskWatcher) New() chan dagger.StreamID {
 	return w.new
 }
 
-func (w *taskWatcher) Dropped() chan dagger.Task {
+func (w *taskWatcher) Dropped() chan dagger.StreamID {
 	return w.dropped
 }
 
-func (c *consulCoordinator) AcquireTask(task dagger.Task) (bool, error) {
+func (c *consulCoordinator) AcquireTask(task dagger.StreamID) (bool, error) {
 	log.Println("[coordinator] Trying to take task: ", task)
 	kv := c.client.KV()
 	pair := &api.KVPair{
@@ -134,18 +139,13 @@ func (c *consulCoordinator) AcquireTask(task dagger.Task) (bool, error) {
 	return acquired, err
 }
 
-func (c *consulCoordinator) TaskAcquired(task dagger.Task) (bool, error) {
+func (c *consulCoordinator) TaskAcquired(task dagger.StreamID) {
 	log.Println("[coordinator] Releasing task: ", task)
 	kv := c.client.KV()
-	pair := &api.KVPair{
-		Key:     string(task),
-		Session: c.sessionID,
-	}
-	released, _, err := kv.Release(pair, nil)
-	return released, err
+	kv.Delete(string(task), nil)
 }
 
-func (c *consulCoordinator) ReleaseTask(task dagger.Task) (bool, error) {
+func (c *consulCoordinator) ReleaseTask(task dagger.StreamID) (bool, error) {
 	log.Println("[coordinator] Releasing task: ", task)
 	kv := c.client.KV()
 	pair := &api.KVPair{
@@ -288,11 +288,11 @@ func (w *setWatcher) watch(kv *api.KV, prefix string) {
 //
 // 			randomOrder := rand.Perm(len(keys))
 // 			for _, i := range randomOrder {
-// 				computationID := keys[i][len(JobPrefix):]
-// 				if alreadyTaken := cm.Has(computationID); alreadyTaken {
+// 				streamID := keys[i][len(JobPrefix):]
+// 				if alreadyTaken := cm.Has(streamID); alreadyTaken {
 // 					continue
 // 				}
-// 				if _, found := unapplicableSet[computationID]; found {
+// 				if _, found := unapplicableSet[streamID]; found {
 // 					continue
 // 				}
 // 				gotJob, err := c.TakeJob(keys[i])
@@ -303,17 +303,17 @@ func (w *setWatcher) watch(kv *api.KV, prefix string) {
 // 				}
 // 				if gotJob {
 // 					log.Println("[coordinator] Got job:", keys[i])
-// 					err = cm.SetupComputation(computationID)
+// 					err = cm.SetupComputation(streamID)
 // 					if err != nil {
 // 						log.Println("Error setting up computation:", err) // FIXME
 // 						c.ReleaseJob(keys[i])
-// 						unapplicableSet[computationID] = struct{}{}
+// 						unapplicableSet[streamID] = struct{}{}
 // 						continue
 // 					}
 // 					// job set up successfuly, register as publisher and delete the job
-// 					log.Println("[coordinator] Deleting job: ", computationID)
+// 					log.Println("[coordinator] Deleting job: ", streamID)
 // 					kv.Delete(keys[i], nil)
-// 					c.RegisterAsPublisher(computationID)
+// 					c.RegisterAsPublisher(streamID)
 // 				}
 // 			}
 // 		}
@@ -347,7 +347,7 @@ func (w *setWatcher) watch(kv *api.KV, prefix string) {
 //
 
 // RegisterAsPublisher registers us as publishers of this stream and
-func (c *consulCoordinator) RegisterAsPublisher(compID string) {
+func (c *consulCoordinator) RegisterAsPublisher(compID StreamID) {
 	log.Println("[coordinator] Registering as publisher for: ", compID)
 	kv := c.client.KV()
 	pair := &api.KVPair{
@@ -401,7 +401,7 @@ func (c *consulCoordinator) UnsubscribeFrom(topic string) error {
 }
 
 // JoinGroup joins the group that produces compID computation
-func (c *consulCoordinator) JoinGroup(compID string) (dagger.GroupHandler, error) {
+func (c *consulCoordinator) JoinGroup(compID StreamID) (dagger.GroupHandler, error) {
 	gh := &groupHandler{
 		compID: compID,
 		c:      c,
@@ -426,7 +426,7 @@ func (c *consulCoordinator) JoinGroup(compID string) (dagger.GroupHandler, error
 }
 
 type groupHandler struct {
-	compID string
+	compID StreamID
 	c      *consulCoordinator
 
 	areWeLeader   bool
@@ -462,7 +462,7 @@ func (gh *groupHandler) GetStatus() (bool, string, error) {
 }
 
 func (gh *groupHandler) contend() error {
-	key := fmt.Sprintf("dagger/%s/publishers_leader", gh.compID)
+	key := fmt.Sprintf("dagger/%s/publishers_leader", string(gh.compID))
 	if gh.currentLeader == "" {
 		pair := &api.KVPair{
 			Key:     key,
@@ -578,12 +578,12 @@ func stripTags(topic string) string {
 	return topic
 }
 
-func (c *consulCoordinator) WatchSubscribers(topic string, stopCh chan struct{}) (new chan newSubscriber, dropped chan string) {
+func (c *consulCoordinator) WatchSubscribers(topic string, stopCh chan struct{}) (new chan dagger.NewSubscriber, dropped chan string) {
 	tags := parseTags(topic)
 	topic = stripTags(topic)
 	prefix := fmt.Sprintf("dagger/subscribers/%s/", topic)
 
-	new = make(chan newSubscriber)
+	new = make(chan dagger.NewSubscriber)
 	dropped = make(chan string)
 
 	go func() {
@@ -636,7 +636,7 @@ func (c *consulCoordinator) WatchSubscribers(topic string, stopCh chan struct{})
 							if err != nil {
 								panic(err)
 							}
-							new <- newSubscriber{subscriber, time.Unix(0, from)}
+							new <- dagger.NewSubscriber{Addr: subscriber, From: time.Unix(0, from)}
 						}
 						oldSubscribers = append(oldSubscribers, subscriber)
 						delete(diffSet, subscriber)
@@ -707,7 +707,7 @@ func (sl *subscribersList) sync() {
 		sl.RLock()
 		lastAccess := sl.lastAccess
 		sl.RUnlock()
-		if time.Since(lastAccess) >= sl.c.config.SubscribersTTL {
+		if time.Since(lastAccess) >= 15*time.Second {
 			log.Printf("[coordinator] TTL expired for subscribers of '%s'", sl.prefix)
 			sl.c.subscribersLock.Lock()
 			defer sl.c.subscribersLock.Unlock()
@@ -754,7 +754,7 @@ func (sl *subscribersList) fetch() error {
 	return nil
 }
 
-func (c *consulCoordinator) WatchSubscriberPosition(topic string, subscriber string, stopCh chan struct{}, position chan time.Time) {
+func (c *consulCoordinator) WatchSubscriberPosition(topic StreamID, subscriber string, stopCh chan struct{}, position chan time.Time) {
 	key := fmt.Sprintf("dagger/subscribers/%s/%s", topic, subscriber)
 	value := c.watch(key, stopCh, nil)
 	for {

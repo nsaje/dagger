@@ -9,15 +9,15 @@ import (
 
 // LinearizerStore represents a sorted persistent buffer of tuples
 type LinearizerStore interface {
-	Insert(compID string, t *structs.Tuple) error
-	ReadBuffer(compID string, from time.Time, to time.Time) ([]*structs.Tuple, error)
+	Insert(compID StreamID, t *structs.Tuple) error
+	ReadBuffer(compID StreamID, from time.Time, to time.Time) ([]*structs.Tuple, error)
 }
 
 // Linearizer buffers tuples and forwards them to the next TupleProcessor sorted
 // by timestamp, while making sure all the tuples in a certain time frame have
 // already arrived
 type Linearizer struct {
-	compID     string
+	compID     StreamID
 	store      LinearizerStore
 	lwmTracker LWMTracker
 	LWM        time.Time
@@ -28,7 +28,7 @@ type Linearizer struct {
 }
 
 // NewLinearizer creates a new linearizer for a certain computation
-func NewLinearizer(compID string, store LinearizerStore, lwmTracker LWMTracker) *Linearizer {
+func NewLinearizer(compID StreamID, store LinearizerStore, lwmTracker LWMTracker) *Linearizer {
 	return &Linearizer{
 		compID:     compID,
 		store:      store,

@@ -14,17 +14,17 @@ import (
 )
 
 const (
-	receivedKeyFormat    = "%s-r-%s"    // <computationID>-r-<tupleID>
-	productionsKeyFormat = "%s-p-%d-%s" // <computationID>-p-<timestamp>-<tupleID>
-	inKeyFormat          = "%s-i-%d-%s" // <computationID>-i-<timestamp>-<tupleID>
+	receivedKeyFormat    = "%s-r-%s"    // <streamID>-r-<tupleID>
+	productionsKeyFormat = "%s-p-%d-%s" // <streamID>-p-<timestamp>-<tupleID>
+	inKeyFormat          = "%s-i-%d-%s" // <streamID>-i-<timestamp>-<tupleID>
 )
 
 // Persister takes care of persisting in-flight tuples and computation state
 type Persister interface {
 	Close()
-	CommitComputation(compID string, in *structs.Tuple, out []*structs.Tuple) error
-	GetSnapshot(compID string) (*structs.ComputationSnapshot, error)
-	ApplySnapshot(compID string, snapshot *structs.ComputationSnapshot) error
+	CommitComputation(compID StreamID, in *structs.Tuple, out []*structs.Tuple) error
+	GetSnapshot(compID StreamID) (*structs.ComputationSnapshot, error)
+	ApplySnapshot(compID StreamID, snapshot *structs.ComputationSnapshot) error
 	LinearizerStore
 	StreamBuffer
 	SentTracker
@@ -33,13 +33,13 @@ type Persister interface {
 }
 
 type StreamBuffer interface {
-	Insert1(compID string, bufID string, t *structs.Tuple) error
-	ReadBuffer1(compID string, bufID string, from time.Time, to time.Time, tupCh chan *structs.Tuple, readCompleted chan struct{})
+	Insert1(compID StreamID, bufID string, t *structs.Tuple) error
+	ReadBuffer1(compID StreamID, bufID string, from time.Time, to time.Time, tupCh chan *structs.Tuple, readCompleted chan struct{})
 }
 
 // SentTracker deletes production entries that have been ACKed from the DB
 type SentTracker interface {
-	SentSuccessfuly(string, *structs.Tuple) error
+	SentSuccessfuly(StreamID, *structs.Tuple) error
 }
 
 // MultiSentTracker enables notifying multiple SentTrackers of a successfuly
@@ -48,7 +48,7 @@ type MultiSentTracker struct {
 	trackers []SentTracker
 }
 
-func (st MultiSentTracker) SentSuccessfuly(compID string, t *structs.Tuple) error {
+func (st MultiSentTracker) SentSuccessfuly(compID StreamID, t *structs.Tuple) error {
 	for _, tracker := range st.trackers {
 		err := tracker.SentSuccessfuly(compID, t)
 		if err != nil {
@@ -94,7 +94,7 @@ func (p *LevelDBPersister) Close() {
 
 // CommitComputation persists information about received and produced tuples
 // atomically
-func (p *LevelDBPersister) CommitComputation(compID string, in *structs.Tuple, out []*structs.Tuple) error {
+func (p *LevelDBPersister) CommitComputation(compID StreamID, in *structs.Tuple, out []*structs.Tuple) error {
 	batch := new(leveldb.Batch)
 	// mark incoming tuple as received
 	log.Println("[persister] Committing tuple", *in, ", productions:", out)
@@ -118,7 +118,7 @@ func (p *LevelDBPersister) CommitComputation(compID string, in *structs.Tuple, o
 }
 
 // GetSnapshot returns the snapshot of the computation's persisted state
-func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnapshot, error) {
+func (p *LevelDBPersister) GetSnapshot(compID StreamID) (*structs.ComputationSnapshot, error) {
 	dbSnapshot, err := p.db.GetSnapshot()
 	defer dbSnapshot.Release()
 	if err != nil {
@@ -192,7 +192,7 @@ func (p *LevelDBPersister) GetSnapshot(compID string) (*structs.ComputationSnaps
 }
 
 // ApplySnapshot applies the snapshot of the computation's persisted state
-func (p *LevelDBPersister) ApplySnapshot(compID string, snapshot *structs.ComputationSnapshot) error {
+func (p *LevelDBPersister) ApplySnapshot(compID StreamID, snapshot *structs.ComputationSnapshot) error {
 	batch := new(leveldb.Batch)
 	log.Println("[persister] Applying snapshot", snapshot)
 
@@ -239,7 +239,7 @@ func (p *LevelDBPersister) ApplySnapshot(compID string, snapshot *structs.Comput
 }
 
 // PersistState persists the state of the computation
-func (p *LevelDBPersister) PersistState(compID string, state []byte) {
+func (p *LevelDBPersister) PersistState(compID StreamID, state []byte) {
 	return
 }
 
@@ -274,13 +274,13 @@ func (p *LevelDBPersister) ReceivedAlready(comp string, t *structs.Tuple) (bool,
 }
 
 // SentSuccessfuly deletes the production from the DB after it's been ACKed
-func (p *LevelDBPersister) SentSuccessfuly(compID string, t *structs.Tuple) error {
+func (p *LevelDBPersister) SentSuccessfuly(compID StreamID, t *structs.Tuple) error {
 	key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
 	return p.db.Delete(key, nil)
 }
 
 // Insert inserts a received tuple into the ordered queue for a computation
-func (p *LevelDBPersister) Insert(compID string, t *structs.Tuple) error {
+func (p *LevelDBPersister) Insert(compID StreamID, t *structs.Tuple) error {
 	serialized, err := json.Marshal(t)
 	if err != nil {
 		return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
@@ -295,7 +295,7 @@ func (p *LevelDBPersister) Insert(compID string, t *structs.Tuple) error {
 }
 
 // ReadBuffer returns a piece of the input buffer between specified timestamps
-func (p *LevelDBPersister) ReadBuffer(compID string, from time.Time, to time.Time) ([]*structs.Tuple, error) {
+func (p *LevelDBPersister) ReadBuffer(compID StreamID, from time.Time, to time.Time) ([]*structs.Tuple, error) {
 	var tups []*structs.Tuple
 	start := []byte(fmt.Sprintf("%s-i-%d", compID, from.UnixNano()))
 	limit := []byte(fmt.Sprintf("%s-i-%d", compID, to.UnixNano()))
@@ -323,7 +323,7 @@ func (p *LevelDBPersister) ReadBuffer(compID string, from time.Time, to time.Tim
 // }
 
 // Insert inserts a received tuple into the ordered queue for a computation
-func (p *LevelDBPersister) Insert1(compID string, bufID string, t *structs.Tuple) error {
+func (p *LevelDBPersister) Insert1(compID StreamID, bufID string, t *structs.Tuple) error {
 	serialized, err := json.Marshal(t)
 	if err != nil {
 		return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
@@ -338,7 +338,7 @@ func (p *LevelDBPersister) Insert1(compID string, bufID string, t *structs.Tuple
 }
 
 // ReadBuffer returns a piece of the input buffer between specified timestamps
-func (p *LevelDBPersister) ReadBuffer1(compID string, bufID string,
+func (p *LevelDBPersister) ReadBuffer1(compID StreamID, bufID string,
 	from time.Time, to time.Time, tupCh chan *structs.Tuple,
 	readCompletedCh chan struct{}) { // FIXME: add errCh
 	start := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, from.UnixNano()))

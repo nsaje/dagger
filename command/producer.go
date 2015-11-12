@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/codegangsta/cli"
+	"github.com/nsaje/dagger/consul"
 	"github.com/nsaje/dagger/dagger"
 )
 
@@ -15,7 +16,9 @@ import (
 // to registered subscribers via RPC
 func Producer(c *cli.Context) {
 	conf := dagger.DefaultConfig(c)
-	coordinator := dagger.NewCoordinator(conf)
+	consulConf := consul.DefaultConfig()
+	consulConf.Address = conf.ConsulAddr
+	coordinator := consul.NewCoordinator(consulConf)
 	err := coordinator.Start(conf.RPCAdvertise)
 	defer coordinator.Stop()
 	if err != nil {

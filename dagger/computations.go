@@ -8,120 +8,12 @@ import (
 	"net/rpc/jsonrpc"
 	"os"
 	"path"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/natefinch/pie"
 	"github.com/nsaje/dagger/structs"
-	"github.com/rcrowley/go-metrics"
 )
-
-// ComputationManager manages computations that are being executed
-type ComputationManager interface {
-	SetupComputation(string) error
-	Has(string) bool
-}
-
-// ComputationSyncer allows synchronizing computation status between workers
-type ComputationSyncer interface {
-	GetSnapshot(string) (*structs.ComputationSnapshot, error)
-}
-
-type computationManager struct {
-	computations map[string]Computation
-	coordinator  Coordinator
-	receiver     *Receiver
-	persister    Persister
-	dispatcher   *Dispatcher
-
-	counter metrics.Counter
-}
-
-// NewComputationManager returns an object that can manage computations
-func NewComputationManager(coordinator Coordinator,
-	receiver *Receiver,
-	persister Persister,
-	dispatcher *Dispatcher) *computationManager {
-	c := metrics.NewCounter()
-	metrics.Register("processing", c)
-	cm := &computationManager{
-		computations: make(map[string]Computation),
-		coordinator:  coordinator,
-		dispatcher:   dispatcher,
-		receiver:     receiver,
-		persister:    persister,
-		counter:      c,
-	}
-	receiver.SetComputationSyncer(cm)
-	return cm
-}
-
-// ParseComputationID parses a computation definition
-func ParseComputationID(c string) (string, string, error) {
-	c = strings.TrimSpace(c)
-	firstParen := strings.Index(c, "(")
-	if firstParen < 1 || c[len(c)-1] != ')' {
-		return "", "", fmt.Errorf("Computation %s invalid!", c)
-	}
-	return c[:firstParen], c[firstParen+1 : len(c)-1], nil
-}
-
-func (cm *computationManager) SetupComputation(computationID string) error {
-	// tokens := strings.Split(jobSpec, "@")
-	// 	computationID := tokens[0]
-	// 	fromNsec, _ := strconv.ParseInt(tokens[1], 10, 64)
-	// 	from := time.Unix(0, fromNsec)
-	name, definition, err := ParseComputationID(computationID)
-	if err != nil {
-		return err
-	}
-
-	plugin, err := StartComputationPlugin(name, computationID)
-	if err != nil {
-		return err
-	}
-
-	// get information about the plugin, such as which input streams it needs
-	info, err := plugin.GetInfo(definition)
-	if err != nil {
-		return err
-	}
-
-	var computation Computation
-	if info.Stateful {
-		computation, err = newStatefulComputation(computationID, cm.coordinator, cm.persister, plugin)
-		if err != nil {
-			return err
-		}
-	} else {
-		computation = &statelessComputation{plugin, cm.dispatcher}
-	}
-
-	from, err := computation.Sync()
-	if err != nil {
-		return err
-	}
-
-	for _, input := range info.Inputs {
-		cm.receiver.SubscribeTo(input, from, computation)
-	}
-	cm.computations[computationID] = computation
-	return nil
-}
-
-func (cm *computationManager) Has(computationID string) bool {
-	_, has := cm.computations[computationID]
-	return has
-}
-
-func (cm *computationManager) GetSnapshot(computationID string) (*structs.ComputationSnapshot, error) {
-	comp, has := cm.computations[computationID]
-	if !has {
-		return nil, fmt.Errorf("Computation not found!")
-	}
-	return comp.GetSnapshot()
-}
 
 // Computation encapsulates all the stages of processing a tuple for a single
 // computation
@@ -153,22 +45,22 @@ func (comp *statelessComputation) GetSnapshot() (*structs.ComputationSnapshot, e
 }
 
 type statefulComputation struct {
-	computationID string
-	plugin        ComputationPlugin
-	groupHandler  GroupHandler
-	linearizer    *Linearizer
-	persister     Persister
-	lwmTracker    LWMTracker
-	dispatcher    TupleProcessor
-	stopCh        chan struct{}
+	streamID     StreamID
+	plugin       ComputationPlugin
+	groupHandler GroupHandler
+	linearizer   *Linearizer
+	persister    Persister
+	lwmTracker   LWMTracker
+	dispatcher   TupleProcessor
+	stopCh       chan struct{}
 
 	sync.RWMutex // a reader/writer lock for blocking new tuples on sync request
 	initialized  bool
 }
 
-func newStatefulComputation(computationID string, coordinator Coordinator,
+func newStatefulComputation(streamID StreamID, coordinator Coordinator,
 	persister Persister, plugin ComputationPlugin) (Computation, error) {
-	groupHandler, err := coordinator.JoinGroup(computationID)
+	groupHandler, err := coordinator.JoinGroup(streamID)
 	if err != nil {
 		return nil, err
 	}
@@ -178,22 +70,22 @@ func newStatefulComputation(computationID string, coordinator Coordinator,
 	// notify both LWM tracker and persister when a tuple is successfuly sent
 	// multiSentTracker := MultiSentTracker{[]SentTracker{lwmTracker, persister}}
 
-	linearizer := NewLinearizer(computationID, persister, lwmTracker)
-	// bufferedDispatcher := StartBufferedDispatcher(computationID, dispatcher, multiSentTracker, lwmTracker, stopCh)
-	dispatcher := NewStreamDispatcher(computationID, coordinator, persister, lwmTracker, groupHandler)
+	linearizer := NewLinearizer(streamID, persister, lwmTracker)
+	// bufferedDispatcher := StartBufferedDispatcher(streamID, dispatcher, multiSentTracker, lwmTracker, stopCh)
+	dispatcher := NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, groupHandler)
 	go dispatcher.Run()
 
 	computation := &statefulComputation{
-		computationID: computationID,
-		plugin:        plugin,
-		groupHandler:  groupHandler,
-		persister:     persister,
-		lwmTracker:    lwmTracker,
-		linearizer:    linearizer,
-		dispatcher:    dispatcher,
-		stopCh:        stopCh,
-		RWMutex:       sync.RWMutex{},
-		initialized:   false,
+		streamID:     streamID,
+		plugin:       plugin,
+		groupHandler: groupHandler,
+		persister:    persister,
+		lwmTracker:   lwmTracker,
+		linearizer:   linearizer,
+		dispatcher:   dispatcher,
+		stopCh:       stopCh,
+		RWMutex:      sync.RWMutex{},
+		initialized:  false,
 	}
 
 	linearizer.SetProcessor(computation)
@@ -207,14 +99,14 @@ func (comp *statefulComputation) Sync() (time.Time, error) {
 	var from time.Time
 	for !comp.initialized {
 		log.Printf("[computations] Computation %s not initialized, syncing with group",
-			comp.computationID)
+			comp.streamID)
 		areWeLeader, currentLeader, err := comp.groupHandler.GetStatus()
 		if err != nil {
 			return from, err
 		}
 		if currentLeader == "" {
 			// wait until a leader is chosen
-			log.Println("[computations] Leader of ", comp.computationID, "not yet chosen, waiting")
+			log.Println("[computations] Leader of ", comp.streamID, "not yet chosen, waiting")
 			time.Sleep(time.Second) // FIXME do this as a blocking call
 			continue
 		}
@@ -226,7 +118,7 @@ func (comp *statefulComputation) Sync() (time.Time, error) {
 			if err != nil {
 				return from, fmt.Errorf("[computations] Error creating master handler: %s", err)
 			}
-			snapshot, err := leaderHandler.Sync(comp.computationID)
+			snapshot, err := leaderHandler.Sync(comp.streamID)
 			if err != nil {
 				return from, fmt.Errorf("[computations] Error syncing computation with master: %s", err)
 			}
@@ -234,7 +126,7 @@ func (comp *statefulComputation) Sync() (time.Time, error) {
 			if err != nil {
 				return from, fmt.Errorf("[computations] Error setting computation plugin state: %s", err)
 			}
-			err = comp.persister.ApplySnapshot(comp.computationID, snapshot)
+			err = comp.persister.ApplySnapshot(comp.streamID, snapshot)
 			if err != nil {
 				return from, fmt.Errorf("[computations] Error applying computation snapshot: %s", err)
 			}
@@ -242,7 +134,7 @@ func (comp *statefulComputation) Sync() (time.Time, error) {
 			comp.linearizer.SetStartLWM(snapshot.LastTimestamp.Add(time.Nanosecond))
 			from = snapshot.LastTimestamp.Add(time.Nanosecond)
 			// // recreate deduplicator from newest received info
-			// deduplicator, err := NewDeduplicator(comp.computationID, comp.persister)
+			// deduplicator, err := NewDeduplicator(comp.streamID, comp.persister)
 			// if err != nil {
 			// 	return fmt.Errorf("[computations] Error recreating deduplicator after sync: %s", err)
 			// }
@@ -278,7 +170,7 @@ func (comp *statefulComputation) ProcessTupleLinearized(t *structs.Tuple) error 
 	}
 
 	// persist info about received and produced tuples
-	err = comp.persister.CommitComputation(comp.computationID, t, response.Tuples)
+	err = comp.persister.CommitComputation(comp.streamID, t, response.Tuples)
 	if err != nil {
 		// return err
 	}
@@ -305,7 +197,7 @@ func (comp *statefulComputation) GetSnapshot() (*structs.ComputationSnapshot, er
 	comp.Lock()
 	log.Println("[computations] ... sync lock acquired!")
 	defer comp.Unlock()
-	snapshot, err := comp.persister.GetSnapshot(comp.computationID)
+	snapshot, err := comp.persister.GetSnapshot(comp.streamID)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +210,7 @@ func (comp *statefulComputation) GetSnapshot() (*structs.ComputationSnapshot, er
 }
 
 // StartComputationPlugin starts the plugin process
-func StartComputationPlugin(name string, compID string) (ComputationPlugin, error) {
+func StartComputationPlugin(name string, compID StreamID) (ComputationPlugin, error) {
 	log.Printf("[computations] Launching computation plugin '%s'", name)
 	path := path.Join(os.Getenv("DAGGER_PLUGIN_PATH"), "computation-"+name)
 	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec,
@@ -348,7 +240,7 @@ type ComputationPlugin interface {
 type computationPlugin struct {
 	client *rpc.Client
 	name   string
-	compID string
+	compID StreamID
 }
 
 func (p *computationPlugin) GetInfo(definition string) (*structs.ComputationPluginInfo, error) {
@@ -396,7 +288,7 @@ func newMasterHandler(addr string) (*masterHandler, error) {
 	return &masterHandler{client}, nil
 }
 
-func (s *masterHandler) Sync(compID string) (*structs.ComputationSnapshot, error) {
+func (s *masterHandler) Sync(compID StreamID) (*structs.ComputationSnapshot, error) {
 	var reply structs.ComputationSnapshot
 	log.Println("[computations] issuing a sync request for computation", compID)
 	err := s.client.Call("Receiver.Sync", compID, &reply)

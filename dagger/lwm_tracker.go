@@ -42,7 +42,7 @@ func (lwmT *lwmTracker) BeforeDispatching(ts []*structs.Tuple) {
 	}
 }
 
-func (lwmT *lwmTracker) SentSuccessfuly(compID string, t *structs.Tuple) error {
+func (lwmT *lwmTracker) SentSuccessfuly(compID StreamID, t *structs.Tuple) error {
 	lwmT.Lock()
 	defer lwmT.Unlock()
 	delete(lwmT.inProcessing, t.ID)

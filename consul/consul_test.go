@@ -46,7 +46,7 @@ func TestSetWatcher(t *testing.T) {
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
 	kv := newSimpleKV(t, conf)
-	coord := NewCoordinator(conf)
+	coord := NewCoordinator(conf).(*consulCoordinator)
 	w := coord.newSetWatcher("test/")
 	add := []string{
 		"test/1",
@@ -101,12 +101,12 @@ func TestTaskWatcher(t *testing.T) {
 	kv := newSimpleKV(t, conf)
 	coord := NewCoordinator(conf)
 	w := coord.NewTaskWatcher()
-	add := []dagger.Task{
+	add := []dagger.StreamID{
 		"task1",
 		"task2",
 		"task3",
 	}
-	remove := []dagger.Task{
+	remove := []dagger.StreamID{
 		"task1",
 		"task2",
 	}
@@ -120,7 +120,7 @@ func TestTaskWatcher(t *testing.T) {
 		}
 		close(done)
 	}()
-	var addedActual, droppedActual []dagger.Task
+	var addedActual, droppedActual []dagger.StreamID
 	timeout := time.NewTimer(5 * time.Second)
 	for {
 		select {

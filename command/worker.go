@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/nsaje/dagger/consul"
 	"github.com/nsaje/dagger/dagger"
 	"github.com/rcrowley/go-metrics"
 	"github.com/vrischmann/go-metrics-influxdb"
@@ -39,13 +40,16 @@ func Worker(c *cli.Context) {
 	}
 	defer persister.Close()
 
-	coordinator := dagger.NewCoordinator(conf)
+	consulConf := consul.DefaultConfig()
+	consulConf.Address = conf.ConsulAddr
+	coordinator := consul.NewCoordinator(consulConf)
+
 	receiver := dagger.NewReceiver(conf, coordinator)
-	dispatcher := dagger.NewDispatcher(conf, coordinator)
-	compManager := dagger.NewComputationManager(
-		coordinator, receiver, persister, dispatcher)
-	receiver.SetComputationSyncer(compManager)
+	// dispatcher := dagger.NewDispatcher(conf, coordinator)
+	// compManager := dagger.NewComputationManager(
+	// 	coordinator, receiver, persister, dispatcher)
 	// httpAPI := dagger.NewHttpAPI(receiver, dispatcher)
+	taskManager := dagger.NewTaskManager(coordinator, receiver, persister)
 
 	err = coordinator.Start(receiver.ListenAddr())
 	defer coordinator.Stop()
@@ -54,8 +58,9 @@ func Worker(c *cli.Context) {
 	}
 	log.Println("Coordinator started")
 
-	go receiver.ReceiveTuples()
-	go coordinator.ManageJobs(compManager)
+	go receiver.Listen()
+	// go coordinator.ManageJobs(compManager)
+	go taskManager.ManageTasks()
 
 	// go httpAPI.Serve()
 

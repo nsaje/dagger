@@ -12,7 +12,7 @@ type inmemTupleTracker struct {
 	sync.RWMutex
 }
 
-func (tt *inmemTupleTracker) PersistReceivedTuples(compID string, tuples []*structs.Tuple) error {
+func (tt *inmemTupleTracker) PersistReceivedTuples(compID StreamID, tuples []*structs.Tuple) error {
 	tt.Lock()
 	defer tt.Unlock()
 	for _, t := range tuples {
@@ -21,7 +21,7 @@ func (tt *inmemTupleTracker) PersistReceivedTuples(compID string, tuples []*stru
 	return nil
 }
 
-func (tt *inmemTupleTracker) ReceivedAlready(compID string, t *structs.Tuple) (bool, error) {
+func (tt *inmemTupleTracker) ReceivedAlready(compID StreamID, t *structs.Tuple) (bool, error) {
 	tt.RLock()
 	defer tt.RUnlock()
 	_, found := tt.set[t.ID]

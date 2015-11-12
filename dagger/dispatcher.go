@@ -14,34 +14,34 @@ import (
 
 // StreamDispatcher dispatches tuples from a single stream to registered subscribers
 type StreamDispatcher struct {
-	computationID string
-	persister     Persister
-	lwmTracker    LWMTracker
-	coordinator   Coordinator
-	groupHandler  GroupHandler
-	iterators     map[string]*StreamIterator
-	notifyCh      chan *structs.Tuple
-	stopCh        chan struct{}
-	new           chan NewSubscriber
-	dropped       chan string
-	last          *structs.Tuple
+	streamID     StreamID
+	persister    Persister
+	lwmTracker   LWMTracker
+	coordinator  Coordinator
+	groupHandler GroupHandler
+	iterators    map[string]*StreamIterator
+	notifyCh     chan *structs.Tuple
+	stopCh       chan struct{}
+	new          chan NewSubscriber
+	dropped      chan string
+	last         *structs.Tuple
 }
 
-func NewStreamDispatcher(streamID string, coordinator Coordinator,
+func NewStreamDispatcher(streamID StreamID, coordinator Coordinator,
 	persister Persister, lwmTracker LWMTracker, groupHandler GroupHandler) *StreamDispatcher {
 	stopCh := make(chan struct{})
 	new, dropped := coordinator.WatchSubscribers(streamID, stopCh)
 	return &StreamDispatcher{
-		computationID: streamID,
-		persister:     persister,
-		lwmTracker:    lwmTracker,
-		coordinator:   coordinator,
-		groupHandler:  groupHandler,
-		iterators:     make(map[string]*StreamIterator),
-		notifyCh:      make(chan *structs.Tuple),
-		stopCh:        stopCh,
-		new:           new,
-		dropped:       dropped,
+		streamID:     streamID,
+		persister:    persister,
+		lwmTracker:   lwmTracker,
+		coordinator:  coordinator,
+		groupHandler: groupHandler,
+		iterators:    make(map[string]*StreamIterator),
+		notifyCh:     make(chan *structs.Tuple),
+		stopCh:       stopCh,
+		new:          new,
+		dropped:      dropped,
 	}
 }
 
@@ -65,15 +65,15 @@ func (sd *StreamDispatcher) Run() {
 			}
 		case subscriber := <-sd.new:
 			log.Println("[streamDispatcher] adding subscriber", subscriber)
-			subscriberHandler, err := newSubscriberHandler(subscriber.addr)
+			subscriberHandler, err := newSubscriberHandler(subscriber.Addr)
 			if err != nil {
 
 			}
 			stopCh := make(chan struct{})
 			posUpdates := make(chan time.Time)
-			go sd.coordinator.WatchSubscriberPosition(sd.computationID, subscriber.addr, stopCh, posUpdates)
+			go sd.coordinator.WatchSubscriberPosition(sd.streamID, subscriber.Addr, stopCh, posUpdates)
 			iter := &StreamIterator{
-				sd.computationID,
+				sd.streamID,
 				sd.lwmTracker,
 				sd.groupHandler,
 				posUpdates,
@@ -82,9 +82,9 @@ func (sd *StreamDispatcher) Run() {
 				sd.persister,
 				subscriberHandler,
 			}
-			sd.iterators[subscriber.addr] = iter
-			log.Println("STARTING DISPATCH FROM", subscriber.from)
-			go iter.Dispatch(subscriber.from)
+			sd.iterators[subscriber.Addr] = iter
+			log.Println("STARTING DISPATCH FROM", subscriber.From)
+			go iter.Dispatch(subscriber.From)
 			// notify the new iterator of how far we've gotten
 			if sd.last != nil {
 				iter.ProcessTuple(sd.last)
@@ -101,7 +101,7 @@ func (sd *StreamDispatcher) Run() {
 }
 
 type StreamIterator struct {
-	compID            string
+	compID            StreamID
 	lwmTracker        LWMTracker
 	groupHandler      GroupHandler
 	positionUpdates   chan time.Time
@@ -261,28 +261,28 @@ func (d *Dispatcher) ProcessTuple(t *structs.Tuple) error {
 // BufferedDispatcher bufferes produced tuples and sends them with retrying
 // until they are ACKed
 type BufferedDispatcher struct {
-	computationID string
-	buffer        chan *structs.Tuple
-	dispatcher    TupleProcessor
-	stopCh        chan struct{}
-	sentTracker   SentTracker
-	lwmTracker    LWMTracker
-	lwmFlush      chan *structs.Tuple
-	wg            sync.WaitGroup
+	streamID    string
+	buffer      chan *structs.Tuple
+	dispatcher  TupleProcessor
+	stopCh      chan struct{}
+	sentTracker SentTracker
+	lwmTracker  LWMTracker
+	lwmFlush    chan *structs.Tuple
+	wg          sync.WaitGroup
 }
 
 // StartBufferedDispatcher creates a new buffered dispatcher and starts workers
 // that will be consuming off the queue an sending tuples
-func StartBufferedDispatcher(compID string, dispatcher TupleProcessor, sentTracker SentTracker, lwmTracker LWMTracker,
+func StartBufferedDispatcher(compID StreamID, dispatcher TupleProcessor, sentTracker SentTracker, lwmTracker LWMTracker,
 	stopCh chan struct{}) *BufferedDispatcher {
 	bd := &BufferedDispatcher{
-		computationID: compID,
-		buffer:        make(chan *structs.Tuple, 100), // FIXME: make it configurable
-		dispatcher:    dispatcher,
-		sentTracker:   sentTracker,
-		lwmTracker:    lwmTracker,
-		stopCh:        stopCh,
-		lwmFlush:      make(chan *structs.Tuple),
+		streamID:    compID,
+		buffer:      make(chan *structs.Tuple, 100), // FIXME: make it configurable
+		dispatcher:  dispatcher,
+		sentTracker: sentTracker,
+		lwmTracker:  lwmTracker,
+		stopCh:      stopCh,
+		lwmFlush:    make(chan *structs.Tuple),
 	}
 
 	go bd.lwmFlusher()
@@ -327,7 +327,7 @@ func (bd *BufferedDispatcher) lwmFlusher() {
 				lwm := bd.lwmTracker.GetLocalLWM()
 				if lwm == maxTime {
 					lastSent.LWM = lastSent.Timestamp.Add(time.Nanosecond)
-					log.Println("[dispatcher] flushing LWM on stream", bd.computationID)
+					log.Println("[dispatcher] flushing LWM on stream", bd.streamID)
 					for {
 						err := bd.dispatcher.ProcessTuple(lastSent)
 						if err != nil {
@@ -358,7 +358,7 @@ func (bd *BufferedDispatcher) dispatch() {
 					continue
 				}
 				if bd.sentTracker != nil {
-					bd.sentTracker.SentSuccessfuly(bd.computationID, t)
+					bd.sentTracker.SentSuccessfuly(bd.streamID, t)
 				}
 				bd.lwmFlush <- t // notify the LWM heartbeat mechanism that we've sent a tuple
 				break
