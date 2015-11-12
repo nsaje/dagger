@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 )
 
 type TimeBucketsProcessor interface {
-	ProcessBucket(bucket time.Time, t *structs.Tuple) error
-	FinalizeBucket(bucket time.Time) *structs.Tuple
+	ProcessBucket(bucket time.Time, t *s.Tuple) error
+	FinalizeBucket(bucket time.Time) *s.Tuple
 	GetState() ([]byte, error)
 	SetState([]byte) error
 }
@@ -36,10 +36,10 @@ func NewTimeBucketsComputation(processor TimeBucketsProcessor) *TimeBucketsCompu
 	}
 }
 
-func (c *TimeBucketsComputation) GetInfo(definition string) (structs.ComputationPluginInfo, error) {
+func (c *TimeBucketsComputation) GetInfo(definition string) (s.ComputationPluginInfo, error) {
 	var stream string
 	var period string
-	info := structs.ComputationPluginInfo{}
+	info := s.ComputationPluginInfo{}
 	info.Stateful = true
 
 	tokens := strings.Split(definition, ",")
@@ -48,7 +48,7 @@ func (c *TimeBucketsComputation) GetInfo(definition string) (structs.Computation
 	}
 	stream = strings.TrimSpace(tokens[0])
 	period = strings.TrimSpace(tokens[1])
-	info.Inputs = []string{stream}
+	info.Inputs = []s.StreamID{s.StreamID(stream)}
 
 	p, err := time.ParseDuration(period)
 	if err != nil {
@@ -89,7 +89,7 @@ func (c *TimeBucketsComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *TimeBucketsComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error) {
+func (c *TimeBucketsComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
 	log.Println("[time_buckets] processing tuple", t)
 	bucket := t.Timestamp.Round(c.period)
 	_, ok := t.Data.(float64)
@@ -104,7 +104,7 @@ func (c *TimeBucketsComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple
 	log.Println("[time_buckets] submitting to processor ", t)
 	c.processor.ProcessBucket(bucket, t)
 
-	var productions []*structs.Tuple
+	var productions []*s.Tuple
 
 	for bucket, _ := range c.buckets {
 		if bucket.Add(c.period).Before(t.LWM) {

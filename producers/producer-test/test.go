@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/nsaje/dagger/producers"
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 )
 
 // TestProducerPlugin produces an incremented value every second
@@ -20,7 +20,7 @@ func main() {
 	counter := 0
 	for {
 		time.Sleep(1000 * time.Millisecond)
-		s := structs.Tuple{StreamID: "test", Data: counter, LWM: time.Now(), Timestamp: time.Now()}
+		s := s.Tuple{StreamID: "test", Data: counter, LWM: time.Now(), Timestamp: time.Now()}
 		p.Stream <- s
 		counter++
 	}

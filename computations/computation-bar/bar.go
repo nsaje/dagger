@@ -5,23 +5,23 @@ import (
 	"log"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 )
 
 // BarComputation simply prepends "barized" to a tuple
 type BarComputation struct{}
 
-func (c BarComputation) GetInfo(definition string) (structs.ComputationPluginInfo, error) {
-	info := structs.ComputationPluginInfo{
-		Inputs:   []string{definition},
+func (c BarComputation) GetInfo(definition string) (s.ComputationPluginInfo, error) {
+	info := s.ComputationPluginInfo{
+		Inputs:   []s.StreamID{s.StreamID(definition)},
 		Stateful: false,
 	}
 	return info, nil
 }
 
-func (c BarComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error) {
+func (c BarComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
 	t.Data = fmt.Sprintf("barized: %v", t.Data)
-	return []*structs.Tuple{t}, nil
+	return []*s.Tuple{t}, nil
 }
 
 func (c BarComputation) GetState() ([]byte, error) {

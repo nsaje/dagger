@@ -5,12 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 	"github.com/rcrowley/go-metrics"
 )
-
-// StreamID identifies a stream of tuples
-type StreamID string
 
 // Task is a unit of computation that consumes and/or produces a stream
 // and can be replicated and synced across workers
@@ -24,11 +21,11 @@ type Task interface {
 
 // TaskManager manages tasks
 type TaskManager struct {
-	computations map[string]Computation
-	coordinator  Coordinator
-	receiver     *Receiver
-	persister    Persister
-	dispatcher   *Dispatcher
+	tasks       map[s.StreamID]Computation
+	coordinator Coordinator
+	receiver    *Receiver
+	persister   Persister
+	dispatcher  *Dispatcher
 
 	counter metrics.Counter
 }
@@ -40,18 +37,18 @@ func NewTaskManager(coordinator Coordinator,
 	c := metrics.NewCounter()
 	metrics.Register("processing", c)
 	tm := &TaskManager{
-		computations: make(map[string]Computation),
-		coordinator:  coordinator,
-		receiver:     receiver,
-		persister:    persister,
-		counter:      c,
+		tasks:       make(map[s.StreamID]Computation),
+		coordinator: coordinator,
+		receiver:    receiver,
+		persister:   persister,
+		counter:     c,
 	}
 	receiver.SetTaskManager(tm)
 	return tm
 }
 
 // ParseComputationID parses a computation definition
-func ParseComputationID(s StreamID) (string, string, error) {
+func ParseComputationID(s s.StreamID) (string, string, error) {
 	c := strings.TrimSpace(string(s))
 	firstParen := strings.Index(c, "(")
 	if firstParen < 1 || c[len(c)-1] != ')' {
@@ -65,7 +62,7 @@ func (cm *TaskManager) ManageTasks() {
 
 }
 
-func (cm *TaskManager) setupTask(streamID StreamID) error {
+func (cm *TaskManager) setupTask(streamID s.StreamID) error {
 	name, definition, err := ParseComputationID(streamID)
 	if err != nil {
 		return err
@@ -100,12 +97,12 @@ func (cm *TaskManager) setupTask(streamID StreamID) error {
 	for _, input := range info.Inputs {
 		cm.receiver.SubscribeTo(input, from, computation)
 	}
-	cm.computations[streamID] = computation
+	cm.tasks[streamID] = computation
 	return nil
 }
 
-func (cm *TaskManager) GetSnapshot(streamID StreamID) (*structs.ComputationSnapshot, error) {
-	comp, has := cm.computations[streamID]
+func (cm *TaskManager) GetSnapshot(streamID s.StreamID) (*s.ComputationSnapshot, error) {
+	comp, has := cm.tasks[streamID]
 	if !has {
 		return nil, fmt.Errorf("Computation not found!")
 	}

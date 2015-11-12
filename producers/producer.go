@@ -4,14 +4,14 @@ import (
 	"log"
 	"net/rpc/jsonrpc"
 
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 
 	"github.com/natefinch/pie"
 )
 
 // Producer represents a specific producer implementation
 type Producer struct {
-	Stream chan structs.Tuple
+	Stream chan s.Tuple
 	server pie.Server
 }
 
@@ -19,7 +19,7 @@ type Producer struct {
 func InitProducer() Producer {
 	plugin := pie.NewProvider()
 	producer := Producer{
-		Stream: make(chan structs.Tuple),
+		Stream: make(chan s.Tuple),
 		server: plugin,
 	}
 	if err := plugin.RegisterName("Producer", producer); err != nil {
@@ -30,7 +30,7 @@ func InitProducer() Producer {
 }
 
 // GetNext returns the next value in the tuple stream
-func (p Producer) GetNext(arg string, response *structs.Tuple) error {
+func (p Producer) GetNext(arg string, response *s.Tuple) error {
 	log.Printf("got call for GetNext\n")
 	*response = <-p.Stream
 	log.Printf("response sent: %s", *response)

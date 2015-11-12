@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 )
 
 var maxTime = time.Unix(1<<63-62135596801, 999999999)
@@ -13,27 +13,27 @@ var maxTime = time.Unix(1<<63-62135596801, 999999999)
 type LWMTracker interface {
 	TupleProcessor
 	SentTracker
-	BeforeDispatching([]*structs.Tuple)
+	BeforeDispatching([]*s.Tuple)
 	GetCombinedLWM() time.Time
 	GetLocalLWM() time.Time
 	GetUpstreamLWM() time.Time
 }
 
 type lwmTracker struct {
-	upstream     map[string]time.Time
+	upstream     map[s.StreamID]time.Time
 	inProcessing map[string]time.Time
 	sync.RWMutex
 }
 
 func NewLWMTracker() LWMTracker {
 	return &lwmTracker{
-		make(map[string]time.Time),
+		make(map[s.StreamID]time.Time),
 		make(map[string]time.Time),
 		sync.RWMutex{},
 	}
 }
 
-func (lwmT *lwmTracker) BeforeDispatching(ts []*structs.Tuple) {
+func (lwmT *lwmTracker) BeforeDispatching(ts []*s.Tuple) {
 	lwmT.Lock()
 	defer lwmT.Unlock()
 	for _, t := range ts {
@@ -42,7 +42,7 @@ func (lwmT *lwmTracker) BeforeDispatching(ts []*structs.Tuple) {
 	}
 }
 
-func (lwmT *lwmTracker) SentSuccessfuly(compID StreamID, t *structs.Tuple) error {
+func (lwmT *lwmTracker) SentSuccessfuly(compID s.StreamID, t *s.Tuple) error {
 	lwmT.Lock()
 	defer lwmT.Unlock()
 	delete(lwmT.inProcessing, t.ID)
@@ -83,7 +83,7 @@ func (lwmT *lwmTracker) GetCombinedLWM() time.Time {
 	return min2
 }
 
-func (lwmT *lwmTracker) ProcessTuple(t *structs.Tuple) error {
+func (lwmT *lwmTracker) ProcessTuple(t *s.Tuple) error {
 	lwmT.Lock()
 	defer lwmT.Unlock()
 	if t.LWM.After(lwmT.upstream[t.StreamID]) {

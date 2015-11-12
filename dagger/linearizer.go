@@ -4,37 +4,37 @@ import (
 	"log"
 	"time"
 
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 )
 
 // LinearizerStore represents a sorted persistent buffer of tuples
 type LinearizerStore interface {
-	Insert(compID StreamID, t *structs.Tuple) error
-	ReadBuffer(compID StreamID, from time.Time, to time.Time) ([]*structs.Tuple, error)
+	Insert(compID s.StreamID, t *s.Tuple) error
+	ReadBuffer(compID s.StreamID, from time.Time, to time.Time) ([]*s.Tuple, error)
 }
 
 // Linearizer buffers tuples and forwards them to the next TupleProcessor sorted
 // by timestamp, while making sure all the tuples in a certain time frame have
 // already arrived
 type Linearizer struct {
-	compID     StreamID
+	compID     s.StreamID
 	store      LinearizerStore
 	lwmTracker LWMTracker
 	LWM        time.Time
 	lwmCh      chan time.Time
 	startAtLWM time.Time
 	ltp        LinearizedTupleProcessor
-	tmpT       chan *structs.Tuple
+	tmpT       chan *s.Tuple
 }
 
 // NewLinearizer creates a new linearizer for a certain computation
-func NewLinearizer(compID StreamID, store LinearizerStore, lwmTracker LWMTracker) *Linearizer {
+func NewLinearizer(compID s.StreamID, store LinearizerStore, lwmTracker LWMTracker) *Linearizer {
 	return &Linearizer{
 		compID:     compID,
 		store:      store,
 		lwmTracker: lwmTracker,
 		lwmCh:      make(chan time.Time),
-		tmpT:       make(chan *structs.Tuple),
+		tmpT:       make(chan *s.Tuple),
 	}
 }
 
@@ -49,7 +49,7 @@ func (l *Linearizer) SetStartLWM(time time.Time) {
 }
 
 // ProcessTuple inserts the tuple into the buffer sorted by timestamps
-func (l *Linearizer) ProcessTuple(t *structs.Tuple) error {
+func (l *Linearizer) ProcessTuple(t *s.Tuple) error {
 	err := l.store.Insert(l.compID, t)
 	if err != nil {
 		return err

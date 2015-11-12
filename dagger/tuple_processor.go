@@ -1,23 +1,23 @@
 package dagger
 
-import "github.com/nsaje/dagger/structs"
+import "github.com/nsaje/dagger/s"
 
 // TupleProcessor is an object capable of processing a tuple
 type TupleProcessor interface {
-	ProcessTuple(*structs.Tuple) error
+	ProcessTuple(*s.Tuple) error
 }
 
 // LinearizedTupleProcessor is an object capable of processing a list of ordered
 // tuples
 type LinearizedTupleProcessor interface {
-	ProcessTupleLinearized(*structs.Tuple) error
+	ProcessTupleLinearized(*s.Tuple) error
 }
 
 // ProcessMultipleTuples processes multiple tuples with a single tuple processor
-func ProcessMultipleTuples(tp TupleProcessor, tuples []*structs.Tuple) error {
+func ProcessMultipleTuples(tp TupleProcessor, tuples []*s.Tuple) error {
 	errCh := make(chan error)
 	for _, t := range tuples {
-		go func(t *structs.Tuple) {
+		go func(t *s.Tuple) {
 			errCh <- tp.ProcessTuple(t)
 		}(t)
 	}
@@ -33,7 +33,7 @@ func ProcessMultipleTuples(tp TupleProcessor, tuples []*structs.Tuple) error {
 }
 
 // ProcessMultipleProcessors processes a single tuple with multiple tuple processors
-func ProcessMultipleProcessors(procs []TupleProcessor, t *structs.Tuple) error {
+func ProcessMultipleProcessors(procs []TupleProcessor, t *s.Tuple) error {
 	errCh := make(chan error)
 	for _, proc := range procs {
 		go func(proc TupleProcessor) {

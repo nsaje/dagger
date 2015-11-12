@@ -1,9 +1,12 @@
-package structs
+package s
 
 import (
 	"fmt"
 	"time"
 )
+
+// StreamID identifies a stream of tuples
+type StreamID string
 
 // Tuple is the atomic unit of data flowing through Dagger
 type Tuple struct {
@@ -26,7 +29,7 @@ type ComputationPluginResponse struct {
 
 // ComputationPluginInfo contains information about this computation plugin
 type ComputationPluginInfo struct {
-	Inputs   []string
+	Inputs   []StreamID
 	Stateful bool
 }
 

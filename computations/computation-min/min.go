@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 	"github.com/twinj/uuid"
 )
 
@@ -58,7 +58,7 @@ func (c *MinProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new tuple
-func (c *MinProcessor) ProcessBucket(bucket time.Time, t *structs.Tuple) error {
+func (c *MinProcessor) ProcessBucket(bucket time.Time, t *s.Tuple) error {
 	log.Println("[Min] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Values[bucket] = append(c.state.Values[bucket], value)
@@ -66,7 +66,7 @@ func (c *MinProcessor) ProcessBucket(bucket time.Time, t *structs.Tuple) error {
 }
 
 // FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *MinProcessor) FinalizeBucket(bucket time.Time) *structs.Tuple {
+func (c *MinProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
 	log.Println("[Min] finalizing", bucket)
 	min := math.Inf(1)
 	for _, v := range c.state.Values[bucket] {
@@ -74,7 +74,7 @@ func (c *MinProcessor) FinalizeBucket(bucket time.Time) *structs.Tuple {
 			min = v
 		}
 	}
-	new := &structs.Tuple{
+	new := &s.Tuple{
 		Data:      min,
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),

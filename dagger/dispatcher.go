@@ -9,25 +9,25 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 )
 
 // StreamDispatcher dispatches tuples from a single stream to registered subscribers
 type StreamDispatcher struct {
-	streamID     StreamID
+	streamID     s.StreamID
 	persister    Persister
 	lwmTracker   LWMTracker
 	coordinator  Coordinator
 	groupHandler GroupHandler
 	iterators    map[string]*StreamIterator
-	notifyCh     chan *structs.Tuple
+	notifyCh     chan *s.Tuple
 	stopCh       chan struct{}
 	new          chan NewSubscriber
 	dropped      chan string
-	last         *structs.Tuple
+	last         *s.Tuple
 }
 
-func NewStreamDispatcher(streamID StreamID, coordinator Coordinator,
+func NewStreamDispatcher(streamID s.StreamID, coordinator Coordinator,
 	persister Persister, lwmTracker LWMTracker, groupHandler GroupHandler) *StreamDispatcher {
 	stopCh := make(chan struct{})
 	new, dropped := coordinator.WatchSubscribers(streamID, stopCh)
@@ -38,15 +38,15 @@ func NewStreamDispatcher(streamID StreamID, coordinator Coordinator,
 		coordinator:  coordinator,
 		groupHandler: groupHandler,
 		iterators:    make(map[string]*StreamIterator),
-		notifyCh:     make(chan *structs.Tuple),
+		notifyCh:     make(chan *s.Tuple),
 		stopCh:       stopCh,
 		new:          new,
 		dropped:      dropped,
 	}
 }
 
-func (sd *StreamDispatcher) ProcessTuple(t *structs.Tuple) error {
-	sd.lwmTracker.BeforeDispatching([]*structs.Tuple{t})
+func (sd *StreamDispatcher) ProcessTuple(t *s.Tuple) error {
+	sd.lwmTracker.BeforeDispatching([]*s.Tuple{t})
 	sd.notifyCh <- t
 	return nil
 }
@@ -77,7 +77,7 @@ func (sd *StreamDispatcher) Run() {
 				sd.lwmTracker,
 				sd.groupHandler,
 				posUpdates,
-				make(chan *structs.Tuple),
+				make(chan *s.Tuple),
 				stopCh,
 				sd.persister,
 				subscriberHandler,
@@ -101,17 +101,17 @@ func (sd *StreamDispatcher) Run() {
 }
 
 type StreamIterator struct {
-	compID            StreamID
+	compID            s.StreamID
 	lwmTracker        LWMTracker
 	groupHandler      GroupHandler
 	positionUpdates   chan time.Time
-	notify            chan *structs.Tuple
+	notify            chan *s.Tuple
 	stopCh            chan struct{}
 	persister         Persister
 	subscriberHandler *subscriberHandler
 }
 
-func (si *StreamIterator) ProcessTuple(t *structs.Tuple) error {
+func (si *StreamIterator) ProcessTuple(t *s.Tuple) error {
 	log.Println("[iterator] processing", t)
 	si.notify <- t
 	return nil
@@ -127,11 +127,11 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 	// var newTo, newFrom time.Time
 	// newTo = to
 	readCompletedCh := make(chan struct{})
-	toSend := make(chan *structs.Tuple)
+	toSend := make(chan *s.Tuple)
 	var newDataReady, readCompleted bool
-	sentSuccessfuly := make(chan *structs.Tuple)
+	sentSuccessfuly := make(chan *s.Tuple)
 
-	var lastSent *structs.Tuple
+	var lastSent *s.Tuple
 	flushAfter := 500 * time.Millisecond
 	lwmFlushTimer := time.NewTimer(flushAfter)
 	lwmFlushTimer.Stop()
@@ -229,7 +229,7 @@ func NewDispatcher(conf *Config, coordinator Coordinator) *Dispatcher {
 }
 
 // ProcessTuple sends tuple to registered subscribers via RPC
-func (d *Dispatcher) ProcessTuple(t *structs.Tuple) error {
+func (d *Dispatcher) ProcessTuple(t *s.Tuple) error {
 	subscribers, err := d.coordinator.GetSubscribers(t.StreamID)
 	log.Printf("[dispatcher] tuple: %v, subscribers: %v\n", t, subscribers)
 	if err != nil {
@@ -261,28 +261,28 @@ func (d *Dispatcher) ProcessTuple(t *structs.Tuple) error {
 // BufferedDispatcher bufferes produced tuples and sends them with retrying
 // until they are ACKed
 type BufferedDispatcher struct {
-	streamID    string
-	buffer      chan *structs.Tuple
+	streamID    s.StreamID
+	buffer      chan *s.Tuple
 	dispatcher  TupleProcessor
 	stopCh      chan struct{}
 	sentTracker SentTracker
 	lwmTracker  LWMTracker
-	lwmFlush    chan *structs.Tuple
+	lwmFlush    chan *s.Tuple
 	wg          sync.WaitGroup
 }
 
 // StartBufferedDispatcher creates a new buffered dispatcher and starts workers
 // that will be consuming off the queue an sending tuples
-func StartBufferedDispatcher(compID StreamID, dispatcher TupleProcessor, sentTracker SentTracker, lwmTracker LWMTracker,
+func StartBufferedDispatcher(compID s.StreamID, dispatcher TupleProcessor, sentTracker SentTracker, lwmTracker LWMTracker,
 	stopCh chan struct{}) *BufferedDispatcher {
 	bd := &BufferedDispatcher{
 		streamID:    compID,
-		buffer:      make(chan *structs.Tuple, 100), // FIXME: make it configurable
+		buffer:      make(chan *s.Tuple, 100), // FIXME: make it configurable
 		dispatcher:  dispatcher,
 		sentTracker: sentTracker,
 		lwmTracker:  lwmTracker,
 		stopCh:      stopCh,
-		lwmFlush:    make(chan *structs.Tuple),
+		lwmFlush:    make(chan *s.Tuple),
 	}
 
 	go bd.lwmFlusher()
@@ -303,14 +303,14 @@ func (bd *BufferedDispatcher) Stop() {
 }
 
 // ProcessTuple sends the tuple to the buffered channel
-func (bd *BufferedDispatcher) ProcessTuple(t *structs.Tuple) error {
-	bd.lwmTracker.BeforeDispatching([]*structs.Tuple{t})
+func (bd *BufferedDispatcher) ProcessTuple(t *s.Tuple) error {
+	bd.lwmTracker.BeforeDispatching([]*s.Tuple{t})
 	bd.buffer <- t
 	return nil
 }
 
 func (bd *BufferedDispatcher) lwmFlusher() {
-	var lastSent *structs.Tuple
+	var lastSent *s.Tuple
 	flushAfter := 500 * time.Millisecond
 	lwmFlushTimer := time.NewTimer(flushAfter)
 	for {
@@ -381,7 +381,7 @@ func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
 	return &subscriberHandler{client, make(chan struct{}, 10)}, nil // FIXME: make configurable
 }
 
-func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
+func (s *subscriberHandler) ProcessTuple(t *s.Tuple) error {
 	var reply string
 	err := s.client.Call("Receiver.SubmitTuple", t, &reply)
 	if err != nil {
@@ -392,7 +392,7 @@ func (s *subscriberHandler) ProcessTuple(t *structs.Tuple) error {
 	return nil
 }
 
-func (s *subscriberHandler) ProcessTupleAsync(t *structs.Tuple, sentSuccessfuly chan *structs.Tuple) {
+func (s *subscriberHandler) ProcessTupleAsync(t *s.Tuple, sentSuccessfuly chan *s.Tuple) {
 	var reply string
 	s.semaphore <- struct{}{}
 	call := s.client.Go("Receiver.SubmitTuple", t, &reply, nil)

@@ -3,24 +3,23 @@ package dagger
 import (
 	"fmt"
 
+	"github.com/nsaje/dagger/s"
 	"github.com/willf/bloom"
-
-	"github.com/nsaje/dagger/structs"
 )
 
 // Deduplicator throws away duplicate tuples (and ACKs their senders)
 type Deduplicator interface {
-	Seen(t *structs.Tuple) (bool, error)
+	Seen(t *s.Tuple) (bool, error)
 }
 
 type dedup struct {
-	computation  string
+	computation  s.StreamID
 	tupleTracker ReceivedTracker
 	filter       *bloom.BloomFilter
 }
 
 // NewDeduplicator initializes a new deduplicator
-func NewDeduplicator(computation string, tupleTracker ReceivedTracker) (Deduplicator, error) {
+func NewDeduplicator(computation s.StreamID, tupleTracker ReceivedTracker) (Deduplicator, error) {
 	dd := &dedup{
 		computation:  computation,
 		tupleTracker: tupleTracker,
@@ -37,7 +36,7 @@ func NewDeduplicator(computation string, tupleTracker ReceivedTracker) (Deduplic
 	return dd, nil
 }
 
-func (d *dedup) Seen(t *structs.Tuple) (bool, error) {
+func (d *dedup) Seen(t *s.Tuple) (bool, error) {
 	var seen bool
 	var err error
 	if seen = d.filter.TestAndAddString(t.ID); seen {

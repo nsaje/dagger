@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 )
 
 type inmemTupleTracker struct {
@@ -12,7 +12,7 @@ type inmemTupleTracker struct {
 	sync.RWMutex
 }
 
-func (tt *inmemTupleTracker) PersistReceivedTuples(compID StreamID, tuples []*structs.Tuple) error {
+func (tt *inmemTupleTracker) PersistReceivedTuples(compID s.StreamID, tuples []*s.Tuple) error {
 	tt.Lock()
 	defer tt.Unlock()
 	for _, t := range tuples {
@@ -21,14 +21,14 @@ func (tt *inmemTupleTracker) PersistReceivedTuples(compID StreamID, tuples []*st
 	return nil
 }
 
-func (tt *inmemTupleTracker) ReceivedAlready(compID StreamID, t *structs.Tuple) (bool, error) {
+func (tt *inmemTupleTracker) ReceivedAlready(compID s.StreamID, t *s.Tuple) (bool, error) {
 	tt.RLock()
 	defer tt.RUnlock()
 	_, found := tt.set[t.ID]
 	return found, nil
 }
 
-func (tt *inmemTupleTracker) GetRecentReceived(string) ([]string, error) {
+func (tt *inmemTupleTracker) GetRecentReceived(s.StreamID) ([]string, error) {
 	received := make([]string, 0, len(tt.set))
 	for k := range tt.set {
 		received = append(received, k)
@@ -38,20 +38,20 @@ func (tt *inmemTupleTracker) GetRecentReceived(string) ([]string, error) {
 
 func TestDeduplicate(t *testing.T) {
 	tupleTracker := &inmemTupleTracker{set: make(map[string]struct{})}
-	tupleTracker.PersistReceivedTuples("test", []*structs.Tuple{&structs.Tuple{ID: "0"}})
+	tupleTracker.PersistReceivedTuples(s.StreamID("test"), []*s.Tuple{&s.Tuple{ID: "0"}})
 
-	deduplicator, _ := NewDeduplicator("test", tupleTracker)
+	deduplicator, _ := NewDeduplicator(s.StreamID("test"), tupleTracker)
 
-	tups := []*structs.Tuple{
-		&structs.Tuple{ID: "0"},
-		&structs.Tuple{ID: "1"},
-		&structs.Tuple{ID: "1"},
-		&structs.Tuple{ID: "2"},
+	tups := []*s.Tuple{
+		&s.Tuple{ID: "0"},
+		&s.Tuple{ID: "1"},
+		&s.Tuple{ID: "1"},
+		&s.Tuple{ID: "2"},
 	}
 
 	tupleTracker.PersistReceivedTuples("test", tups)
 
-	var actual []*structs.Tuple
+	var actual []*s.Tuple
 	for _, tup := range tups {
 		if seen, _ := deduplicator.Seen(tup); !seen {
 			actual = append(actual, tup)

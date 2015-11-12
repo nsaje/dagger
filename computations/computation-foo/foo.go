@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 	"github.com/twinj/uuid"
 )
 
@@ -15,9 +15,9 @@ type FooComputation struct {
 	counter int
 }
 
-func (c *FooComputation) GetInfo(definition string) (structs.ComputationPluginInfo, error) {
-	info := structs.ComputationPluginInfo{
-		Inputs:   []string{definition},
+func (c *FooComputation) GetInfo(definition string) (s.ComputationPluginInfo, error) {
+	info := s.ComputationPluginInfo{
+		Inputs:   []s.StreamID{s.StreamID(definition)},
 		Stateful: true,
 	}
 	return info, nil
@@ -38,11 +38,11 @@ func (c *FooComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *FooComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error) {
+func (c *FooComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
 	t.Data = fmt.Sprintf("fooized: %v, state: %v", t.Data, c.counter)
 	t.ID = uuid.NewV4().String()
 	c.counter++
-	return []*structs.Tuple{t}, nil
+	return []*s.Tuple{t}, nil
 }
 
 func main() {

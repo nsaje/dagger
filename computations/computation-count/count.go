@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 	"github.com/twinj/uuid"
 )
 
@@ -58,16 +58,16 @@ func (c *CountProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new tuple
-func (c *CountProcessor) ProcessBucket(bucket time.Time, t *structs.Tuple) error {
+func (c *CountProcessor) ProcessBucket(bucket time.Time, t *s.Tuple) error {
 	log.Println("[avg] processing", t)
 	c.state.Counts[bucket]++
 	return nil
 }
 
 // FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *CountProcessor) FinalizeBucket(bucket time.Time) *structs.Tuple {
+func (c *CountProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
 	log.Println("[avg] finalizing", bucket)
-	new := &structs.Tuple{
+	new := &s.Tuple{
 		Data:      c.state.Counts[bucket],
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),

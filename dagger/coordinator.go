@@ -2,7 +2,10 @@ package dagger
 
 import (
 	"net"
+	"strings"
 	"time"
+
+	"github.com/nsaje/dagger/s"
 )
 
 const (
@@ -33,17 +36,17 @@ type Coordinator interface {
 
 // SubscribeCoordinator handles the act of subscribing to a stream
 type SubscribeCoordinator interface {
-	SubscribeTo(streamID StreamID, from time.Time) error
-	CheckpointPosition(streamID StreamID, from time.Time) error
-	UnsubscribeFrom(streamID StreamID) error
+	SubscribeTo(streamID s.StreamID, from time.Time) error
+	CheckpointPosition(streamID s.StreamID, from time.Time) error
+	UnsubscribeFrom(streamID s.StreamID) error
 }
 
 // PublishCoordinator handles the coordination of publishing a stream
 type PublishCoordinator interface {
-	GetSubscribers(streamID StreamID) ([]string, error) // DEPRECATE
-	WatchSubscribers(streamID StreamID, stopCh chan struct{}) (chan NewSubscriber, chan string)
-	WatchSubscriberPosition(topic StreamID, subscriber string, stopCh chan struct{}, position chan time.Time)
-	RegisterAsPublisher(streamID StreamID)
+	GetSubscribers(streamID s.StreamID) ([]string, error) // DEPRECATE
+	WatchSubscribers(streamID s.StreamID, stopCh chan struct{}) (chan NewSubscriber, chan string)
+	WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan time.Time)
+	RegisterAsPublisher(streamID s.StreamID)
 }
 
 // GroupHandler handles leadership status of a group
@@ -58,18 +61,18 @@ type TaskCoordinator interface {
 	NewTaskWatcher() TaskWatcher
 	// AcquireTask tries to take a task from the task list. If another worker
 	// manages to take the task, the call returns false.
-	AcquireTask(StreamID) (bool, error)
+	AcquireTask(s.StreamID) (bool, error)
 	// TaskAcquired marks the task as successfuly acquired
-	TaskAcquired(StreamID)
+	TaskAcquired(s.StreamID)
 	// ReleaseTask releases the lock on the task so others can try to acquire it
-	ReleaseTask(StreamID) (bool, error)
+	ReleaseTask(s.StreamID) (bool, error)
 }
 
 // TaskWatcher watches for and notifies of new available tasks
 type TaskWatcher interface {
 	Watcher
-	New() chan StreamID
-	Dropped() chan StreamID
+	New() chan s.StreamID
+	Dropped() chan s.StreamID
 }
 
 // Watcher watches for changes in coordination store
@@ -81,5 +84,39 @@ type Watcher interface {
 // ReplicationCoordinator coordinates replication of tuples onto multiple
 // computations on multiple hosts for high availability
 type ReplicationCoordinator interface {
-	JoinGroup(streamID StreamID) (GroupHandler, error)
+	JoinGroup(streamID s.StreamID) (GroupHandler, error)
+}
+
+// ParseTags returns kv pairs encoded in stream ID
+func ParseTags(s s.StreamID) Tags {
+	topic := string(s)
+	tags := make(Tags)
+	idx0 := strings.Index(topic, "{")
+	idx1 := strings.Index(topic, "}")
+	if idx0 == -1 || idx1 == -1 {
+		return nil
+	}
+	taglist := topic[idx0+1 : idx1]
+	pairs := strings.Split(taglist, ",")
+	for _, pair := range pairs {
+		kv := strings.Split(pair, "=")
+		if len(kv) != 2 {
+			continue
+		}
+		tags[kv[0]] = kv[1]
+	}
+	if len(tags) == 0 {
+		return nil
+	}
+	return tags
+}
+
+// StripTags removes the kv pairs encoded in s.StreamID
+func StripTags(sid s.StreamID) s.StreamID {
+	topic := string(sid)
+	idx0 := strings.Index(topic, "{")
+	if idx0 > 0 {
+		return s.StreamID(topic[:idx0])
+	}
+	return s.StreamID(topic)
 }

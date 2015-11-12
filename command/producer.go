@@ -10,6 +10,7 @@ import (
 	"github.com/codegangsta/cli"
 	"github.com/nsaje/dagger/consul"
 	"github.com/nsaje/dagger/dagger"
+	"github.com/nsaje/dagger/s"
 )
 
 // Producer reads tuples from stdin and submits them
@@ -28,7 +29,7 @@ func Producer(c *cli.Context) {
 	lwmTracker := dagger.NewLWMTracker()
 	// dispatcher := dagger.NewDispatcher(conf, coordinator)
 	// bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
-	streamID := c.String("streamID")
+	streamID := s.StreamID(c.String("streamID"))
 	persister, err := dagger.NewPersister(conf)
 	if err != nil {
 		log.Fatalf("error opening database")
@@ -38,7 +39,7 @@ func Producer(c *cli.Context) {
 	go dispatcher.Run()
 
 	reader := bufio.NewReader(os.Stdin)
-	// var tmpT *structs.Tuple
+	// var tmpT *s.Tuple
 	for {
 		var line string
 		line, err := reader.ReadString('\n')

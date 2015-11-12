@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 )
 
 // Receiver receives new tuples via incoming RPC calls
@@ -19,8 +19,8 @@ type Receiver struct {
 	server                    *rpc.Server
 	listener                  net.Listener
 	taskManager               *TaskManager
-	subscribedTupleProcessors map[string]map[TupleProcessor]struct{}
-	checkpointTimers          map[string]*time.Timer
+	subscribedTupleProcessors map[s.StreamID]map[TupleProcessor]struct{}
+	checkpointTimers          map[s.StreamID]*time.Timer
 	subscribersLock           *sync.RWMutex
 }
 
@@ -29,8 +29,8 @@ func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
 	r := &Receiver{
 		conf:                      conf,
 		coordinator:               coordinator,
-		subscribedTupleProcessors: make(map[string]map[TupleProcessor]struct{}),
-		checkpointTimers:          make(map[string]*time.Timer),
+		subscribedTupleProcessors: make(map[s.StreamID]map[TupleProcessor]struct{}),
+		checkpointTimers:          make(map[s.StreamID]*time.Timer),
 		subscribersLock:           &sync.RWMutex{},
 	}
 	r.server = rpc.NewServer()
@@ -49,7 +49,7 @@ func (r *Receiver) ListenAddr() net.Addr {
 	return r.listener.Addr()
 }
 
-func (r *Receiver) SubscribeTo(streamID StreamID, from time.Time, tp TupleProcessor) {
+func (r *Receiver) SubscribeTo(streamID s.StreamID, from time.Time, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.SubscribeTo(streamID, from)
@@ -62,7 +62,7 @@ func (r *Receiver) SubscribeTo(streamID StreamID, from time.Time, tp TupleProces
 	r.subscribedTupleProcessors[streamID] = subscribersSet
 }
 
-func (r *Receiver) UnsubscribeFrom(streamID StreamID, tp TupleProcessor) {
+func (r *Receiver) UnsubscribeFrom(streamID s.StreamID, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.UnsubscribeFrom(streamID)
@@ -70,7 +70,7 @@ func (r *Receiver) UnsubscribeFrom(streamID StreamID, tp TupleProcessor) {
 }
 
 // SubmitTuple submits a new tuple into the worker process
-func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
+func (r *Receiver) SubmitTuple(t *s.Tuple, reply *string) error {
 	r.subscribersLock.RLock()
 	defer r.subscribersLock.RUnlock()
 	log.Printf("[receiver] Received: %s", t)
@@ -103,7 +103,7 @@ func (r *Receiver) SubmitTuple(t *structs.Tuple, reply *string) error {
 }
 
 // Sync is the RPC method called by slave workers wanting to sync a computation
-func (r *Receiver) Sync(compID StreamID, reply *structs.ComputationSnapshot) error {
+func (r *Receiver) Sync(compID s.StreamID, reply *s.ComputationSnapshot) error {
 	log.Printf("[receiver] Sync request for %s", compID)
 	if r.taskManager == nil {
 		return fmt.Errorf("[receiver] Task manager doesn't exist")

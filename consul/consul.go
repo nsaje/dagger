@@ -12,6 +12,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/hashicorp/consul/api"
 	"github.com/nsaje/dagger/dagger"
+	"github.com/nsaje/dagger/s"
 )
 
 const (
@@ -93,15 +94,15 @@ func (c *consulCoordinator) Stop() {
 
 type taskWatcher struct {
 	*setWatcher
-	new     chan dagger.StreamID
-	dropped chan dagger.StreamID
+	new     chan s.StreamID
+	dropped chan s.StreamID
 }
 
 func (c *consulCoordinator) NewTaskWatcher() dagger.TaskWatcher {
 	w := &taskWatcher{
 		setWatcher: c.newSetWatcher(taskPrefix),
-		new:        make(chan dagger.StreamID),
-		dropped:    make(chan dagger.StreamID),
+		new:        make(chan s.StreamID),
+		dropped:    make(chan s.StreamID),
 	}
 	go w.watch()
 	return w
@@ -113,22 +114,22 @@ func (w *taskWatcher) watch() {
 		case <-w.setWatcher.done:
 			return
 		case newJob := <-w.setWatcher.new:
-			w.new <- dagger.StreamID(newJob[len(taskPrefix):])
+			w.new <- s.StreamID(newJob[len(taskPrefix):])
 		case droppedJob := <-w.setWatcher.dropped:
-			w.dropped <- dagger.StreamID(droppedJob[len(taskPrefix):])
+			w.dropped <- s.StreamID(droppedJob[len(taskPrefix):])
 		}
 	}
 }
 
-func (w *taskWatcher) New() chan dagger.StreamID {
+func (w *taskWatcher) New() chan s.StreamID {
 	return w.new
 }
 
-func (w *taskWatcher) Dropped() chan dagger.StreamID {
+func (w *taskWatcher) Dropped() chan s.StreamID {
 	return w.dropped
 }
 
-func (c *consulCoordinator) AcquireTask(task dagger.StreamID) (bool, error) {
+func (c *consulCoordinator) AcquireTask(task s.StreamID) (bool, error) {
 	log.Println("[coordinator] Trying to take task: ", task)
 	kv := c.client.KV()
 	pair := &api.KVPair{
@@ -139,13 +140,13 @@ func (c *consulCoordinator) AcquireTask(task dagger.StreamID) (bool, error) {
 	return acquired, err
 }
 
-func (c *consulCoordinator) TaskAcquired(task dagger.StreamID) {
+func (c *consulCoordinator) TaskAcquired(task s.StreamID) {
 	log.Println("[coordinator] Releasing task: ", task)
 	kv := c.client.KV()
 	kv.Delete(string(task), nil)
 }
 
-func (c *consulCoordinator) ReleaseTask(task dagger.StreamID) (bool, error) {
+func (c *consulCoordinator) ReleaseTask(task s.StreamID) (bool, error) {
 	log.Println("[coordinator] Releasing task: ", task)
 	kv := c.client.KV()
 	pair := &api.KVPair{
@@ -347,7 +348,7 @@ func (w *setWatcher) watch(kv *api.KV, prefix string) {
 //
 
 // RegisterAsPublisher registers us as publishers of this stream and
-func (c *consulCoordinator) RegisterAsPublisher(compID StreamID) {
+func (c *consulCoordinator) RegisterAsPublisher(compID s.StreamID) {
 	log.Println("[coordinator] Registering as publisher for: ", compID)
 	kv := c.client.KV()
 	pair := &api.KVPair{
@@ -361,7 +362,7 @@ func (c *consulCoordinator) RegisterAsPublisher(compID StreamID) {
 }
 
 // SubscribeTo subscribes to topics with global coordination
-func (c *consulCoordinator) SubscribeTo(topic string, from time.Time) error {
+func (c *consulCoordinator) SubscribeTo(topic s.StreamID, from time.Time) error {
 	kv := c.client.KV()
 	pair := &api.KVPair{
 		Key:     c.constructSubscriberKey(topic),
@@ -371,14 +372,14 @@ func (c *consulCoordinator) SubscribeTo(topic string, from time.Time) error {
 	// ignore bool, since if it's false, it just means we're already subscribed
 	_, _, err := kv.Acquire(pair, nil)
 
-	if strings.ContainsAny(topic, "()") {
+	if strings.ContainsAny(string(topic), "()") {
 		// only monitor publishers if it's a computation
 		go c.monitorPublishers(topic)
 	}
 	return err
 }
 
-func (c *consulCoordinator) CheckpointPosition(topic string, from time.Time) error {
+func (c *consulCoordinator) CheckpointPosition(topic s.StreamID, from time.Time) error {
 	kv := c.client.KV()
 	pair := &api.KVPair{
 		Key:     c.constructSubscriberKey(topic),
@@ -393,7 +394,7 @@ func (c *consulCoordinator) CheckpointPosition(topic string, from time.Time) err
 }
 
 // UnsubscribeFrom unsubscribes from topics with global coordination
-func (c *consulCoordinator) UnsubscribeFrom(topic string) error {
+func (c *consulCoordinator) UnsubscribeFrom(topic s.StreamID) error {
 	kv := c.client.KV()
 	key := c.constructSubscriberKey(topic)
 	_, err := kv.Delete(key, nil)
@@ -401,7 +402,7 @@ func (c *consulCoordinator) UnsubscribeFrom(topic string) error {
 }
 
 // JoinGroup joins the group that produces compID computation
-func (c *consulCoordinator) JoinGroup(compID StreamID) (dagger.GroupHandler, error) {
+func (c *consulCoordinator) JoinGroup(compID s.StreamID) (dagger.GroupHandler, error) {
 	gh := &groupHandler{
 		compID: compID,
 		c:      c,
@@ -426,7 +427,7 @@ func (c *consulCoordinator) JoinGroup(compID StreamID) (dagger.GroupHandler, err
 }
 
 type groupHandler struct {
-	compID StreamID
+	compID s.StreamID
 	c      *consulCoordinator
 
 	areWeLeader   bool
@@ -514,7 +515,7 @@ func (gh *groupHandler) fetch() error {
 	return nil
 }
 
-func (c *consulCoordinator) monitorPublishers(topic string) {
+func (c *consulCoordinator) monitorPublishers(topic s.StreamID) {
 	prefix := fmt.Sprintf("dagger/publishers/%s", topic)
 	kv := c.client.KV()
 	lastIndex := uint64(0)
@@ -548,39 +549,9 @@ func (c *consulCoordinator) monitorPublishers(topic string) {
 	}
 }
 
-func parseTags(topic string) dagger.Tags {
-	tags := make(dagger.Tags)
-	idx0 := strings.Index(topic, "{")
-	idx1 := strings.Index(topic, "}")
-	if idx0 == -1 || idx1 == -1 {
-		return nil
-	}
-	taglist := topic[idx0+1 : idx1]
-	pairs := strings.Split(taglist, ",")
-	for _, pair := range pairs {
-		kv := strings.Split(pair, "=")
-		if len(kv) != 2 {
-			continue
-		}
-		tags[kv[0]] = kv[1]
-	}
-	if len(tags) == 0 {
-		return nil
-	}
-	return tags
-}
-
-func stripTags(topic string) string {
-	idx0 := strings.Index(topic, "{")
-	if idx0 > 0 {
-		return topic[:idx0]
-	}
-	return topic
-}
-
-func (c *consulCoordinator) WatchSubscribers(topic string, stopCh chan struct{}) (new chan dagger.NewSubscriber, dropped chan string) {
-	tags := parseTags(topic)
-	topic = stripTags(topic)
+func (c *consulCoordinator) WatchSubscribers(topic s.StreamID, stopCh chan struct{}) (new chan dagger.NewSubscriber, dropped chan string) {
+	tags := dagger.ParseTags(topic)
+	topic = dagger.StripTags(topic)
 	prefix := fmt.Sprintf("dagger/subscribers/%s/", topic)
 
 	new = make(chan dagger.NewSubscriber)
@@ -615,7 +586,7 @@ func (c *consulCoordinator) WatchSubscribers(topic string, stopCh chan struct{})
 				oldSubscribers = make([]string, 0)
 			SUBSCRIBER_LOOP:
 				for _, key := range keys {
-					subscriberTags := parseTags(key)
+					subscriberTags := dagger.ParseTags(s.StreamID(key))
 					log.Println("[coordinator][tags] Publisher", tags, ", subscriber", subscriberTags)
 					for k, v := range subscriberTags {
 						if tags[k] != v {
@@ -652,10 +623,10 @@ func (c *consulCoordinator) WatchSubscribers(topic string, stopCh chan struct{})
 }
 
 // GetSubscribers returns the addresses of subscribers interested in a certain topic
-func (c *consulCoordinator) GetSubscribers(topic string) ([]string, error) {
-	tags := parseTags(topic)
+func (c *consulCoordinator) GetSubscribers(topic s.StreamID) ([]string, error) {
+	tags := dagger.ParseTags(topic)
 	log.Println("Publisher tags:", tags, topic)
-	topic = stripTags(topic)
+	topic = dagger.StripTags(topic)
 	prefix := fmt.Sprintf("dagger/subscribers/%s/", topic)
 
 	c.subscribersLock.RLock()
@@ -680,7 +651,7 @@ func (c *consulCoordinator) GetSubscribers(topic string) ([]string, error) {
 	return subsList.get(), nil
 }
 
-func (c *consulCoordinator) constructSubscriberKey(topic string) string {
+func (c *consulCoordinator) constructSubscriberKey(topic s.StreamID) string {
 	return fmt.Sprintf("dagger/subscribers/%s/%s", topic, c.addr.String())
 }
 
@@ -735,7 +706,7 @@ func (sl *subscribersList) fetch() error {
 	sl.lastIndex = queryMeta.LastIndex
 	subscribers := make([]string, 0, len(keys))
 	for _, key := range keys {
-		tags := parseTags(key)
+		tags := dagger.ParseTags(s.StreamID(key))
 		log.Println("[coordinator][tags] Publisher", sl.tags, ", subscriber", tags)
 		tagsMatch := true
 		for k, v := range tags {
@@ -754,7 +725,7 @@ func (sl *subscribersList) fetch() error {
 	return nil
 }
 
-func (c *consulCoordinator) WatchSubscriberPosition(topic StreamID, subscriber string, stopCh chan struct{}, position chan time.Time) {
+func (c *consulCoordinator) WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan time.Time) {
 	key := fmt.Sprintf("dagger/subscribers/%s/%s", topic, subscriber)
 	value := c.watch(key, stopCh, nil)
 	for {

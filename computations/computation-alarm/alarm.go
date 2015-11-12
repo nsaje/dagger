@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 	"github.com/twinj/uuid"
 )
 
@@ -23,20 +23,20 @@ type AlarmComputation struct {
 }
 
 type valueTable struct {
-	Values     map[string][]*structs.Tuple
-	MaxPeriods map[string]int
+	Values     map[s.StreamID][]*s.Tuple
+	MaxPeriods map[s.StreamID]int
 	LWM        time.Time
 }
 
 func newValueTable() valueTable {
 	return valueTable{
-		make(map[string][]*structs.Tuple),
-		make(map[string]int),
+		make(map[s.StreamID][]*s.Tuple),
+		make(map[s.StreamID]int),
 		time.Time{},
 	}
 }
 
-func (vt *valueTable) getLastN(streamID StreamID, n int) []*structs.Tuple {
+func (vt *valueTable) getLastN(streamID s.StreamID, n int) []*s.Tuple {
 	timeSeries := vt.Values[streamID]
 	i := sort.Search(len(timeSeries), func(i int) bool {
 		return timeSeries[i].Timestamp.After(vt.LWM)
@@ -58,7 +58,7 @@ func (vt *valueTable) getLastN(streamID StreamID, n int) []*structs.Tuple {
 	return evalSlice
 }
 
-func (vt *valueTable) insert(t *structs.Tuple) {
+func (vt *valueTable) insert(t *s.Tuple) {
 	timeSeries := vt.Values[t.StreamID]
 	vt.LWM = t.LWM
 
@@ -101,15 +101,15 @@ func parseDefinition(definition string) (alarmDefinition, error) {
 	return alarmDefinition, nil
 }
 
-func (c *AlarmComputation) GetInfo(definition string) (structs.ComputationPluginInfo, error) {
+func (c *AlarmComputation) GetInfo(definition string) (s.ComputationPluginInfo, error) {
 	log.Println("parsing definition:", definition)
 	alarmDefinition, err := parseDefinition(definition)
 	if err != nil {
-		return structs.ComputationPluginInfo{}, err
+		return s.ComputationPluginInfo{}, err
 	}
 	leafNodes := alarmDefinition.tree.getLeafNodes()
-	inputs := make([]string, 0, len(leafNodes))
-	maxPeriods := make(map[string]int)
+	inputs := make([]s.StreamID, 0, len(leafNodes))
+	maxPeriods := make(map[s.StreamID]int)
 	for _, leafNode := range leafNodes {
 		inputs = append(inputs, leafNode.streamID)
 		currMax := maxPeriods[leafNode.streamID]
@@ -122,7 +122,7 @@ func (c *AlarmComputation) GetInfo(definition string) (structs.ComputationPlugin
 	c.state.StringDefinition = definition
 	c.state.NumInputs = len(inputs)
 	c.state.ValueTable.MaxPeriods = maxPeriods
-	info := structs.ComputationPluginInfo{
+	info := s.ComputationPluginInfo{
 		Inputs:   inputs,
 		Stateful: true,
 	}
@@ -148,7 +148,7 @@ func (c *AlarmComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *AlarmComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, error) {
+func (c *AlarmComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
 	_, ok := t.Data.(float64)
 	if !ok {
 		return nil, fmt.Errorf("Wrong data format, expected float!")
@@ -157,13 +157,13 @@ func (c *AlarmComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, erro
 	c.state.ValueTable.insert(t)
 	fired, values := c.state.definition.tree.eval(c.state.ValueTable)
 	if fired {
-		new := &structs.Tuple{
+		new := &s.Tuple{
 			Data: fmt.Sprintf("Alarm '%s' fired with values %+v",
 				c.state.StringDefinition, values),
 			Timestamp: t.Timestamp,
 			ID:        uuid.NewV4().String(),
 		}
-		return []*structs.Tuple{new}, nil
+		return []*s.Tuple{new}, nil
 	} else {
 		log.Printf("Alarm '%s' NOT fired with values %+v",
 			c.state.StringDefinition, values)
@@ -175,13 +175,13 @@ func (c *AlarmComputation) SubmitTuple(t *structs.Tuple) ([]*structs.Tuple, erro
 	// 	c.state.buckets[i].evaluated = true
 	// 	c.state.buckets[i].fired = fired
 	// 	if fired {
-	// 		new := &structs.Tuple{
+	// 		new := &s.Tuple{
 	// 			Data: fmt.Sprintf("Alarm %+v fired with values %v",
 	// 				c.state.definition.tree, c.state.buckets[i].values),
 	// 			Timestamp: t.Timestamp,
 	// 			ID:        uuid.NewV4().String(),
 	// 		}
-	// 		return []*structs.Tuple{new}, nil
+	// 		return []*s.Tuple{new}, nil
 	// 	}
 	// }
 

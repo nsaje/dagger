@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 	"github.com/twinj/uuid"
 )
 
@@ -57,7 +57,7 @@ func (c *SumProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new tuple
-func (c *SumProcessor) ProcessBucket(bucket time.Time, t *structs.Tuple) error {
+func (c *SumProcessor) ProcessBucket(bucket time.Time, t *s.Tuple) error {
 	log.Println("[avg] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Sums[bucket] += value
@@ -65,9 +65,9 @@ func (c *SumProcessor) ProcessBucket(bucket time.Time, t *structs.Tuple) error {
 }
 
 // FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *SumProcessor) FinalizeBucket(bucket time.Time) *structs.Tuple {
+func (c *SumProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
 	log.Println("[avg] finalizing", bucket)
-	new := &structs.Tuple{
+	new := &s.Tuple{
 		Data:      c.state.Sums[bucket],
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),

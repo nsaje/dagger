@@ -8,7 +8,7 @@ import (
 
 	"github.com/nsaje/dagger/consul"
 	"github.com/nsaje/dagger/dagger"
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 
 	"github.com/codegangsta/cli"
 )
@@ -39,7 +39,7 @@ func Subscriber(c *cli.Context) {
 	}
 	log.Println("Coordinator started")
 
-	topicGlob := c.Args().First()
+	topicGlob := s.StreamID(c.Args().First())
 	// linearizer := dagger.NewLinearizer(prnter, []string{topicGlob})
 	// go linearizer.Linearize()
 	lwmTracker := dagger.NewLWMTracker()
@@ -65,7 +65,7 @@ type printer struct {
 	dataonly bool
 }
 
-func (p *printer) ProcessTupleLinearized(t *structs.Tuple) error {
+func (p *printer) ProcessTupleLinearized(t *s.Tuple) error {
 	log.Println("in printer")
 	if p.dataonly {
 		fmt.Println(t.Data)

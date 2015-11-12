@@ -101,12 +101,12 @@ func TestTaskWatcher(t *testing.T) {
 	kv := newSimpleKV(t, conf)
 	coord := NewCoordinator(conf)
 	w := coord.NewTaskWatcher()
-	add := []dagger.StreamID{
+	add := []s.StreamID{
 		"task1",
 		"task2",
 		"task3",
 	}
-	remove := []dagger.StreamID{
+	remove := []s.StreamID{
 		"task1",
 		"task2",
 	}
@@ -120,7 +120,7 @@ func TestTaskWatcher(t *testing.T) {
 		}
 		close(done)
 	}()
-	var addedActual, droppedActual []dagger.StreamID
+	var addedActual, droppedActual []s.StreamID
 	timeout := time.NewTimer(5 * time.Second)
 	for {
 		select {

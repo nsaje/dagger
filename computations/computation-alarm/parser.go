@@ -13,6 +13,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nsaje/dagger/s"
 )
 
 var g = &grammar{
@@ -812,7 +814,7 @@ func (c *current) onSubExpr2(streamID, op, thresholdValue, times interface{}) (i
 		periods = times.(int)
 	}
 	return LeafNode{
-		streamID.(string),
+		streamID.(s.StreamID),
 		op.(RelationalOperator),
 		thresholdValue.(float64),
 		periods,

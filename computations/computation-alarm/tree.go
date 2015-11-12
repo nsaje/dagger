@@ -1,5 +1,7 @@
 package main
 
+import "github.com/nsaje/dagger/s"
+
 type RelationalOperator int
 
 const (
@@ -22,7 +24,7 @@ type Node interface {
 }
 
 type LeafNode struct {
-	streamID           string
+	streamID           s.StreamID
 	relationalOperator RelationalOperator
 	threshold          float64
 	periods            int
@@ -32,9 +34,9 @@ func (n LeafNode) getLeafNodes() []LeafNode {
 	return []LeafNode{n}
 }
 
-func (n LeafNode) eval(vt valueTable) (bool, map[string][]float64) {
+func (n LeafNode) eval(vt valueTable) (bool, map[s.StreamID][]float64) {
 	result := true
-	values := make(map[string][]float64)
+	values := make(map[s.StreamID][]float64)
 	values[n.streamID] = make([]float64, n.periods)
 	lastNTuples := vt.getLastN(n.streamID, n.periods)
 	if len(lastNTuples) == 0 {

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/natefinch/pie"
-	"github.com/nsaje/dagger/structs"
+	"github.com/nsaje/dagger/s"
 )
 
 // Computation encapsulates all the stages of processing a tuple for a single
@@ -20,7 +20,7 @@ import (
 type Computation interface {
 	TupleProcessor
 	Sync() (time.Time, error)
-	GetSnapshot() (*structs.ComputationSnapshot, error)
+	GetSnapshot() (*s.ComputationSnapshot, error)
 }
 
 type statelessComputation struct {
@@ -28,7 +28,7 @@ type statelessComputation struct {
 	dispatcher TupleProcessor
 }
 
-func (comp *statelessComputation) ProcessTuple(t *structs.Tuple) error {
+func (comp *statelessComputation) ProcessTuple(t *s.Tuple) error {
 	response, err := comp.plugin.SubmitTuple(t)
 	if err != nil {
 		return err
@@ -40,12 +40,12 @@ func (comp *statelessComputation) Sync() (time.Time, error) {
 	return time.Time{}, nil
 }
 
-func (comp *statelessComputation) GetSnapshot() (*structs.ComputationSnapshot, error) {
+func (comp *statelessComputation) GetSnapshot() (*s.ComputationSnapshot, error) {
 	return nil, nil
 }
 
 type statefulComputation struct {
-	streamID     StreamID
+	streamID     s.StreamID
 	plugin       ComputationPlugin
 	groupHandler GroupHandler
 	linearizer   *Linearizer
@@ -58,7 +58,7 @@ type statefulComputation struct {
 	initialized  bool
 }
 
-func newStatefulComputation(streamID StreamID, coordinator Coordinator,
+func newStatefulComputation(streamID s.StreamID, coordinator Coordinator,
 	persister Persister, plugin ComputationPlugin) (Computation, error) {
 	groupHandler, err := coordinator.JoinGroup(streamID)
 	if err != nil {
@@ -148,7 +148,7 @@ func (comp *statefulComputation) Sync() (time.Time, error) {
 	return from, nil
 }
 
-func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
+func (comp *statefulComputation) ProcessTuple(t *s.Tuple) error {
 	err := comp.linearizer.ProcessTuple(t)
 	if err != nil {
 		return err
@@ -156,7 +156,7 @@ func (comp *statefulComputation) ProcessTuple(t *structs.Tuple) error {
 	return nil
 }
 
-func (comp *statefulComputation) ProcessTupleLinearized(t *structs.Tuple) error {
+func (comp *statefulComputation) ProcessTupleLinearized(t *s.Tuple) error {
 	// acquire a lock, so we wait in case there's synchronization with
 	// a slave going on
 	comp.Lock()
@@ -192,7 +192,7 @@ func (comp *statefulComputation) ProcessTupleLinearized(t *structs.Tuple) error 
 	return nil
 }
 
-func (comp *statefulComputation) GetSnapshot() (*structs.ComputationSnapshot, error) {
+func (comp *statefulComputation) GetSnapshot() (*s.ComputationSnapshot, error) {
 	log.Println("[computations] trying to acquire sync lock...")
 	comp.Lock()
 	log.Println("[computations] ... sync lock acquired!")
@@ -210,7 +210,7 @@ func (comp *statefulComputation) GetSnapshot() (*structs.ComputationSnapshot, er
 }
 
 // StartComputationPlugin starts the plugin process
-func StartComputationPlugin(name string, compID StreamID) (ComputationPlugin, error) {
+func StartComputationPlugin(name string, compID s.StreamID) (ComputationPlugin, error) {
 	log.Printf("[computations] Launching computation plugin '%s'", name)
 	path := path.Join(os.Getenv("DAGGER_PLUGIN_PATH"), "computation-"+name)
 	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec,
@@ -231,38 +231,38 @@ func StartComputationPlugin(name string, compID StreamID) (ComputationPlugin, er
 // ComputationPlugin handles the running and interacting with a computation
 // plugin process
 type ComputationPlugin interface {
-	GetInfo(definition string) (*structs.ComputationPluginInfo, error)
-	SubmitTuple(t *structs.Tuple) (*structs.ComputationPluginResponse, error)
-	GetState() (*structs.ComputationPluginState, error)
-	SetState(*structs.ComputationPluginState) error
+	GetInfo(definition string) (*s.ComputationPluginInfo, error)
+	SubmitTuple(t *s.Tuple) (*s.ComputationPluginResponse, error)
+	GetState() (*s.ComputationPluginState, error)
+	SetState(*s.ComputationPluginState) error
 }
 
 type computationPlugin struct {
 	client *rpc.Client
 	name   string
-	compID StreamID
+	compID s.StreamID
 }
 
-func (p *computationPlugin) GetInfo(definition string) (*structs.ComputationPluginInfo, error) {
-	var result structs.ComputationPluginInfo
+func (p *computationPlugin) GetInfo(definition string) (*s.ComputationPluginInfo, error) {
+	var result s.ComputationPluginInfo
 	err := p.client.Call("Computation.GetInfo", definition, &result)
 	return &result, err
 }
 
-func (p *computationPlugin) GetState() (*structs.ComputationPluginState, error) {
-	var result structs.ComputationPluginState
+func (p *computationPlugin) GetState() (*s.ComputationPluginState, error) {
+	var result s.ComputationPluginState
 	err := p.client.Call("Computation.GetState", struct{}{}, &result)
 	return &result, err
 }
 
-func (p *computationPlugin) SetState(state *structs.ComputationPluginState) error {
+func (p *computationPlugin) SetState(state *s.ComputationPluginState) error {
 	var result string
 	err := p.client.Call("Computation.SetState", state, &result)
 	return err
 }
 
-func (p *computationPlugin) SubmitTuple(t *structs.Tuple) (*structs.ComputationPluginResponse, error) {
-	var result structs.ComputationPluginResponse
+func (p *computationPlugin) SubmitTuple(t *s.Tuple) (*s.ComputationPluginResponse, error) {
+	var result s.ComputationPluginResponse
 	err := p.client.Call("Computation.SubmitTuple", t, &result)
 	if err != nil {
 		return nil, fmt.Errorf("Error submitting tuple to plugin %s: %s",
@@ -288,9 +288,9 @@ func newMasterHandler(addr string) (*masterHandler, error) {
 	return &masterHandler{client}, nil
 }
 
-func (s *masterHandler) Sync(compID StreamID) (*structs.ComputationSnapshot, error) {
-	var reply structs.ComputationSnapshot
+func (mh *masterHandler) Sync(compID s.StreamID) (*s.ComputationSnapshot, error) {
+	var reply s.ComputationSnapshot
 	log.Println("[computations] issuing a sync request for computation", compID)
-	err := s.client.Call("Receiver.Sync", compID, &reply)
+	err := mh.client.Call("Receiver.Sync", compID, &reply)
 	return &reply, err
 }
