@@ -6,7 +6,7 @@ import (
 
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/testutil"
-	"github.com/nsaje/dagger/dagger"
+	"github.com/nsaje/dagger/s"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -38,11 +38,19 @@ func newSimpleKV(t *testing.T, conf *api.Config) *simpleKV {
 	return &simpleKV{client.KV(), t}
 }
 
-func TestSetWatcher(t *testing.T) {
+func newTestServer(t *testing.T) *testutil.TestServer {
 	// Create a server
-	srv := testutil.NewTestServer(t)
-	defer srv.Stop()
+	srv := testutil.NewTestServerConfig(t, func(c *testutil.TestServerConfig) {
+		if !testing.Verbose() {
+			c.LogLevel = "err"
+		}
+	})
+	return srv
+}
 
+func TestSetWatcher(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Stop()
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
 	kv := newSimpleKV(t, conf)
@@ -57,7 +65,13 @@ func TestSetWatcher(t *testing.T) {
 		"test/1",
 		"test/2",
 	}
-	done := make(chan struct{})
+	expected := [][]string{
+		add[:1],
+		add[:2],
+		add[:3],
+		add[1:],
+		add[2:],
+	}
 	go func() {
 		for _, k := range add {
 			kv.Put(k, nil)
@@ -65,35 +79,78 @@ func TestSetWatcher(t *testing.T) {
 		for _, k := range remove {
 			kv.Delete(k)
 		}
-		close(done)
 	}()
-	var addedActual, droppedActual []string
-	timeout := time.NewTimer(5 * time.Second)
+	var actual [][]string
+	timeout := time.NewTimer(2 * time.Second)
+LOOP:
 	for {
 		select {
-		case <-done:
-			return
 		case <-timeout.C:
-			t.Fatalf("Timeout!")
+			break LOOP
 		case k := <-w.New():
-			addedActual = append(addedActual, k)
-			if len(addedActual) == len(add) {
-				assert.Equal(t, add, addedActual)
-			}
-		case k := <-w.Dropped():
-			droppedActual = append(droppedActual, k)
-			if len(droppedActual) == len(remove) {
-				assert.Equal(t, remove, droppedActual)
+			actual = append(actual, k)
+			if len(actual) == len(expected) {
+				break LOOP
 			}
 		case err := <-w.Error():
 			t.Fatalf(err.Error())
 		}
 	}
+	assert.Equal(t, expected, actual)
+}
+
+func TestSetDiffWatcher(t *testing.T) {
+	// Create a server
+	srv := newTestServer(t)
+	defer srv.Stop()
+
+	conf := api.DefaultConfig()
+	conf.Address = srv.HTTPAddr
+	kv := newSimpleKV(t, conf)
+	coord := NewCoordinator(conf).(*consulCoordinator)
+	w := coord.newSetDiffWatcher("test/")
+	add := []string{
+		"test/1",
+		"test/2",
+		"test/3",
+	}
+	remove := []string{
+		"test/1",
+		"test/2",
+	}
+	go func() {
+		for _, k := range add {
+			kv.Put(k, nil)
+		}
+		for _, k := range remove {
+			kv.Delete(k)
+		}
+	}()
+	var addedActual, droppedActual []string
+	timeout := time.NewTimer(5 * time.Second)
+
+	for {
+		select {
+		case <-timeout.C:
+			t.Fatalf("Timeout!")
+		case k := <-w.New():
+			addedActual = append(addedActual, k)
+		case k := <-w.Dropped():
+			droppedActual = append(droppedActual, k)
+		case err := <-w.Error():
+			t.Fatalf(err.Error())
+		}
+		if len(addedActual) == len(add) &&
+			len(droppedActual) == len(remove) {
+			break
+		}
+	}
+	assert.Equal(t, add, addedActual)
 }
 
 func TestTaskWatcher(t *testing.T) {
 	// Create a server
-	srv := testutil.NewTestServer(t)
+	srv := newTestServer(t)
 	defer srv.Stop()
 
 	conf := api.DefaultConfig()
@@ -110,7 +167,13 @@ func TestTaskWatcher(t *testing.T) {
 		"task1",
 		"task2",
 	}
-	done := make(chan struct{})
+	expected := [][]s.StreamID{
+		add[:1],
+		add[:2],
+		add[:3],
+		add[1:],
+		add[2:],
+	}
 	go func() {
 		for _, k := range add {
 			kv.Put(taskPrefix+string(k), nil)
@@ -118,25 +181,20 @@ func TestTaskWatcher(t *testing.T) {
 		for _, k := range remove {
 			kv.Delete(taskPrefix + string(k))
 		}
-		close(done)
 	}()
-	var addedActual, droppedActual []s.StreamID
-	timeout := time.NewTimer(5 * time.Second)
+	var actual [][]s.StreamID
+	timeout := time.NewTimer(2 * time.Second)
+
 	for {
 		select {
-		case <-done:
-			return
 		case <-timeout.C:
 			t.Fatalf("Timeout!")
 		case k := <-w.New():
-			addedActual = append(addedActual, k)
-			if len(addedActual) == len(add) {
-				assert.Equal(t, add, addedActual)
-			}
-		case k := <-w.Dropped():
-			droppedActual = append(droppedActual, k)
-			if len(droppedActual) == len(remove) {
-				assert.Equal(t, remove, droppedActual)
+			t.Log("new set:", k)
+			actual = append(actual, k)
+			if len(actual) == len(expected) {
+				assert.Equal(t, expected, actual)
+				return
 			}
 		case err := <-w.Error():
 			t.Fatalf(err.Error())

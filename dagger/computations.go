@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -15,17 +16,20 @@ import (
 	"github.com/nsaje/dagger/s"
 )
 
-// Computation encapsulates all the stages of processing a tuple for a single
-// computation
-type Computation interface {
-	TupleProcessor
-	Sync() (time.Time, error)
-	GetSnapshot() (*s.ComputationSnapshot, error)
-}
-
 type statelessComputation struct {
 	plugin     ComputationPlugin
 	dispatcher TupleProcessor
+}
+
+func (comp *statelessComputation) Sync() (time.Time, error) {
+	return time.Time{}, nil
+}
+
+func (comp *statelessComputation) Run() error {
+	return nil
+}
+
+func (comp *statelessComputation) Stop() {
 }
 
 func (comp *statelessComputation) ProcessTuple(t *s.Tuple) error {
@@ -36,11 +40,7 @@ func (comp *statelessComputation) ProcessTuple(t *s.Tuple) error {
 	return ProcessMultipleTuples(comp.dispatcher, response.Tuples)
 }
 
-func (comp *statelessComputation) Sync() (time.Time, error) {
-	return time.Time{}, nil
-}
-
-func (comp *statelessComputation) GetSnapshot() (*s.ComputationSnapshot, error) {
+func (comp *statelessComputation) GetSnapshot() ([]byte, error) {
 	return nil, nil
 }
 
@@ -59,7 +59,7 @@ type statefulComputation struct {
 }
 
 func newStatefulComputation(streamID s.StreamID, coordinator Coordinator,
-	persister Persister, plugin ComputationPlugin) (Computation, error) {
+	persister Persister, plugin ComputationPlugin) (*statefulComputation, error) {
 	groupHandler, err := coordinator.JoinGroup(streamID)
 	if err != nil {
 		return nil, err
@@ -143,9 +143,15 @@ func (comp *statefulComputation) Sync() (time.Time, error) {
 		comp.initialized = true
 	}
 
-	go comp.linearizer.StartForwarding()
-
 	return from, nil
+}
+
+func (comp *statefulComputation) Run() error {
+	go comp.linearizer.StartForwarding()
+	return nil
+}
+
+func (comp *statefulComputation) Stop() {
 }
 
 func (comp *statefulComputation) ProcessTuple(t *s.Tuple) error {
@@ -192,7 +198,7 @@ func (comp *statefulComputation) ProcessTupleLinearized(t *s.Tuple) error {
 	return nil
 }
 
-func (comp *statefulComputation) GetSnapshot() (*s.ComputationSnapshot, error) {
+func (comp *statefulComputation) GetSnapshot() ([]byte, error) {
 	log.Println("[computations] trying to acquire sync lock...")
 	comp.Lock()
 	log.Println("[computations] ... sync lock acquired!")
@@ -206,7 +212,7 @@ func (comp *statefulComputation) GetSnapshot() (*s.ComputationSnapshot, error) {
 		return nil, err
 	}
 	snapshot.PluginState = pluginState
-	return snapshot, nil
+	return json.Marshal(snapshot) // FIXME
 }
 
 // StartComputationPlugin starts the plugin process

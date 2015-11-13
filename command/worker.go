@@ -59,7 +59,6 @@ func Worker(c *cli.Context) {
 	log.Println("Coordinator started")
 
 	go receiver.Listen()
-	// go coordinator.ManageJobs(compManager)
 	go taskManager.ManageTasks()
 
 	// go httpAPI.Serve()

@@ -71,8 +71,7 @@ type TaskCoordinator interface {
 // TaskWatcher watches for and notifies of new available tasks
 type TaskWatcher interface {
 	Watcher
-	New() chan s.StreamID
-	Dropped() chan s.StreamID
+	New() chan []s.StreamID
 }
 
 // Watcher watches for changes in coordination store

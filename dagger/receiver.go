@@ -103,7 +103,7 @@ func (r *Receiver) SubmitTuple(t *s.Tuple, reply *string) error {
 }
 
 // Sync is the RPC method called by slave workers wanting to sync a computation
-func (r *Receiver) Sync(compID s.StreamID, reply *s.ComputationSnapshot) error {
+func (r *Receiver) Sync(compID s.StreamID, reply *[]byte) error {
 	log.Printf("[receiver] Sync request for %s", compID)
 	if r.taskManager == nil {
 		return fmt.Errorf("[receiver] Task manager doesn't exist")
@@ -113,7 +113,7 @@ func (r *Receiver) Sync(compID s.StreamID, reply *s.ComputationSnapshot) error {
 	if err != nil {
 		return err
 	}
-	*reply = *snapshot
+	*reply = snapshot
 	return err
 }
 

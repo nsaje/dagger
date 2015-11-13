@@ -94,15 +94,13 @@ func (c *consulCoordinator) Stop() {
 
 type taskWatcher struct {
 	*setWatcher
-	new     chan s.StreamID
-	dropped chan s.StreamID
+	new chan []s.StreamID
 }
 
 func (c *consulCoordinator) NewTaskWatcher() dagger.TaskWatcher {
 	w := &taskWatcher{
 		setWatcher: c.newSetWatcher(taskPrefix),
-		new:        make(chan s.StreamID),
-		dropped:    make(chan s.StreamID),
+		new:        make(chan []s.StreamID),
 	}
 	go w.watch()
 	return w
@@ -113,20 +111,18 @@ func (w *taskWatcher) watch() {
 		select {
 		case <-w.setWatcher.done:
 			return
-		case newJob := <-w.setWatcher.new:
-			w.new <- s.StreamID(newJob[len(taskPrefix):])
-		case droppedJob := <-w.setWatcher.dropped:
-			w.dropped <- s.StreamID(droppedJob[len(taskPrefix):])
+		case newSet := <-w.setWatcher.New():
+			newTasks := make([]s.StreamID, len(newSet), len(newSet))
+			for i, nt := range newSet {
+				newTasks[i] = s.StreamID(nt[len(taskPrefix):])
+			}
+			w.new <- newTasks
 		}
 	}
 }
 
-func (w *taskWatcher) New() chan s.StreamID {
+func (w *taskWatcher) New() chan []s.StreamID {
 	return w.new
-}
-
-func (w *taskWatcher) Dropped() chan s.StreamID {
-	return w.dropped
 }
 
 func (c *consulCoordinator) AcquireTask(task s.StreamID) (bool, error) {
@@ -159,42 +155,23 @@ func (c *consulCoordinator) ReleaseTask(task s.StreamID) (bool, error) {
 
 // setWatcher watches for and notifies of changes on a KV prefix
 type setWatcher struct {
-	new     chan string
-	dropped chan string
-	errc    chan error
-	done    chan struct{}
+	new  chan []string
+	errc chan error
+	done chan struct{}
 }
 
 func (c *consulCoordinator) newSetWatcher(prefix string) *setWatcher {
 	w := &setWatcher{
-		new:     make(chan string),
-		dropped: make(chan string),
-		errc:    make(chan error),
-		done:    make(chan struct{}),
+		new:  make(chan []string),
+		errc: make(chan error),
+		done: make(chan struct{}),
 	}
 	go w.watch(c.client.KV(), prefix)
 	return w
 }
 
-func (w *setWatcher) New() chan string {
-	return w.new
-}
-
-func (w *setWatcher) Dropped() chan string {
-	return w.dropped
-}
-
-func (w *setWatcher) Error() chan error {
-	return w.errc
-}
-
-func (w *setWatcher) Stop() {
-	close(w.done)
-}
-
 func (w *setWatcher) watch(kv *api.KV, prefix string) {
 	var lastIndex uint64
-	var oldKeys []string
 	for {
 		select {
 		case <-w.done:
@@ -209,17 +186,57 @@ func (w *setWatcher) watch(kv *api.KV, prefix string) {
 				w.errc <- err
 				return
 			}
+			if keys != nil {
+				w.new <- keys
+			}
 			lastIndex = queryMeta.LastIndex
+		}
+	}
+}
 
+func (w *setWatcher) New() chan []string {
+	return w.new
+}
+
+func (w *setWatcher) Error() chan error {
+	return w.errc
+}
+
+func (w *setWatcher) Stop() {
+	close(w.done)
+}
+
+type setDiffWatcher struct {
+	*setWatcher
+	new     chan string
+	dropped chan string
+}
+
+func (c *consulCoordinator) newSetDiffWatcher(prefix string) *setDiffWatcher {
+	w := &setDiffWatcher{
+		setWatcher: c.newSetWatcher(prefix),
+		new:        make(chan string),
+		dropped:    make(chan string),
+	}
+	go w.watch()
+	return w
+}
+
+func (w *setDiffWatcher) watch() {
+	var oldKeys []string
+	for {
+		select {
+		case <-w.done:
+			return
+		case newSet := <-w.setWatcher.New():
 			// prepare a diff set so we can know which keys are newly
 			// added and which are dropped
 			diffSet := make(map[string]struct{})
 			for _, s := range oldKeys {
 				diffSet[s] = struct{}{}
 			}
-			log.Println("diffset", diffSet)
 			oldKeys = make([]string, 0)
-			for _, key := range keys {
+			for _, key := range newSet {
 				_, exists := diffSet[key]
 				if exists {
 					delete(diffSet, key)
@@ -234,6 +251,14 @@ func (w *setWatcher) watch(kv *api.KV, prefix string) {
 			}
 		}
 	}
+}
+
+func (w *setDiffWatcher) New() chan string {
+	return w.new
+}
+
+func (w *setDiffWatcher) Dropped() chan string {
+	return w.dropped
 }
 
 // func (w *SetWatcher) watch(prefix string) {
@@ -536,7 +561,7 @@ func (c *consulCoordinator) monitorPublishers(topic s.StreamID) {
 			log.Printf("[coordinator] Number of publishers of %s is %d, posting a job.", topic, len(keys))
 			// log.Println("Publishers: ", keys)
 			pair := &api.KVPair{
-				Key: fmt.Sprintf("dagger/jobs/%s", topic),
+				Key: taskPrefix + string(topic),
 			}
 			kv.Put(pair, nil) // FIXME error handling
 		} else { // FIXME: do this more elegantly
