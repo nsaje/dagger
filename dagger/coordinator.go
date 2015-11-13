@@ -3,7 +3,6 @@ package dagger
 import (
 	"net"
 	"strings"
-	"time"
 
 	"github.com/nsaje/dagger/s"
 )
@@ -19,7 +18,7 @@ type Tags map[string]string
 // NewSubscriber encapsulates information about a new subscription
 type NewSubscriber struct {
 	Addr string
-	From time.Time
+	From s.Timestamp
 }
 
 // Coordinator coordinates topics, their publishers and subscribers
@@ -36,8 +35,8 @@ type Coordinator interface {
 
 // SubscribeCoordinator handles the act of subscribing to a stream
 type SubscribeCoordinator interface {
-	SubscribeTo(streamID s.StreamID, from time.Time) error
-	CheckpointPosition(streamID s.StreamID, from time.Time) error
+	SubscribeTo(streamID s.StreamID, from s.Timestamp) error
+	CheckpointPosition(streamID s.StreamID, from s.Timestamp) error
 	UnsubscribeFrom(streamID s.StreamID) error
 }
 
@@ -45,7 +44,7 @@ type SubscribeCoordinator interface {
 type PublishCoordinator interface {
 	GetSubscribers(streamID s.StreamID) ([]string, error) // DEPRECATE
 	WatchSubscribers(streamID s.StreamID, stopCh chan struct{}) (chan NewSubscriber, chan string)
-	WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan time.Time)
+	WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan s.Timestamp)
 	RegisterAsPublisher(streamID s.StreamID)
 }
 

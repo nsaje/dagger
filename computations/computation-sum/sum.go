@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/s"
@@ -20,12 +19,12 @@ type SumProcessor struct {
 
 // SumCompState contains state needed for this statistic
 type SumCompState struct {
-	Sums map[time.Time]float64
+	Sums map[s.Timestamp]float64
 }
 
 // SumCompStateJSON modified for JSON transport
 type SumCompStateJSON struct {
-	Buckets []time.Time
+	Buckets []s.Timestamp
 	Sums    []float64
 }
 
@@ -57,7 +56,7 @@ func (c *SumProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new tuple
-func (c *SumProcessor) ProcessBucket(bucket time.Time, t *s.Tuple) error {
+func (c *SumProcessor) ProcessBucket(bucket s.Timestamp, t *s.Tuple) error {
 	log.Println("[avg] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Sums[bucket] += value
@@ -65,7 +64,7 @@ func (c *SumProcessor) ProcessBucket(bucket time.Time, t *s.Tuple) error {
 }
 
 // FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *SumProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
+func (c *SumProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
 	log.Println("[avg] finalizing", bucket)
 	new := &s.Tuple{
 		Data:      c.state.Sums[bucket],
@@ -80,14 +79,14 @@ func (c *SumProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
 // NewSumProcessorState initializes state struct
 func NewSumProcessorState() SumCompState {
 	return SumCompState{
-		Sums: make(map[time.Time]float64),
+		Sums: make(map[s.Timestamp]float64),
 	}
 }
 
 // NewSumProcessorStateJSON initializes state struct for transfer via JSON
 func NewSumProcessorStateJSON() SumCompStateJSON {
 	return SumCompStateJSON{
-		Buckets: make([]time.Time, 0),
+		Buckets: make([]s.Timestamp, 0),
 		Sums:    make([]float64, 0),
 	}
 }

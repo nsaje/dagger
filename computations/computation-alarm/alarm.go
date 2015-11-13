@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"sort"
-	"time"
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/s"
@@ -25,21 +24,21 @@ type AlarmComputation struct {
 type valueTable struct {
 	Values     map[s.StreamID][]*s.Tuple
 	MaxPeriods map[s.StreamID]int
-	LWM        time.Time
+	LWM        s.Timestamp
 }
 
 func newValueTable() valueTable {
 	return valueTable{
 		make(map[s.StreamID][]*s.Tuple),
 		make(map[s.StreamID]int),
-		time.Time{},
+		s.Timestamp(0),
 	}
 }
 
 func (vt *valueTable) getLastN(streamID s.StreamID, n int) []*s.Tuple {
 	timeSeries := vt.Values[streamID]
 	i := sort.Search(len(timeSeries), func(i int) bool {
-		return timeSeries[i].Timestamp.After(vt.LWM)
+		return timeSeries[i].Timestamp > vt.LWM
 	})
 	if i < n {
 		// not enough tuples in time series
@@ -64,7 +63,7 @@ func (vt *valueTable) insert(t *s.Tuple) {
 
 	// find the correct place for our tuple
 	i := sort.Search(len(timeSeries), func(i int) bool {
-		return timeSeries[i].Timestamp.After(t.Timestamp)
+		return timeSeries[i].Timestamp > t.Timestamp
 	})
 
 	// insert it

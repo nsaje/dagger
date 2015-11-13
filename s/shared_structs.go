@@ -8,18 +8,30 @@ import (
 // StreamID identifies a stream of tuples
 type StreamID string
 
+// Timestamp represents the timestamp of a dagger tuple
+type Timestamp int64
+
+// ToTime converts a timestamp into a Go's time object
+func (t Timestamp) ToTime() time.Time {
+	return time.Unix(0, int64(t))
+}
+
+// TSFromTime converts a Go's time object into a dagger timestamp
+func TSFromTime(ts time.Time) Timestamp {
+	return Timestamp(ts.UnixNano())
+}
+
 // Tuple is the atomic unit of data flowing through Dagger
 type Tuple struct {
 	ID        string      `json:"id"`
 	StreamID  StreamID    `json:"stream_id"`
-	LWM       time.Time   `json:"lwm"`
-	Timestamp time.Time   `json:"timestamp"`
+	LWM       Timestamp   `json:"lwm"`
+	Timestamp Timestamp   `json:"timestamp"`
 	Data      interface{} `json:"data"`
 }
 
 func (t *Tuple) String() string {
-	// return fmt.Sprintf("stream_id: %s, data: %v", t.StreamID, t.Data)
-	return fmt.Sprintf("lwm: %s, timestamp:%s, data: %v", t.LWM.UnixNano(), t.Timestamp.UnixNano(), t.Data)
+	return fmt.Sprintln(t.StreamID, t.Timestamp, t.LWM, t.Data)
 }
 
 // ComputationPluginResponse  is returned from a computation plugin to the main app
@@ -42,7 +54,7 @@ type ComputationPluginState struct {
 type ComputationSnapshot struct {
 	Received      []string
 	InputBuffer   []*Tuple
-	LastTimestamp time.Time
+	LastTimestamp Timestamp
 	Produced      []*Tuple
 	PluginState   *ComputationPluginState
 }

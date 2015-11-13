@@ -85,7 +85,7 @@ func CreateTupleFromJSON(b []byte) (*s.Tuple, error) {
 		return nil, fmt.Errorf("Tuple validation error: %s", err)
 	}
 
-	t.LWM = time.Now() // FIXME: think this through
+	t.LWM = s.Timestamp(time.Now().UnixNano()) // FIXME: think this through
 	t.ID = uuid.NewV4().String()
 
 	return &t, nil
@@ -96,7 +96,7 @@ func CreateTuple(streamID s.StreamID, data string) (*s.Tuple, error) {
 	if len(streamID) == 0 {
 		return nil, errors.New("Stream ID shouldn't be empty")
 	}
-	now := time.Now()
+	now := s.Timestamp(time.Now().UnixNano())
 	t := s.Tuple{
 		StreamID:  streamID,
 		ID:        uuid.NewV4().String(),
@@ -115,7 +115,7 @@ func validate(t *s.Tuple) error {
 		return errors.New("'stream_id' should not contain parentheses")
 	}
 
-	if t.Timestamp.IsZero() {
+	if t.Timestamp == 0 {
 		return errors.New("'timestamp' is mandatory")
 	}
 
@@ -158,7 +158,7 @@ func (hs *httpSubscribers) SubscribeTo(streamID s.StreamID, ch chan *s.Tuple) {
 	subscribersSet := hs.subs[streamID]
 	if subscribersSet == nil {
 		subscribersSet = make(map[chan *s.Tuple]struct{})
-		hs.receiver.SubscribeTo(streamID, time.Time{}, hs)
+		hs.receiver.SubscribeTo(streamID, s.Timestamp(0), hs)
 	}
 	subscribersSet[ch] = struct{}{}
 	hs.subs[streamID] = subscribersSet

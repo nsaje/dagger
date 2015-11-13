@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/s"
@@ -21,12 +20,12 @@ type MinProcessor struct {
 
 // MinCompState contains state needed for this statistic
 type MinCompState struct {
-	Values map[time.Time][]float64
+	Values map[s.Timestamp][]float64
 }
 
 // MinCompStateJSON modified for JSON transport
 type MinCompStateJSON struct {
-	Buckets []time.Time
+	Buckets []s.Timestamp
 	Values  [][]float64
 }
 
@@ -58,7 +57,7 @@ func (c *MinProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new tuple
-func (c *MinProcessor) ProcessBucket(bucket time.Time, t *s.Tuple) error {
+func (c *MinProcessor) ProcessBucket(bucket s.Timestamp, t *s.Tuple) error {
 	log.Println("[Min] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Values[bucket] = append(c.state.Values[bucket], value)
@@ -66,7 +65,7 @@ func (c *MinProcessor) ProcessBucket(bucket time.Time, t *s.Tuple) error {
 }
 
 // FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *MinProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
+func (c *MinProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
 	log.Println("[Min] finalizing", bucket)
 	min := math.Inf(1)
 	for _, v := range c.state.Values[bucket] {
@@ -87,14 +86,14 @@ func (c *MinProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
 // NewMinProcessorState initializes state struct
 func NewMinProcessorState() MinCompState {
 	return MinCompState{
-		Values: make(map[time.Time][]float64),
+		Values: make(map[s.Timestamp][]float64),
 	}
 }
 
 // NewMinProcessorStateJSON initializes state struct for transfer via JSON
 func NewMinProcessorStateJSON() MinCompStateJSON {
 	return MinCompStateJSON{
-		Buckets: make([]time.Time, 0),
+		Buckets: make([]s.Timestamp, 0),
 		Values:  make([][]float64, 0),
 	}
 }

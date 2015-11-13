@@ -3,32 +3,31 @@ package dagger
 import (
 	"log"
 	"sync"
-	"time"
 
 	"github.com/nsaje/dagger/s"
 )
 
-var maxTime = time.Unix(1<<63-62135596801, 999999999)
+var maxTime = s.Timestamp(1<<63 - 1)
 
 type LWMTracker interface {
 	TupleProcessor
 	SentTracker
 	BeforeDispatching([]*s.Tuple)
-	GetCombinedLWM() time.Time
-	GetLocalLWM() time.Time
-	GetUpstreamLWM() time.Time
+	GetCombinedLWM() s.Timestamp
+	GetLocalLWM() s.Timestamp
+	GetUpstreamLWM() s.Timestamp
 }
 
 type lwmTracker struct {
-	upstream     map[s.StreamID]time.Time
-	inProcessing map[string]time.Time
+	upstream     map[s.StreamID]s.Timestamp
+	inProcessing map[string]s.Timestamp
 	sync.RWMutex
 }
 
 func NewLWMTracker() LWMTracker {
 	return &lwmTracker{
-		make(map[s.StreamID]time.Time),
-		make(map[string]time.Time),
+		make(map[s.StreamID]s.Timestamp),
+		make(map[string]s.Timestamp),
 		sync.RWMutex{},
 	}
 }
@@ -50,34 +49,34 @@ func (lwmT *lwmTracker) SentSuccessfuly(compID s.StreamID, t *s.Tuple) error {
 	return nil
 }
 
-func (lwmT *lwmTracker) GetUpstreamLWM() time.Time {
+func (lwmT *lwmTracker) GetUpstreamLWM() s.Timestamp {
 	lwmT.RLock()
 	defer lwmT.RUnlock()
-	min := maxTime
+	min := s.Timestamp(1<<63 - 1)
 	for _, lwm := range lwmT.upstream {
-		if lwm.Before(min) {
+		if lwm < min {
 			min = lwm
 		}
 	}
 	return min
 }
 
-func (lwmT *lwmTracker) GetLocalLWM() time.Time {
+func (lwmT *lwmTracker) GetLocalLWM() s.Timestamp {
 	lwmT.RLock()
 	defer lwmT.RUnlock()
-	min := maxTime
+	min := s.Timestamp(1<<63 - 1)
 	for _, lwm := range lwmT.inProcessing {
-		if lwm.Before(min) {
+		if lwm < min {
 			min = lwm
 		}
 	}
 	return min
 }
 
-func (lwmT *lwmTracker) GetCombinedLWM() time.Time {
+func (lwmT *lwmTracker) GetCombinedLWM() s.Timestamp {
 	min := lwmT.GetUpstreamLWM()
 	min2 := lwmT.GetLocalLWM()
-	if min.Before(min2) {
+	if min < min2 {
 		return min
 	}
 	return min2
@@ -86,7 +85,7 @@ func (lwmT *lwmTracker) GetCombinedLWM() time.Time {
 func (lwmT *lwmTracker) ProcessTuple(t *s.Tuple) error {
 	lwmT.Lock()
 	defer lwmT.Unlock()
-	if t.LWM.After(lwmT.upstream[t.StreamID]) {
+	if t.LWM > lwmT.upstream[t.StreamID] {
 		lwmT.upstream[t.StreamID] = t.LWM
 	}
 	return nil

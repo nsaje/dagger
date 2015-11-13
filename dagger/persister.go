@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/nsaje/dagger/s"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -33,7 +32,7 @@ type Persister interface {
 
 type StreamBuffer interface {
 	Insert1(compID s.StreamID, bufID string, t *s.Tuple) error
-	ReadBuffer1(compID s.StreamID, bufID string, from time.Time, to time.Time, tupCh chan *s.Tuple, readCompleted chan struct{})
+	ReadBuffer1(compID s.StreamID, bufID string, from s.Timestamp, to s.Timestamp, tupCh chan *s.Tuple, readCompleted chan struct{})
 }
 
 // SentTracker deletes production entries that have been ACKed from the DB
@@ -105,7 +104,7 @@ func (p *LevelDBPersister) CommitComputation(compID s.StreamID, in *s.Tuple, out
 		if err != nil {
 			return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
 		}
-		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
+		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp, t.ID))
 		batch.Put(key, []byte(serialized))
 	}
 	return p.db.Write(batch, nil)
@@ -170,7 +169,7 @@ func (p *LevelDBPersister) GetSnapshot(compID s.StreamID) (*s.ComputationSnapsho
 		return nil, fmt.Errorf("[persister] iterating input buffer: %s", err)
 	}
 
-	var lastTimestampUnmarshalled time.Time
+	var lastTimestampUnmarshalled s.Timestamp
 	lastTimestamp, err := dbSnapshot.Get([]byte(fmt.Sprintf("%s-last", compID)), nil)
 	if err != nil {
 		// return nil, fmt.Errorf("[persister] reading last timestamp: %s", err)
@@ -208,7 +207,7 @@ func (p *LevelDBPersister) ApplySnapshot(compID s.StreamID, snapshot *s.Computat
 		if err != nil {
 			return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
 		}
-		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
+		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp, t.ID))
 		batch.Put(key, []byte(serialized))
 	}
 
@@ -218,7 +217,7 @@ func (p *LevelDBPersister) ApplySnapshot(compID s.StreamID, snapshot *s.Computat
 		if err != nil {
 			return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
 		}
-		key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
+		key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp, t.ID))
 		batch.Put(key, []byte(serialized))
 	}
 
@@ -264,7 +263,7 @@ func (p *LevelDBPersister) ReceivedAlready(comp s.StreamID, t *s.Tuple) (bool, e
 
 // SentSuccessfuly deletes the production from the DB after it's been ACKed
 func (p *LevelDBPersister) SentSuccessfuly(compID s.StreamID, t *s.Tuple) error {
-	key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
+	key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp, t.ID))
 	return p.db.Delete(key, nil)
 }
 
@@ -274,7 +273,7 @@ func (p *LevelDBPersister) Insert(compID s.StreamID, t *s.Tuple) error {
 	if err != nil {
 		return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
 	}
-	key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp.UnixNano(), t.ID))
+	key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp, t.ID))
 	err = p.db.Put(key, []byte(serialized), &opt.WriteOptions{Sync: false})
 	if err != nil {
 		return fmt.Errorf("[persister] Error persisting tuple %v: %s", t, err)
@@ -284,10 +283,10 @@ func (p *LevelDBPersister) Insert(compID s.StreamID, t *s.Tuple) error {
 }
 
 // ReadBuffer returns a piece of the input buffer between specified timestamps
-func (p *LevelDBPersister) ReadBuffer(compID s.StreamID, from time.Time, to time.Time) ([]*s.Tuple, error) {
+func (p *LevelDBPersister) ReadBuffer(compID s.StreamID, from s.Timestamp, to s.Timestamp) ([]*s.Tuple, error) {
 	var tups []*s.Tuple
-	start := []byte(fmt.Sprintf("%s-i-%d", compID, from.UnixNano()))
-	limit := []byte(fmt.Sprintf("%s-i-%d", compID, to.UnixNano()))
+	start := []byte(fmt.Sprintf("%s-i-%d", compID, from))
+	limit := []byte(fmt.Sprintf("%s-i-%d", compID, to))
 	log.Println("reading0 from, to", string(start), string(limit))
 	iter := p.db.NewIterator(&util.Range{Start: start, Limit: limit}, nil)
 	for iter.Next() {
@@ -308,7 +307,7 @@ func (p *LevelDBPersister) ReadBuffer(compID s.StreamID, from time.Time, to time
 }
 
 // type StreamIterator interface {
-// 	Upto(time.Time) chan *s.Tuple
+// 	Upto(s.Timestamp) chan *s.Tuple
 // }
 
 // Insert inserts a received tuple into the ordered queue for a computation
@@ -317,7 +316,7 @@ func (p *LevelDBPersister) Insert1(compID s.StreamID, bufID string, t *s.Tuple) 
 	if err != nil {
 		return fmt.Errorf("[persister] Error marshalling tuple %v: %s", t, err)
 	}
-	key := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, t.Timestamp.UnixNano(), t.ID))
+	key := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, t.Timestamp, t.ID))
 	err = p.db.Put(key, []byte(serialized), &opt.WriteOptions{Sync: false})
 	if err != nil {
 		return fmt.Errorf("[persister] Error persisting tuple %v: %s", t, err)
@@ -328,10 +327,10 @@ func (p *LevelDBPersister) Insert1(compID s.StreamID, bufID string, t *s.Tuple) 
 
 // ReadBuffer returns a piece of the input buffer between specified timestamps
 func (p *LevelDBPersister) ReadBuffer1(compID s.StreamID, bufID string,
-	from time.Time, to time.Time, tupCh chan *s.Tuple,
+	from s.Timestamp, to s.Timestamp, tupCh chan *s.Tuple,
 	readCompletedCh chan struct{}) { // FIXME: add errCh
-	start := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, from.UnixNano()))
-	limit := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, to.UnixNano()+1))
+	start := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, from))
+	limit := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, to+1))
 	go func() {
 		log.Println("reading from, to", string(start), string(limit))
 		iter := p.db.NewIterator(&util.Range{Start: start, Limit: limit}, nil)
@@ -351,5 +350,5 @@ func (p *LevelDBPersister) ReadBuffer1(compID s.StreamID, bufID string,
 }
 
 // type StreamIterator interface {
-// 	Upto(time.Time) chan *s.Tuple
+// 	Upto(s.Timestamp) chan *s.Tuple
 // }

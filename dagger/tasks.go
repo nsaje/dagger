@@ -5,7 +5,6 @@ import (
 	"log"
 	"math/rand"
 	"strings"
-	"time"
 
 	"github.com/nsaje/dagger/s"
 	"github.com/rcrowley/go-metrics"
@@ -17,7 +16,7 @@ type Task interface {
 	TupleProcessor
 	Run() error
 	GetSnapshot() ([]byte, error)
-	Sync() (time.Time, error)
+	Sync() (s.Timestamp, error)
 	Stop()
 }
 

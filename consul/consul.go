@@ -387,11 +387,11 @@ func (c *consulCoordinator) RegisterAsPublisher(compID s.StreamID) {
 }
 
 // SubscribeTo subscribes to topics with global coordination
-func (c *consulCoordinator) SubscribeTo(topic s.StreamID, from time.Time) error {
+func (c *consulCoordinator) SubscribeTo(topic s.StreamID, from s.Timestamp) error {
 	kv := c.client.KV()
 	pair := &api.KVPair{
 		Key:     c.constructSubscriberKey(topic),
-		Value:   []byte(fmt.Sprintf("%d", from.UnixNano())),
+		Value:   []byte(fmt.Sprintf("%d", from)),
 		Session: c.sessionID,
 	}
 	// ignore bool, since if it's false, it just means we're already subscribed
@@ -404,12 +404,12 @@ func (c *consulCoordinator) SubscribeTo(topic s.StreamID, from time.Time) error 
 	return err
 }
 
-func (c *consulCoordinator) CheckpointPosition(topic s.StreamID, from time.Time) error {
+func (c *consulCoordinator) CheckpointPosition(topic s.StreamID, from s.Timestamp) error {
 	log.Println("[TRACE] checkpointing position", topic, from)
 	kv := c.client.KV()
 	pair := &api.KVPair{
 		Key:     c.constructSubscriberKey(topic),
-		Value:   []byte(fmt.Sprintf("%d", from.UnixNano())),
+		Value:   []byte(fmt.Sprintf("%d", from)),
 		Session: c.sessionID,
 	}
 	_, err := kv.Put(pair, nil)
@@ -633,7 +633,7 @@ func (c *consulCoordinator) WatchSubscribers(topic s.StreamID, stopCh chan struc
 							if err != nil {
 								panic(err)
 							}
-							new <- dagger.NewSubscriber{Addr: subscriber, From: time.Unix(0, from)}
+							new <- dagger.NewSubscriber{Addr: subscriber, From: s.Timestamp(from)}
 						}
 						oldSubscribers = append(oldSubscribers, subscriber)
 						delete(diffSet, subscriber)
@@ -751,7 +751,7 @@ func (sl *subscribersList) fetch() error {
 	return nil
 }
 
-func (c *consulCoordinator) WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan time.Time) {
+func (c *consulCoordinator) WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan s.Timestamp) {
 	key := fmt.Sprintf("dagger/subscribers/%s/%s", topic, subscriber)
 	value := c.watch(key, stopCh, nil)
 	for {
@@ -763,7 +763,7 @@ func (c *consulCoordinator) WatchSubscriberPosition(topic s.StreamID, subscriber
 			if err != nil {
 				posNsec = 0
 			}
-			pos := time.Unix(0, posNsec)
+			pos := s.Timestamp(posNsec)
 			position <- pos
 		}
 	}

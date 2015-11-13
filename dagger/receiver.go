@@ -49,7 +49,7 @@ func (r *Receiver) ListenAddr() net.Addr {
 	return r.listener.Addr()
 }
 
-func (r *Receiver) SubscribeTo(streamID s.StreamID, from time.Time, tp TupleProcessor) {
+func (r *Receiver) SubscribeTo(streamID s.StreamID, from s.Timestamp, tp TupleProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.SubscribeTo(streamID, from)

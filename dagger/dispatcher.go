@@ -2,7 +2,6 @@ package dagger
 
 import (
 	"log"
-	"math"
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
@@ -70,7 +69,7 @@ func (sd *StreamDispatcher) Run() {
 
 			}
 			stopCh := make(chan struct{})
-			posUpdates := make(chan time.Time)
+			posUpdates := make(chan s.Timestamp)
 			go sd.coordinator.WatchSubscriberPosition(sd.streamID, subscriber.Addr, stopCh, posUpdates)
 			iter := &StreamIterator{
 				sd.streamID,
@@ -104,7 +103,7 @@ type StreamIterator struct {
 	compID            s.StreamID
 	lwmTracker        LWMTracker
 	groupHandler      GroupHandler
-	positionUpdates   chan time.Time
+	positionUpdates   chan s.Timestamp
 	notify            chan *s.Tuple
 	stopCh            chan struct{}
 	persister         Persister
@@ -121,10 +120,10 @@ func (si *StreamIterator) Stop() {
 	close(si.stopCh)
 }
 
-func (si *StreamIterator) Dispatch(startAt time.Time) {
+func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 	from := startAt
-	to := time.Unix(0, int64(math.Pow(2, 63)-1))
-	// var newTo, newFrom time.Time
+	to := s.Timestamp(1<<63 - 1)
+	// var newTo, newFrom s.Timestamp
 	// newTo = to
 	readCompletedCh := make(chan struct{})
 	toSend := make(chan *s.Tuple)
@@ -165,7 +164,7 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			log.Println("[iterator] sending tuple:", t)
 			// t.LWM = t.Timestamp.Add(time.Nanosecond)
 			compLWM := si.lwmTracker.GetCombinedLWM()
-			if compLWM.Before(t.Timestamp) {
+			if compLWM < t.Timestamp {
 				t.LWM = compLWM
 			} else {
 				t.LWM = t.Timestamp
@@ -175,7 +174,7 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 		case <-lwmFlushTimer.C:
 			log.Println("[iterator] flush timer firing")
 			if lastSent != nil {
-				lastSent.LWM = lastSent.Timestamp.Add(time.Nanosecond)
+				lastSent.LWM = lastSent.Timestamp + 1
 				err := si.subscriberHandler.ProcessTuple(lastSent)
 				if err != nil {
 					log.Println("ERROR:", err)
@@ -185,7 +184,7 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			from = t.Timestamp
 			lastSent = t
 			si.lwmTracker.SentSuccessfuly("FIXME", t)
-			log.Println("[iterator] newFrom updated:", t, from.UnixNano())
+			log.Println("[iterator] newFrom updated:", t, from)
 		case t := <-si.notify:
 			to = t.Timestamp
 			log.Println("[iterator] newTo updated:", t)
@@ -316,7 +315,7 @@ func (bd *BufferedDispatcher) lwmFlusher() {
 	for {
 		select {
 		case t := <-bd.lwmFlush:
-			if lastSent == nil || t.Timestamp.After(lastSent.Timestamp) {
+			if lastSent == nil || t.Timestamp > lastSent.Timestamp {
 				lastSent = t
 			}
 			lwmFlushTimer.Reset(flushAfter)
@@ -326,7 +325,7 @@ func (bd *BufferedDispatcher) lwmFlusher() {
 			if lastSent != nil {
 				lwm := bd.lwmTracker.GetLocalLWM()
 				if lwm == maxTime {
-					lastSent.LWM = lastSent.Timestamp.Add(time.Nanosecond)
+					lastSent.LWM = lastSent.Timestamp + 1
 					log.Println("[dispatcher] flushing LWM on stream", bd.streamID)
 					for {
 						err := bd.dispatcher.ProcessTuple(lastSent)

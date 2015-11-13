@@ -21,8 +21,8 @@ type statelessComputation struct {
 	dispatcher TupleProcessor
 }
 
-func (comp *statelessComputation) Sync() (time.Time, error) {
-	return time.Time{}, nil
+func (comp *statelessComputation) Sync() (s.Timestamp, error) {
+	return s.Timestamp(0), nil
 }
 
 func (comp *statelessComputation) Run() error {
@@ -93,10 +93,10 @@ func newStatefulComputation(streamID s.StreamID, coordinator Coordinator,
 	return computation, nil
 }
 
-func (comp *statefulComputation) Sync() (time.Time, error) {
+func (comp *statefulComputation) Sync() (s.Timestamp, error) {
 	comp.Lock()
 	defer comp.Unlock()
-	var from time.Time
+	var from s.Timestamp
 	for !comp.initialized {
 		log.Printf("[computations] Computation %s not initialized, syncing with group",
 			comp.streamID)
@@ -131,8 +131,8 @@ func (comp *statefulComputation) Sync() (time.Time, error) {
 				return from, fmt.Errorf("[computations] Error applying computation snapshot: %s", err)
 			}
 			// add one nanosecond so we don't take the last processed tuple again
-			comp.linearizer.SetStartLWM(snapshot.LastTimestamp.Add(time.Nanosecond))
-			from = snapshot.LastTimestamp.Add(time.Nanosecond)
+			comp.linearizer.SetStartLWM(snapshot.LastTimestamp + 1)
+			from = snapshot.LastTimestamp + 1
 			// // recreate deduplicator from newest received info
 			// deduplicator, err := NewDeduplicator(comp.streamID, comp.persister)
 			// if err != nil {

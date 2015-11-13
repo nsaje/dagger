@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/s"
@@ -20,13 +19,13 @@ type CountProcessor struct {
 
 // CountCompState contains state needed for this statistic
 type CountCompState struct {
-	Sums   map[time.Time]float64
-	Counts map[time.Time]int
+	Sums   map[s.Timestamp]float64
+	Counts map[s.Timestamp]int
 }
 
 // CountCompStateJSON modified for JSON transport
 type CountCompStateJSON struct {
-	Buckets []time.Time
+	Buckets []s.Timestamp
 	Counts  []int
 }
 
@@ -58,14 +57,14 @@ func (c *CountProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new tuple
-func (c *CountProcessor) ProcessBucket(bucket time.Time, t *s.Tuple) error {
+func (c *CountProcessor) ProcessBucket(bucket s.Timestamp, t *s.Tuple) error {
 	log.Println("[avg] processing", t)
 	c.state.Counts[bucket]++
 	return nil
 }
 
 // FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *CountProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
+func (c *CountProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
 	log.Println("[avg] finalizing", bucket)
 	new := &s.Tuple{
 		Data:      c.state.Counts[bucket],
@@ -80,14 +79,14 @@ func (c *CountProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
 // NewCountProcessorState initializes state struct
 func NewCountProcessorState() CountCompState {
 	return CountCompState{
-		Counts: make(map[time.Time]int),
+		Counts: make(map[s.Timestamp]int),
 	}
 }
 
 // NewCountProcessorStateJSON initializes state struct for transfer via JSON
 func NewCountProcessorStateJSON() CountCompStateJSON {
 	return CountCompStateJSON{
-		Buckets: make([]time.Time, 0),
+		Buckets: make([]s.Timestamp, 0),
 		Counts:  make([]int, 0),
 	}
 }

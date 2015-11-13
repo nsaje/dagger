@@ -59,7 +59,7 @@ func Producer(c *cli.Context) {
 		// tmpT = tuple
 	}
 	// bufferedDispatcher.Stop()
-	// tmpT.LWM = time.Now().Add(time.Hour)
+	// tmpT.LWM = s.Timestamp(time.Now().UnixNano()).Add(time.Hour)
 	// dispatcher.ProcessTuple(tmpT)
 	time.Sleep(10000 * time.Second)
 	log.Println("EXITING")

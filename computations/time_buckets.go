@@ -11,28 +11,28 @@ import (
 )
 
 type TimeBucketsProcessor interface {
-	ProcessBucket(bucket time.Time, t *s.Tuple) error
-	FinalizeBucket(bucket time.Time) *s.Tuple
+	ProcessBucket(bucket s.Timestamp, t *s.Tuple) error
+	FinalizeBucket(bucket s.Timestamp) *s.Tuple
 	GetState() ([]byte, error)
 	SetState([]byte) error
 }
 
 type TimeBucketsState struct {
-	LastLWM        time.Time        `json:"last_lwm"`
+	LastLWM        s.Timestamp      `json:"last_lwm"`
 	ProcessorState *json.RawMessage `json:"processor_state"`
 }
 
 type TimeBucketsComputation struct {
 	period    time.Duration
-	buckets   map[time.Time]struct{}
+	buckets   map[s.Timestamp]struct{}
 	processor TimeBucketsProcessor
-	lastLWM   time.Time
+	lastLWM   s.Timestamp
 }
 
 func NewTimeBucketsComputation(processor TimeBucketsProcessor) *TimeBucketsComputation {
 	return &TimeBucketsComputation{
 		processor: processor,
-		buckets:   make(map[time.Time]struct{}),
+		buckets:   make(map[s.Timestamp]struct{}),
 	}
 }
 
@@ -91,12 +91,12 @@ func (c *TimeBucketsComputation) SetState(state []byte) error {
 
 func (c *TimeBucketsComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
 	log.Println("[time_buckets] processing tuple", t)
-	bucket := t.Timestamp.Round(c.period)
+	bucket := s.TSFromTime(t.Timestamp.ToTime().Round(c.period))
 	_, ok := t.Data.(float64)
 	if !ok {
 		return nil, fmt.Errorf("Wrong data format, expected float!")
 	}
-	if t.Timestamp.Before(c.lastLWM) {
+	if t.Timestamp < c.lastLWM {
 		return nil, fmt.Errorf("LWM semantics violated! Tuple ts: %v, lastLWM: %v", t.Timestamp, c.lastLWM)
 	}
 
@@ -107,7 +107,7 @@ func (c *TimeBucketsComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
 	var productions []*s.Tuple
 
 	for bucket, _ := range c.buckets {
-		if bucket.Add(c.period).Before(t.LWM) {
+		if bucket+s.Timestamp(c.period) < t.LWM {
 			log.Println("bucket %s before LWM %s!", bucket, t.LWM)
 			new := c.processor.FinalizeBucket(bucket)
 			delete(c.buckets, bucket)

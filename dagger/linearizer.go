@@ -2,7 +2,6 @@ package dagger
 
 import (
 	"log"
-	"time"
 
 	"github.com/nsaje/dagger/s"
 )
@@ -10,7 +9,7 @@ import (
 // LinearizerStore represents a sorted persistent buffer of tuples
 type LinearizerStore interface {
 	Insert(compID s.StreamID, t *s.Tuple) error
-	ReadBuffer(compID s.StreamID, from time.Time, to time.Time) ([]*s.Tuple, error)
+	ReadBuffer(compID s.StreamID, from s.Timestamp, to s.Timestamp) ([]*s.Tuple, error)
 }
 
 // Linearizer buffers tuples and forwards them to the next TupleProcessor sorted
@@ -20,9 +19,9 @@ type Linearizer struct {
 	compID     s.StreamID
 	store      LinearizerStore
 	lwmTracker LWMTracker
-	LWM        time.Time
-	lwmCh      chan time.Time
-	startAtLWM time.Time
+	LWM        s.Timestamp
+	lwmCh      chan s.Timestamp
+	startAtLWM s.Timestamp
 	ltp        LinearizedTupleProcessor
 	tmpT       chan *s.Tuple
 }
@@ -33,7 +32,7 @@ func NewLinearizer(compID s.StreamID, store LinearizerStore, lwmTracker LWMTrack
 		compID:     compID,
 		store:      store,
 		lwmTracker: lwmTracker,
-		lwmCh:      make(chan time.Time),
+		lwmCh:      make(chan s.Timestamp),
 		tmpT:       make(chan *s.Tuple),
 	}
 }
@@ -44,7 +43,7 @@ func (l *Linearizer) SetProcessor(ltp LinearizedTupleProcessor) {
 }
 
 // SetStartLWM sets the LWM at which we start processing
-func (l *Linearizer) SetStartLWM(time time.Time) {
+func (l *Linearizer) SetStartLWM(time s.Timestamp) {
 	l.startAtLWM = time
 }
 
@@ -75,7 +74,8 @@ func (l *Linearizer) StartForwarding() {
 	fromLWM := l.startAtLWM
 	for toLWM := range l.lwmCh {
 		t := <-l.tmpT
-		if !toLWM.After(fromLWM) {
+		// if !toLWM.After(fromLWM) {
+		if toLWM <= fromLWM {
 			log.Println("LWM not increased", t)
 			continue
 		}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"time"
 
 	"github.com/nsaje/dagger/consul"
 	"github.com/nsaje/dagger/dagger"
@@ -50,7 +49,7 @@ func Subscriber(c *cli.Context) {
 	if err != nil {
 		panic(err)
 	}
-	receiver.SubscribeTo(topicGlob, time.Unix(0, from), linearizer)
+	receiver.SubscribeTo(topicGlob, s.Timestamp(from), linearizer)
 	// receiver.SubscribeTo(topicGlob, linearizer)
 	log.Printf("Subscribed to %s", topicGlob)
 

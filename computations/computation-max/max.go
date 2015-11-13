@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/s"
@@ -21,12 +20,12 @@ type MaxProcessor struct {
 
 // MaxCompState contains state needed for this statistic
 type MaxCompState struct {
-	Values map[time.Time][]float64
+	Values map[s.Timestamp][]float64
 }
 
 // MaxCompStateJSON modified for JSON transport
 type MaxCompStateJSON struct {
-	Buckets []time.Time
+	Buckets []s.Timestamp
 	Values  [][]float64
 }
 
@@ -58,7 +57,7 @@ func (c *MaxProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new tuple
-func (c *MaxProcessor) ProcessBucket(bucket time.Time, t *s.Tuple) error {
+func (c *MaxProcessor) ProcessBucket(bucket s.Timestamp, t *s.Tuple) error {
 	log.Println("[Max] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Values[bucket] = append(c.state.Values[bucket], value)
@@ -66,7 +65,7 @@ func (c *MaxProcessor) ProcessBucket(bucket time.Time, t *s.Tuple) error {
 }
 
 // FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *MaxProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
+func (c *MaxProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
 	log.Println("[Max] finalizing", bucket)
 	max := math.Inf(-1)
 	for _, v := range c.state.Values[bucket] {
@@ -87,14 +86,14 @@ func (c *MaxProcessor) FinalizeBucket(bucket time.Time) *s.Tuple {
 // NewMaxProcessorState initializes state struct
 func NewMaxProcessorState() MaxCompState {
 	return MaxCompState{
-		Values: make(map[time.Time][]float64),
+		Values: make(map[s.Timestamp][]float64),
 	}
 }
 
 // NewMaxProcessorStateJSON initializes state struct for transfer via JSON
 func NewMaxProcessorStateJSON() MaxCompStateJSON {
 	return MaxCompStateJSON{
-		Buckets: make([]time.Time, 0),
+		Buckets: make([]s.Timestamp, 0),
 		Values:  make([][]float64, 0),
 	}
 }
