@@ -148,7 +148,8 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 				return // don't send if we aren't the leader
 			}
 		}
-		si.persister.ReadBuffer1(si.compID, "p", from, to, toSend, readCompletedCh)
+		// to + 1 so the 'to' is included
+		si.persister.ReadBuffer1(si.compID, "p", from, to+1, toSend, readCompletedCh)
 	}
 	readCompleted = true
 	// startNewRead()
@@ -162,14 +163,12 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 			// from = updatedPos
 		case t := <-toSend:
 			log.Println("[iterator] sending tuple:", t)
-			// t.LWM = t.Timestamp.Add(time.Nanosecond)
 			compLWM := si.lwmTracker.GetCombinedLWM()
 			if compLWM < t.Timestamp {
 				t.LWM = compLWM
 			} else {
 				t.LWM = t.Timestamp
 			}
-			// t.LWM = bd.lwmTracker.GetCombinedLWM()
 			si.subscriberHandler.ProcessTupleAsync(t, sentSuccessfuly)
 		case <-lwmFlushTimer.C:
 			log.Println("[iterator] flush timer firing")
@@ -181,7 +180,8 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 				}
 			}
 		case t := <-sentSuccessfuly:
-			from = t.Timestamp
+			// + 1 so the just successfuly sent tuple isn't sent again
+			from = t.Timestamp + 1
 			lastSent = t
 			si.lwmTracker.SentSuccessfuly("FIXME", t)
 			log.Println("[iterator] newFrom updated:", t, from)

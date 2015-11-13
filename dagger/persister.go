@@ -330,7 +330,7 @@ func (p *LevelDBPersister) ReadBuffer1(compID s.StreamID, bufID string,
 	from s.Timestamp, to s.Timestamp, tupCh chan *s.Tuple,
 	readCompletedCh chan struct{}) { // FIXME: add errCh
 	start := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, from))
-	limit := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, to+1))
+	limit := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, to))
 	go func() {
 		log.Println("reading from, to", string(start), string(limit))
 		iter := p.db.NewIterator(&util.Range{Start: start, Limit: limit}, nil)
