@@ -405,6 +405,7 @@ func (c *consulCoordinator) SubscribeTo(topic s.StreamID, from time.Time) error 
 }
 
 func (c *consulCoordinator) CheckpointPosition(topic s.StreamID, from time.Time) error {
+	log.Println("[TRACE] checkpointing position", topic, from)
 	kv := c.client.KV()
 	pair := &api.KVPair{
 		Key:     c.constructSubscriberKey(topic),

@@ -160,7 +160,7 @@ func (si *StreamIterator) Dispatch(startAt time.Time) {
 			return
 		case updatedPos := <-si.positionUpdates:
 			log.Println("[iterator] updating position to:", updatedPos)
-			from = updatedPos
+			// from = updatedPos
 		case t := <-toSend:
 			log.Println("[iterator] sending tuple:", t)
 			// t.LWM = t.Timestamp.Add(time.Nanosecond)
