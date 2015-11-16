@@ -6,6 +6,58 @@ import (
 	"github.com/hashicorp/consul/api"
 )
 
+// valueWatcher watches for and notifies of changes on a KV prefix
+type valueWatcher struct {
+	new  chan string
+	errc chan error
+	done chan struct{}
+}
+
+func (c *consulCoordinator) newValueWatcher(key string) *valueWatcher {
+	w := &valueWatcher{
+		new:  make(chan string),
+		errc: make(chan error),
+		done: make(chan struct{}),
+	}
+	go w.watch(c.client.KV(), key)
+	return w
+}
+
+func (w *valueWatcher) watch(kv *api.KV, key string) {
+	var lastIndex uint64
+	for {
+		select {
+		case <-w.done:
+			return
+		default:
+			// do a blocking query
+			pair, queryMeta, err := kv.Get(key, &api.QueryOptions{WaitIndex: lastIndex})
+			log.Println("[consul] value updated at", key)
+			if err != nil {
+				log.Println(err)
+				w.errc <- err
+				return
+			}
+			if pair != nil {
+				w.new <- string(pair.Value)
+			}
+			lastIndex = queryMeta.LastIndex
+		}
+	}
+}
+
+func (w *valueWatcher) New() chan string {
+	return w.new
+}
+
+func (w *valueWatcher) Error() chan error {
+	return w.errc
+}
+
+func (w *valueWatcher) Stop() {
+	close(w.done)
+}
+
 // setWatcher watches for and notifies of changes on a KV prefix
 type setWatcher struct {
 	new  chan []string

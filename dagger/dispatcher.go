@@ -65,19 +65,21 @@ func (sd *StreamDispatcher) Run() {
 			}
 		case subscriber := <-sd.new:
 			log.Println("[streamDispatcher] adding subscriber", subscriber)
-			from := sd.coordinator.GetSubscriberPosition(sd.streamID, subscriber)
+			from, err := sd.coordinator.GetSubscriberPosition(sd.streamID, subscriber)
+			if err != nil {
+				// FIXME
+			}
 			subscriberHandler, err := newSubscriberHandler(subscriber)
 			if err != nil {
 				// FIXME
 			}
 			stopCh := make(chan struct{})
-			posUpdates := make(chan s.Timestamp)
-			go sd.coordinator.WatchSubscriberPosition(sd.streamID, subscriber, stopCh, posUpdates)
+			w := sd.coordinator.NewSubscriberPositionWatcher(sd.streamID, subscriber)
 			iter := &StreamIterator{
 				sd.streamID,
 				sd.lwmTracker,
 				sd.groupHandler,
-				posUpdates,
+				w,
 				make(chan *s.Record),
 				stopCh,
 				sd.persister,
@@ -105,7 +107,7 @@ type StreamIterator struct {
 	compID            s.StreamID
 	lwmTracker        LWMTracker
 	groupHandler      GroupHandler
-	positionUpdates   chan s.Timestamp
+	positionWatcher   ValueWatcher
 	notify            chan *s.Record
 	stopCh            chan struct{}
 	persister         Persister
@@ -160,9 +162,12 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 		select {
 		case <-si.stopCh:
 			return
-		case updatedPos := <-si.positionUpdates:
+		case updatedPos := <-si.positionWatcher.New():
 			log.Println("[iterator] updating position to:", updatedPos)
 			// from = updatedPos
+		case <-si.positionWatcher.Error():
+			log.Println("[ERROR] position watcher error")
+			// close(si.stopCh) // FIXME: do this or not?
 		case r := <-toSend:
 			log.Println("[iterator] sending record:", r)
 			compLWM := si.lwmTracker.GetCombinedLWM()

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -184,115 +183,19 @@ func (c *consulCoordinator) NewSubscribersWatcher(topic s.StreamID) dagger.SetDi
 	return c.newSetDiffWatcher(subscribersPrefix + string(topic) + "/")
 }
 
-func (c *consulCoordinator) GetSubscriberPosition(topic s.StreamID, subscriber string) s.Timestamp {
+func (c *consulCoordinator) GetSubscriberPosition(topic s.StreamID, subscriber string) (s.Timestamp, error) {
 	pair, _, err := c.client.KV().Get(subscribersPrefix+string(topic)+"/"+subscriber, nil)
-	posNsec, err := strconv.ParseInt(string(pair.Value), 10, 64)
 	if err != nil {
-		posNsec = 0
+		return s.Timestamp(0), err
 	}
-	pos := s.Timestamp(posNsec)
-	return pos
+	return s.TSFromString(string(pair.Value)), nil
 }
 
-// remove
-func (c *consulCoordinator) WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan s.Timestamp) {
-	key := fmt.Sprintf("dagger/subscribers/%s/%s", topic, subscriber)
-	value := c.watch(key, stopCh, nil)
-	for {
-		select {
-		case <-stopCh:
-			return
-		case v := <-value:
-			posNsec, err := strconv.ParseInt(v, 10, 64)
-			if err != nil {
-				posNsec = 0
-			}
-			pos := s.Timestamp(posNsec)
-			position <- pos
-		}
-	}
+func (c *consulCoordinator) NewSubscriberPositionWatcher(topic s.StreamID, subscriber string) dagger.ValueWatcher {
+	return c.newValueWatcher(subscribersPrefix + string(topic) + "/" + subscriber)
 }
 
 // ------------- OLD --------------
-
-// // ManageJobs manages jobs
-// func (c *consulCoordinator) ManageJobs(cm dagger.ComputationManager) {
-// 	kv := c.client.KV()
-// 	lastIndex := uint64(0)
-// 	unapplicableSet := make(map[string]struct{})
-// 	for {
-// 		select {
-// 		case <-c.stopCh:
-// 			return
-// 		default:
-// 			keys, queryMeta, err := kv.Keys(JobPrefix, "", &api.QueryOptions{WaitIndex: lastIndex})
-// 			log.Println("[coordinator][WatchJobs] Jobs checked ")
-// 			if err != nil {
-// 				// FIXME
-// 				log.Println("[ERROR][coordinator][WatchJobs]:", err)
-// 				panic(err)
-// 			}
-// 			lastIndex = queryMeta.LastIndex
-//
-// 			randomOrder := rand.Perm(len(keys))
-// 			for _, i := range randomOrder {
-// 				streamID := keys[i][len(JobPrefix):]
-// 				if alreadyTaken := cm.Has(streamID); alreadyTaken {
-// 					continue
-// 				}
-// 				if _, found := unapplicableSet[streamID]; found {
-// 					continue
-// 				}
-// 				gotJob, err := c.TakeJob(keys[i])
-// 				if err != nil {
-// 					// FIXME
-// 					log.Println("[ERROR][coordinator][WatchJobs][gotJob]:", err)
-// 					panic(err)
-// 				}
-// 				if gotJob {
-// 					log.Println("[coordinator] Got job:", keys[i])
-// 					err = cm.SerecComputation(streamID)
-// 					if err != nil {
-// 						log.Println("Error setting up computation:", err) // FIXME
-// 						c.ReleaseJob(keys[i])
-// 						unapplicableSet[streamID] = struct{}{}
-// 						continue
-// 					}
-// 					// job set up successfuly, register as publisher and delete the job
-// 					log.Println("[coordinator] Deleting job: ", streamID)
-// 					kv.Delete(keys[i], nil)
-// 					c.RegisterAsPublisher(streamID)
-// 				}
-// 			}
-// 		}
-// 	}
-// }
-//
-// // TakeJob tries to take a job from the job list. If another Worker
-// // manages to take the job, the call returns false.
-// func (c *consulCoordinator) TakeJob(job string) (bool, error) {
-// 	log.Println("[coordinator] Trying to take job: ", job)
-// 	kv := c.client.KV()
-// 	pair := &api.KVPair{
-// 		Key:     job,
-// 		Session: c.sessionID,
-// 	}
-// 	acquired, _, err := kv.Acquire(pair, nil)
-// 	return acquired, err
-// }
-//
-// // ReleaseJob releases the job
-// func (c *consulCoordinator) ReleaseJob(job string) (bool, error) {
-// 	log.Println("[coordinator] Releasing job: ", job)
-// 	kv := c.client.KV()
-// 	pair := &api.KVPair{
-// 		Key:     job,
-// 		Session: c.sessionID,
-// 	}
-// 	released, _, err := kv.Release(pair, nil)
-// 	return released, err
-// }
-//
 
 // JoinGroup joins the group that produces compID computation
 func (c *consulCoordinator) JoinGroup(compID s.StreamID) (dagger.GroupHandler, error) {
@@ -442,79 +345,6 @@ func (c *consulCoordinator) monitorPublishers(topic s.StreamID) {
 	}
 }
 
-func (c *consulCoordinator) WatchSubscribers(topic s.StreamID, stopCh chan struct{}) (new chan dagger.NewSubscriber, dropped chan string) {
-	tags := dagger.ParseTags(topic)
-	topic = dagger.StripTags(topic)
-	prefix := fmt.Sprintf("dagger/subscribers/%s/", topic)
-
-	new = make(chan dagger.NewSubscriber)
-	dropped = make(chan string)
-
-	go func() {
-		var lastIndex uint64
-		var oldSubscribers []string
-		kv := c.client.KV()
-		// fmt.Println("Executing blocking consul.Keys method, lastIndex: ", sl.lastIndex)
-		for {
-			select {
-			case <-stopCh:
-				return
-			default:
-				// do a blocking query
-				keys, queryMeta, err := kv.Keys(prefix, "", &api.QueryOptions{WaitIndex: lastIndex})
-				log.Println("[coordinator] WatchSubscribers updated in ", prefix)
-				// fmt.Println("consul.Keys method returned, New LastIndex: ", queryMeta.LastIndex)
-				if err != nil {
-					log.Println(err) // FIXME
-					continue
-				}
-				lastIndex = queryMeta.LastIndex
-
-				// prepare a diff set so we can know which subscribers are newly
-				// subscribed and which are dropped
-				diffSet := make(map[string]struct{})
-				for _, s := range oldSubscribers {
-					diffSet[s] = struct{}{}
-				}
-				oldSubscribers = make([]string, 0)
-			SUBSCRIBER_LOOP:
-				for _, key := range keys {
-					subscriberTags := dagger.ParseTags(s.StreamID(key))
-					log.Println("[coordinator][tags] Publisher", tags, ", subscriber", subscriberTags)
-					for k, v := range subscriberTags {
-						if tags[k] != v {
-							continue SUBSCRIBER_LOOP
-						}
-					}
-					if idx := strings.LastIndex(key, "/"); idx > 0 {
-						subscriber := key[idx+1:]
-						_, exists := diffSet[subscriber]
-						if !exists {
-							diffSet[subscriber] = struct{}{}
-							log.Println("coordinator new subscriber", subscriber)
-							pair, _, err := kv.Get(key, nil)
-							if err != nil {
-								panic(err)
-							}
-							from, err := strconv.ParseInt(string(pair.Value), 10, 64)
-							if err != nil {
-								panic(err)
-							}
-							new <- dagger.NewSubscriber{Addr: subscriber, From: s.Timestamp(from)}
-						}
-						oldSubscribers = append(oldSubscribers, subscriber)
-						delete(diffSet, subscriber)
-					}
-				}
-				for s := range diffSet {
-					dropped <- s
-				}
-			}
-		}
-	}()
-	return
-}
-
 // GetSubscribers returns the addresses of subscribers interested in a certain topic
 func (c *consulCoordinator) GetSubscribers(topic s.StreamID) ([]string, error) {
 	tags := dagger.ParseTags(topic)
@@ -597,58 +427,28 @@ func (sl *subscribersList) fetch() error {
 		return err
 	}
 	sl.lastIndex = queryMeta.LastIndex
-	subscribers := make([]string, 0, len(keys))
-	for _, key := range keys {
+	subscribers := filterTags(keys, sl.tags)
+	sl.subscribers = subscribers
+	return nil
+}
+
+func filterTags(subscribers []string, publisherTags dagger.Tags) []string {
+	filtered := make([]string, 0, len(subscribers))
+	for _, key := range subscribers {
 		tags := dagger.ParseTags(s.StreamID(key))
-		log.Println("[coordinator][tags] Publisher", sl.tags, ", subscriber", tags)
+		log.Println("[coordinator][tags] Publisher", publisherTags, ", subscriber", tags)
 		tagsMatch := true
 		for k, v := range tags {
-			if sl.tags[k] != v {
+			if publisherTags[k] != v {
 				tagsMatch = false
 			}
 		}
 		if tagsMatch {
 			idx := strings.LastIndex(key, "/")
 			if idx > 0 {
-				subscribers = append(subscribers, key[idx+1:])
+				filtered = append(filtered, key[idx+1:])
 			}
 		}
 	}
-	sl.subscribers = subscribers
-	return nil
-}
-
-func (c *consulCoordinator) watch(key string, stopCh chan struct{}, value chan string) chan string {
-	if value == nil {
-		value = make(chan string)
-	}
-	lastIndex := uint64(0)
-	// keys, queryMeta, err := kv.Keys(sl.prefix, "", &api.QueryOptions{WaitIndex: sl.lastIndex})
-	kv := c.client.KV()
-	oldVal := ""
-	go func() {
-		for {
-			select {
-			case <-stopCh:
-				return
-			default:
-				pair, queryMeta, err := kv.Get(key, &api.QueryOptions{WaitIndex: lastIndex})
-				if err != nil {
-					log.Println("[ERROR] consul watch", err) // FIXME
-					return
-				}
-				var newVal string
-				if pair != nil {
-					newVal = string(pair.Value)
-				}
-				log.Println("[watch] new val:", newVal)
-				if newVal != oldVal {
-					oldVal = newVal
-					value <- newVal
-				}
-				lastIndex = queryMeta.LastIndex
-			}
-		}
-	}()
-	return value
+	return filtered
 }

@@ -7,11 +7,6 @@ import (
 	"github.com/nsaje/dagger/s"
 )
 
-const (
-	// JobPrefix is the key prefix for jobs
-	JobPrefix = "dagger/jobs/"
-)
-
 // Tags are key-value metadata attached to a stream
 type Tags map[string]string
 
@@ -21,17 +16,27 @@ type NewSubscriber struct {
 	From s.Timestamp
 }
 
+// ValueWatcher watches for changes of a value
+type ValueWatcher interface {
+	Watcher
+	New() chan string
+}
+
 // SetWatcher watches for changes in a set in coordination store
 type SetWatcher interface {
+	Watcher
 	New() chan []string
-	Error() chan error
-	Stop()
 }
 
 // SetDiffWatcher watches for differences in a set in coordination store
 type SetDiffWatcher interface {
+	Watcher
 	Added() chan string
 	Dropped() chan string
+}
+
+// Watcher is a base interface for watchers
+type Watcher interface {
 	Error() chan error
 	Stop()
 }
@@ -59,9 +64,8 @@ type SubscribeCoordinator interface {
 type PublishCoordinator interface {
 	GetSubscribers(streamID s.StreamID) ([]string, error) // DEPRECATE
 	NewSubscribersWatcher(s.StreamID) SetDiffWatcher
-	GetSubscriberPosition(s.StreamID, string) s.Timestamp
-	WatchSubscribers(streamID s.StreamID, stopCh chan struct{}) (chan NewSubscriber, chan string)
-	WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan s.Timestamp)
+	GetSubscriberPosition(s.StreamID, string) (s.Timestamp, error)
+	NewSubscriberPositionWatcher(s.StreamID, string) ValueWatcher
 	RegisterAsPublisher(streamID s.StreamID)
 }
 

@@ -2,6 +2,7 @@ package s
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -19,6 +20,15 @@ func (t Timestamp) ToTime() time.Time {
 // TSFromTime converts a Go's time object into a dagger timestamp
 func TSFromTime(ts time.Time) Timestamp {
 	return Timestamp(ts.UnixNano())
+}
+
+// TSFromString parses a stringified int64 into a dagger timestamp
+func TSFromString(ts string) Timestamp {
+	posNsec, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		posNsec = 0
+	}
+	return Timestamp(posNsec)
 }
 
 // Record is the atomic unit of data flowing through Dagger
