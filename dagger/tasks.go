@@ -90,7 +90,7 @@ func (cm *TaskManager) ManageTasks() {
 				}
 				if gotTask {
 					log.Println("[coordinator] Got task:", candidateTasks[i])
-					err = cm.setupTask(streamID)
+					err = cm.serecTask(streamID)
 					if err != nil {
 						log.Println("Error setting up computation:", err) // FIXME
 						cm.coordinator.ReleaseTask(candidateTasks[i])     // FIXME ensure someone else tries to acquire
@@ -107,7 +107,7 @@ func (cm *TaskManager) ManageTasks() {
 	}
 }
 
-func (cm *TaskManager) setupTask(streamID s.StreamID) error {
+func (cm *TaskManager) serecTask(streamID s.StreamID) error {
 	name, definition, err := ParseComputationID(streamID)
 	if err != nil {
 		return err

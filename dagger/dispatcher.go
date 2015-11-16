@@ -56,11 +56,11 @@ func (sd *StreamDispatcher) Run() {
 		select {
 		case <-sd.stopCh:
 			return
-		case t := <-sd.notifyCh:
+		case r := <-sd.notifyCh:
 			log.Println("[streamDispatcher] notifying iterators")
-			sd.last = t
+			sd.last = r
 			for _, iter := range sd.iterators {
-				iter.ProcessTuple(t)
+				iter.ProcessTuple(r)
 			}
 		case subscriber := <-sd.new:
 			log.Println("[streamDispatcher] adding subscriber", subscriber)
@@ -161,15 +161,15 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 		case updatedPos := <-si.positionUpdates:
 			log.Println("[iterator] updating position to:", updatedPos)
 			// from = updatedPos
-		case t := <-toSend:
-			log.Println("[iterator] sending record:", t)
+		case r := <-toSend:
+			log.Println("[iterator] sending record:", r)
 			compLWM := si.lwmTracker.GetCombinedLWM()
-			if compLWM < t.Timestamp {
-				t.LWM = compLWM
+			if compLWM < r.Timestamp {
+				r.LWM = compLWM
 			} else {
-				t.LWM = t.Timestamp
+				r.LWM = r.Timestamp
 			}
-			si.subscriberHandler.ProcessTupleAsync(t, sentSuccessfuly)
+			si.subscriberHandler.ProcessTupleAsync(r, sentSuccessfuly)
 		case <-lwmFlushTimer.C:
 			log.Println("[iterator] flush timer firing")
 			if lastSent != nil {
@@ -179,15 +179,15 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 					log.Println("ERROR:", err)
 				}
 			}
-		case t := <-sentSuccessfuly:
+		case r := <-sentSuccessfuly:
 			// + 1 so the just successfuly sent record isn't sent again
-			from = t.Timestamp + 1
-			lastSent = t
-			si.lwmTracker.SentSuccessfuly("FIXME", t)
-			log.Println("[iterator] newFrom updated:", t, from)
-		case t := <-si.notify:
-			to = t.Timestamp
-			log.Println("[iterator] newTo updated:", t)
+			from = r.Timestamp + 1
+			lastSent = r
+			si.lwmTracker.SentSuccessfuly("FIXME", r)
+			log.Println("[iterator] newFrom updated:", r, from)
+		case r := <-si.notify:
+			to = r.Timestamp
+			log.Println("[iterator] newTo updated:", r)
 			newDataReady = true
 			log.Println("[iterator] newDataReadyCh", newDataReady, readCompleted)
 			if newDataReady && readCompleted {
@@ -314,9 +314,9 @@ func (bd *BufferedDispatcher) lwmFlusher() {
 	lwmFlushTimer := time.NewTimer(flushAfter)
 	for {
 		select {
-		case t := <-bd.lwmFlush:
-			if lastSent == nil || t.Timestamp > lastSent.Timestamp {
-				lastSent = t
+		case r := <-bd.lwmFlush:
+			if lastSent == nil || r.Timestamp > lastSent.Timestamp {
+				lastSent = r
 			}
 			lwmFlushTimer.Reset(flushAfter)
 		case <-lwmFlushTimer.C:

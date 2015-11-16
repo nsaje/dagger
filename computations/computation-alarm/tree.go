@@ -42,8 +42,8 @@ func (n LeafNode) eval(vt valueTable) (bool, map[s.StreamID][]float64) {
 	if len(lastNTuples) == 0 {
 		return false, values
 	}
-	for i, t := range lastNTuples {
-		value := t.Data.(float64)
+	for i, r := range lastNTuples {
+		value := r.Data.(float64)
 		values[n.streamID][i] = value
 		switch n.relationalOperator {
 		case LT:

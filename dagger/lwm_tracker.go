@@ -35,9 +35,9 @@ func NewLWMTracker() LWMTracker {
 func (lwmT *lwmTracker) BeforeDispatching(ts []*s.Record) {
 	lwmT.Lock()
 	defer lwmT.Unlock()
-	for _, t := range ts {
-		lwmT.inProcessing[t.ID] = t.Timestamp
-		log.Println("setting lwm", t.ID, t.Timestamp)
+	for _, r := range ts {
+		lwmT.inProcessing[r.ID] = r.Timestamp
+		log.Println("setting lwm", r.ID, r.Timestamp)
 	}
 }
 

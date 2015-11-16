@@ -79,13 +79,13 @@ func (l *Linearizer) StartForwarding() {
 			log.Println("LWM not increased", t)
 			continue
 		}
-		tups, _ := l.store.ReadBuffer(l.compID, fromLWM, toLWM)
+		recs, _ := l.store.ReadBuffer(l.compID, fromLWM, toLWM)
 		log.Printf("PROCESSING as result of %s", t)
-		for _, t := range tups {
-			log.Println(t)
+		for _, r := range recs {
+			log.Println(r)
 		}
-		for _, t := range tups {
-			l.ltp.ProcessTupleLinearized(t)
+		for _, r := range recs {
+			l.ltp.ProcessTupleLinearized(r)
 		}
 		fromLWM = toLWM
 	}

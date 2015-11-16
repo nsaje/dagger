@@ -15,8 +15,8 @@ type inmemTupleTracker struct {
 func (tt *inmemTupleTracker) PersistReceivedTuples(compID s.StreamID, records []*s.Record) error {
 	tt.Lock()
 	defer tt.Unlock()
-	for _, t := range records {
-		tt.set[t.ID] = struct{}{}
+	for _, r := range records {
+		tt.set[r.ID] = struct{}{}
 	}
 	return nil
 }
@@ -42,19 +42,19 @@ func TestDeduplicate(t *testing.T) {
 
 	deduplicator, _ := NewDeduplicator(s.StreamID("test"), recordTracker)
 
-	tups := []*s.Record{
+	recs := []*s.Record{
 		&s.Record{ID: "0"},
 		&s.Record{ID: "1"},
 		&s.Record{ID: "1"},
 		&s.Record{ID: "2"},
 	}
 
-	recordTracker.PersistReceivedTuples("test", tups)
+	recordTracker.PersistReceivedTuples("test", recs)
 
 	var actual []*s.Record
-	for _, tup := range tups {
-		if seen, _ := deduplicator.Seen(tup); !seen {
-			actual = append(actual, tup)
+	for _, rec := range recs {
+		if seen, _ := deduplicator.Seen(rec); !seen {
+			actual = append(actual, rec)
 		}
 	}
 	if len(actual) != 2 {

@@ -135,8 +135,8 @@ func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 	defer api.subscribers.UnsubscribeFrom(topicGlob, ch)
 	for {
 		select {
-		case t := <-ch:
-			json, _ := json.Marshal(t) // FIXME: error?
+		case r := <-ch:
+			json, _ := json.Marshal(r) // FIXME: error?
 			w.Write(json)
 			w.Write([]byte("\n"))
 			w.(http.Flusher).Flush()

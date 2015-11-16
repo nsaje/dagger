@@ -274,8 +274,8 @@ func (p *computationPlugin) SubmitTuple(t *s.Record) (*s.ComputationPluginRespon
 			p.name, err)
 	}
 	log.Println("[computations] got reply from plugin")
-	for _, t := range result.Tuples {
-		t.StreamID = p.compID
+	for _, r := range result.Tuples {
+		r.StreamID = p.compID
 	}
 	return &result, err
 }

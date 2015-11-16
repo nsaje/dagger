@@ -329,7 +329,7 @@ func (w *setDiffWatcher) Dropped() chan string {
 // 				}
 // 				if gotJob {
 // 					log.Println("[coordinator] Got job:", keys[i])
-// 					err = cm.SetupComputation(streamID)
+// 					err = cm.SerecComputation(streamID)
 // 					if err != nil {
 // 						log.Println("Error setting up computation:", err) // FIXME
 // 						c.ReleaseJob(keys[i])

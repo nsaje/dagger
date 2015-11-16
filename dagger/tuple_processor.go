@@ -16,10 +16,10 @@ type LinearizedTupleProcessor interface {
 // ProcessMultipleTuples processes multiple records with a single record processor
 func ProcessMultipleTuples(tp TupleProcessor, records []*s.Record) error {
 	errCh := make(chan error)
-	for _, t := range records {
+	for _, r := range records {
 		go func(t *s.Record) {
 			errCh <- tp.ProcessTuple(t)
-		}(t)
+		}(r)
 	}
 
 	// Return an error if any of the calls fail

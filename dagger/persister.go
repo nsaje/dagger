@@ -32,7 +32,7 @@ type Persister interface {
 
 type StreamBuffer interface {
 	Insert1(compID s.StreamID, bufID string, t *s.Record) error
-	ReadBuffer1(compID s.StreamID, bufID string, from s.Timestamp, to s.Timestamp, tupCh chan *s.Record, readCompleted chan struct{})
+	ReadBuffer1(compID s.StreamID, bufID string, from s.Timestamp, to s.Timestamp, recCh chan *s.Record, readCompleted chan struct{})
 }
 
 // SentTracker deletes production entries that have been ACKed from the DB
@@ -99,12 +99,12 @@ func (p *LevelDBPersister) CommitComputation(compID s.StreamID, in *s.Record, ou
 	batch.Put([]byte(fmt.Sprintf("%s-last", compID)), lastTimestamp)
 
 	// save productions
-	for _, t := range out {
-		serialized, err := json.Marshal(t)
+	for _, r := range out {
+		serialized, err := json.Marshal(r)
 		if err != nil {
-			return fmt.Errorf("[persister] Error marshalling record %v: %s", t, err)
+			return fmt.Errorf("[persister] Error marshalling record %v: %s", r, err)
 		}
-		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp, t.ID))
+		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, r.Timestamp, r.ID))
 		batch.Put(key, []byte(serialized))
 	}
 	return p.db.Write(batch, nil)
@@ -202,22 +202,22 @@ func (p *LevelDBPersister) ApplySnapshot(compID s.StreamID, snapshot *s.TaskSnap
 	}
 
 	// save productions
-	for _, t := range snapshot.Produced {
-		serialized, err := json.Marshal(t)
+	for _, r := range snapshot.Produced {
+		serialized, err := json.Marshal(r)
 		if err != nil {
-			return fmt.Errorf("[persister] Error marshalling record %v: %s", t, err)
+			return fmt.Errorf("[persister] Error marshalling record %v: %s", r, err)
 		}
-		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, t.Timestamp, t.ID))
+		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, r.Timestamp, r.ID))
 		batch.Put(key, []byte(serialized))
 	}
 
 	// save input buffer
-	for _, t := range snapshot.InputBuffer {
-		serialized, err := json.Marshal(t)
+	for _, r := range snapshot.InputBuffer {
+		serialized, err := json.Marshal(r)
 		if err != nil {
-			return fmt.Errorf("[persister] Error marshalling record %v: %s", t, err)
+			return fmt.Errorf("[persister] Error marshalling record %v: %s", r, err)
 		}
-		key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp, t.ID))
+		key := []byte(fmt.Sprintf(inKeyFormat, compID, r.Timestamp, r.ID))
 		batch.Put(key, []byte(serialized))
 	}
 
@@ -234,8 +234,8 @@ func (p *LevelDBPersister) ApplySnapshot(compID s.StreamID, snapshot *s.TaskSnap
 // PersistReceivedTuples save the info about which records we've already seen
 func (p *LevelDBPersister) PersistReceivedTuples(comp s.StreamID, records []*s.Record) error {
 	batch := new(leveldb.Batch)
-	for _, t := range records {
-		batch.Put([]byte(fmt.Sprintf(receivedKeyFormat, comp, t.ID)), nil)
+	for _, r := range records {
+		batch.Put([]byte(fmt.Sprintf(receivedKeyFormat, comp, r.ID)), nil)
 	}
 	return p.db.Write(batch, nil)
 }
@@ -284,7 +284,7 @@ func (p *LevelDBPersister) Insert(compID s.StreamID, t *s.Record) error {
 
 // ReadBuffer returns a piece of the input buffer between specified timestamps
 func (p *LevelDBPersister) ReadBuffer(compID s.StreamID, from s.Timestamp, to s.Timestamp) ([]*s.Record, error) {
-	var tups []*s.Record
+	var recs []*s.Record
 	start := []byte(fmt.Sprintf("%s-i-%d", compID, from))
 	limit := []byte(fmt.Sprintf("%s-i-%d", compID, to))
 	log.Println("reading0 from, to", string(start), string(limit))
@@ -295,15 +295,15 @@ func (p *LevelDBPersister) ReadBuffer(compID s.StreamID, from s.Timestamp, to s.
 		if err != nil {
 			return nil, fmt.Errorf("[persister] unmarshalling produced: %s", err)
 		}
-		tups = append(tups, &record)
+		recs = append(recs, &record)
 	}
-	if len(tups) == 0 {
+	if len(recs) == 0 {
 		log.Println("SOMETHING FUNNY")
 		iter := p.db.NewIterator(util.BytesPrefix(start), nil)
 		iter.Next()
 		log.Println(iter.Value())
 	}
-	return tups, nil
+	return recs, nil
 }
 
 // type StreamIterator interface {
@@ -327,7 +327,7 @@ func (p *LevelDBPersister) Insert1(compID s.StreamID, bufID string, t *s.Record)
 
 // ReadBuffer returns a piece of the input buffer between specified timestamps
 func (p *LevelDBPersister) ReadBuffer1(compID s.StreamID, bufID string,
-	from s.Timestamp, to s.Timestamp, tupCh chan *s.Record,
+	from s.Timestamp, to s.Timestamp, recCh chan *s.Record,
 	readCompletedCh chan struct{}) { // FIXME: add errCh
 	start := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, from))
 	limit := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, to))
@@ -342,7 +342,7 @@ func (p *LevelDBPersister) ReadBuffer1(compID s.StreamID, bufID string,
 				log.Println("ERRRROR", err)
 				// errCh <- fmt.Errorf("[persister] unmarshalling produced: %s", err)
 			}
-			tupCh <- &record
+			recCh <- &record
 		}
 		readCompletedCh <- struct{}{}
 	}()
