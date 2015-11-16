@@ -39,7 +39,7 @@ func Producer(c *cli.Context) {
 	go dispatcher.Run()
 
 	reader := bufio.NewReader(os.Stdin)
-	// var tmpT *s.Tuple
+	// var tmpT *s.Record
 	for {
 		var line string
 		line, err := reader.ReadString('\n')
@@ -47,20 +47,20 @@ func Producer(c *cli.Context) {
 			log.Println("error:", err)
 			break
 		}
-		record, err := dagger.CreateTuple(streamID, strings.TrimSpace(line))
+		record, err := dagger.CreateRecord(streamID, strings.TrimSpace(line))
 		if err != nil {
 			log.Println("error:", err)
 			break
 		}
 		log.Println("read", line)
-		// bufferedDispatcher.ProcessTuple(record)
+		// bufferedDispatcher.ProcessRecord(record)
 		persister.Insert1(streamID, "p", record)
-		dispatcher.ProcessTuple(record)
+		dispatcher.ProcessRecord(record)
 		// tmpT = record
 	}
 	// bufferedDispatcher.Stop()
 	// tmpT.LWM = s.Timestamp(time.Now().UnixNano()).Add(time.Hour)
-	// dispatcher.ProcessTuple(tmpT)
+	// dispatcher.ProcessRecord(tmpT)
 	time.Sleep(10000 * time.Second)
 	log.Println("EXITING")
 }

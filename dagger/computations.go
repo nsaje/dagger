@@ -17,7 +17,7 @@ import (
 
 type statelessComputation struct {
 	plugin     ComputationPlugin
-	dispatcher TupleProcessor
+	dispatcher RecordProcessor
 }
 
 func (comp *statelessComputation) Sync() (s.Timestamp, error) {
@@ -31,12 +31,12 @@ func (comp *statelessComputation) Run() error {
 func (comp *statelessComputation) Stop() {
 }
 
-func (comp *statelessComputation) ProcessTuple(t *s.Record) error {
-	response, err := comp.plugin.SubmitTuple(t)
+func (comp *statelessComputation) ProcessRecord(t *s.Record) error {
+	response, err := comp.plugin.SubmitRecord(t)
 	if err != nil {
 		return err
 	}
-	return ProcessMultipleTuples(comp.dispatcher, response.Tuples)
+	return ProcessMultipleRecords(comp.dispatcher, response.Records)
 }
 
 func (comp *statelessComputation) GetSnapshot() (*s.TaskSnapshot, error) {
@@ -50,7 +50,7 @@ type statefulComputation struct {
 	linearizer   *Linearizer
 	persister    Persister
 	lwmTracker   LWMTracker
-	dispatcher   TupleProcessor
+	dispatcher   RecordProcessor
 	stopCh       chan struct{}
 
 	sync.RWMutex // a reader/writer lock for blocking new records on sync request
@@ -153,15 +153,15 @@ func (comp *statefulComputation) Run() error {
 func (comp *statefulComputation) Stop() {
 }
 
-func (comp *statefulComputation) ProcessTuple(t *s.Record) error {
-	err := comp.linearizer.ProcessTuple(t)
+func (comp *statefulComputation) ProcessRecord(t *s.Record) error {
+	err := comp.linearizer.ProcessRecord(t)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (comp *statefulComputation) ProcessTupleLinearized(t *s.Record) error {
+func (comp *statefulComputation) ProcessRecordLinearized(t *s.Record) error {
 	// acquire a lock, so we wait in case there's synchronization with
 	// a slave going on
 	comp.Lock()
@@ -169,13 +169,13 @@ func (comp *statefulComputation) ProcessTupleLinearized(t *s.Record) error {
 
 	// send it to the plugin for processing, but through the linearizer so
 	// the plugin receives the records in order
-	response, err := comp.plugin.SubmitTuple(t)
+	response, err := comp.plugin.SubmitRecord(t)
 	if err != nil {
 		// return err
 	}
 
 	// persist info about received and produced records
-	err = comp.persister.CommitComputation(comp.streamID, t, response.Tuples)
+	err = comp.persister.CommitComputation(comp.streamID, t, response.Records)
 	if err != nil {
 		// return err
 	}
@@ -187,9 +187,9 @@ func (comp *statefulComputation) ProcessTupleLinearized(t *s.Record) error {
 
 	if areWeLeader {
 		log.Println("WE ARE LEADER")
-		comp.lwmTracker.BeforeDispatching(response.Tuples)
+		comp.lwmTracker.BeforeDispatching(response.Records)
 		// send to asynchronous dispatcher and return immediately
-		ProcessMultipleTuples(comp.dispatcher, response.Tuples)
+		ProcessMultipleRecords(comp.dispatcher, response.Records)
 	} else {
 		log.Println("WE ARE NOT LEADER", t)
 	}
@@ -237,7 +237,7 @@ func StartComputationPlugin(name string, compID s.StreamID) (ComputationPlugin, 
 // plugin process
 type ComputationPlugin interface {
 	GetInfo(definition string) (*s.ComputationPluginInfo, error)
-	SubmitTuple(t *s.Record) (*s.ComputationPluginResponse, error)
+	SubmitRecord(t *s.Record) (*s.ComputationPluginResponse, error)
 	GetState() (*s.ComputationPluginState, error)
 	SetState(*s.ComputationPluginState) error
 }
@@ -266,15 +266,15 @@ func (p *computationPlugin) SetState(state *s.ComputationPluginState) error {
 	return err
 }
 
-func (p *computationPlugin) SubmitTuple(t *s.Record) (*s.ComputationPluginResponse, error) {
+func (p *computationPlugin) SubmitRecord(t *s.Record) (*s.ComputationPluginResponse, error) {
 	var result s.ComputationPluginResponse
-	err := p.client.Call("Computation.SubmitTuple", t, &result)
+	err := p.client.Call("Computation.SubmitRecord", t, &result)
 	if err != nil {
 		return nil, fmt.Errorf("Error submitting record to plugin %s: %s",
 			p.name, err)
 	}
 	log.Println("[computations] got reply from plugin")
-	for _, r := range result.Tuples {
+	for _, r := range result.Records {
 		r.StreamID = p.compID
 	}
 	return &result, err

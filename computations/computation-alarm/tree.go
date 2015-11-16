@@ -38,11 +38,11 @@ func (n LeafNode) eval(vt valueTable) (bool, map[s.StreamID][]float64) {
 	result := true
 	values := make(map[s.StreamID][]float64)
 	values[n.streamID] = make([]float64, n.periods)
-	lastNTuples := vt.getLastN(n.streamID, n.periods)
-	if len(lastNTuples) == 0 {
+	lastNRecords := vt.getLastN(n.streamID, n.periods)
+	if len(lastNRecords) == 0 {
 		return false, values
 	}
-	for i, r := range lastNTuples {
+	for i, r := range lastNRecords {
 		value := r.Data.(float64)
 		values[n.streamID][i] = value
 		switch n.relationalOperator {

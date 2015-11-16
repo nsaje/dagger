@@ -64,7 +64,7 @@ type printer struct {
 	dataonly bool
 }
 
-func (p *printer) ProcessTupleLinearized(t *s.Record) error {
+func (p *printer) ProcessRecordLinearized(t *s.Record) error {
 	log.Println("in printer")
 	if p.dataonly {
 		fmt.Println(t.Data)

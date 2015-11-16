@@ -7,12 +7,12 @@ import (
 	"github.com/nsaje/dagger/s"
 )
 
-type inmemTupleTracker struct {
+type inmemRecordTracker struct {
 	set map[string]struct{}
 	sync.RWMutex
 }
 
-func (tt *inmemTupleTracker) PersistReceivedTuples(compID s.StreamID, records []*s.Record) error {
+func (tt *inmemRecordTracker) PersistReceivedRecords(compID s.StreamID, records []*s.Record) error {
 	tt.Lock()
 	defer tt.Unlock()
 	for _, r := range records {
@@ -21,14 +21,14 @@ func (tt *inmemTupleTracker) PersistReceivedTuples(compID s.StreamID, records []
 	return nil
 }
 
-func (tt *inmemTupleTracker) ReceivedAlready(compID s.StreamID, t *s.Record) (bool, error) {
+func (tt *inmemRecordTracker) ReceivedAlready(compID s.StreamID, t *s.Record) (bool, error) {
 	tt.RLock()
 	defer tt.RUnlock()
 	_, found := tt.set[t.ID]
 	return found, nil
 }
 
-func (tt *inmemTupleTracker) GetRecentReceived(s.StreamID) ([]string, error) {
+func (tt *inmemRecordTracker) GetRecentReceived(s.StreamID) ([]string, error) {
 	received := make([]string, 0, len(tt.set))
 	for k := range tt.set {
 		received = append(received, k)
@@ -37,8 +37,8 @@ func (tt *inmemTupleTracker) GetRecentReceived(s.StreamID) ([]string, error) {
 }
 
 func TestDeduplicate(t *testing.T) {
-	recordTracker := &inmemTupleTracker{set: make(map[string]struct{})}
-	recordTracker.PersistReceivedTuples(s.StreamID("test"), []*s.Record{&s.Record{ID: "0"}})
+	recordTracker := &inmemRecordTracker{set: make(map[string]struct{})}
+	recordTracker.PersistReceivedRecords(s.StreamID("test"), []*s.Record{&s.Record{ID: "0"}})
 
 	deduplicator, _ := NewDeduplicator(s.StreamID("test"), recordTracker)
 
@@ -49,7 +49,7 @@ func TestDeduplicate(t *testing.T) {
 		&s.Record{ID: "2"},
 	}
 
-	recordTracker.PersistReceivedTuples("test", recs)
+	recordTracker.PersistReceivedRecords("test", recs)
 
 	var actual []*s.Record
 	for _, rec := range recs {

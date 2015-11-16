@@ -147,7 +147,7 @@ func (c *AlarmComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *AlarmComputation) SubmitTuple(t *s.Record) ([]*s.Record, error) {
+func (c *AlarmComputation) SubmitRecord(t *s.Record) ([]*s.Record, error) {
 	_, ok := t.Data.(float64)
 	if !ok {
 		return nil, fmt.Errorf("Wrong data format, expected float!")
@@ -174,13 +174,13 @@ func (c *AlarmComputation) SubmitTuple(t *s.Record) ([]*s.Record, error) {
 	// 	c.state.buckets[i].evaluated = true
 	// 	c.state.buckets[i].fired = fired
 	// 	if fired {
-	// 		new := &s.Tuple{
+	// 		new := &s.Record{
 	// 			Data: fmt.Sprintf("Alarm %+v fired with values %v",
 	// 				c.state.definition.tree, c.state.buckets[i].values),
 	// 			Timestamp: t.Timestamp,
 	// 			ID:        uuid.NewV4().String(),
 	// 		}
-	// 		return []*s.Tuple{new}, nil
+	// 		return []*s.Record{new}, nil
 	// 	}
 	// }
 

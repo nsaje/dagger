@@ -45,11 +45,11 @@ func (api HttpAPI) submit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
 		return
 	}
-	t, err := CreateTupleFromJSON(body)
+	t, err := CreateRecordFromJSON(body)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error parsing record: %s", err), 500)
 	}
-	err = api.dispatcher.ProcessTuple(t)
+	err = api.dispatcher.ProcessRecord(t)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error dispatching record: %s", err), 500)
 	}
@@ -62,18 +62,18 @@ func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
 		return
 	}
-	t, err := CreateTuple(streamID, string(data))
+	t, err := CreateRecord(streamID, string(data))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error creating record: %s", err), 500)
 	}
-	err = api.dispatcher.ProcessTuple(t)
+	err = api.dispatcher.ProcessRecord(t)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error dispatching record: %s", err), 500)
 	}
 }
 
-// CreateTupleFromJSON parses a complete record from JSON and adds LWM and ID
-func CreateTupleFromJSON(b []byte) (*s.Record, error) {
+// CreateRecordFromJSON parses a complete record from JSON and adds LWM and ID
+func CreateRecordFromJSON(b []byte) (*s.Record, error) {
 	var t s.Record
 	err := json.Unmarshal(b, &t)
 	if err != nil {
@@ -82,7 +82,7 @@ func CreateTupleFromJSON(b []byte) (*s.Record, error) {
 
 	err = validate(&t)
 	if err != nil {
-		return nil, fmt.Errorf("Tuple validation error: %s", err)
+		return nil, fmt.Errorf("Record validation error: %s", err)
 	}
 
 	t.LWM = s.Timestamp(time.Now().UnixNano()) // FIXME: think this through
@@ -91,8 +91,8 @@ func CreateTupleFromJSON(b []byte) (*s.Record, error) {
 	return &t, nil
 }
 
-// CreateTuple creates a new record with given stream ID and data
-func CreateTuple(streamID s.StreamID, data string) (*s.Record, error) {
+// CreateRecord creates a new record with given stream ID and data
+func CreateRecord(streamID s.StreamID, data string) (*s.Record, error) {
 	if len(streamID) == 0 {
 		return nil, errors.New("Stream ID shouldn't be empty")
 	}
@@ -173,7 +173,7 @@ func (hs *httpSubscribers) UnsubscribeFrom(streamID s.StreamID, ch chan *s.Recor
 	}
 }
 
-func (hs *httpSubscribers) ProcessTuple(t *s.Record) error {
+func (hs *httpSubscribers) ProcessRecord(t *s.Record) error {
 	hs.lock.RLock()
 	defer hs.lock.RUnlock()
 	for ch := range hs.subs[t.StreamID] {

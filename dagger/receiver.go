@@ -19,7 +19,7 @@ type Receiver struct {
 	server                    *rpc.Server
 	listener                  net.Listener
 	taskManager               *TaskManager
-	subscribedTupleProcessors map[s.StreamID]map[TupleProcessor]struct{}
+	subscribedRecordProcessors map[s.StreamID]map[RecordProcessor]struct{}
 	checkpointTimers          map[s.StreamID]*time.Timer
 	subscribersLock           *sync.RWMutex
 }
@@ -29,7 +29,7 @@ func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
 	r := &Receiver{
 		conf:                      conf,
 		coordinator:               coordinator,
-		subscribedTupleProcessors: make(map[s.StreamID]map[TupleProcessor]struct{}),
+		subscribedRecordProcessors: make(map[s.StreamID]map[RecordProcessor]struct{}),
 		checkpointTimers:          make(map[s.StreamID]*time.Timer),
 		subscribersLock:           &sync.RWMutex{},
 	}
@@ -49,28 +49,28 @@ func (r *Receiver) ListenAddr() net.Addr {
 	return r.listener.Addr()
 }
 
-func (r *Receiver) SubscribeTo(streamID s.StreamID, from s.Timestamp, tp TupleProcessor) {
+func (r *Receiver) SubscribeTo(streamID s.StreamID, from s.Timestamp, tp RecordProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.SubscribeTo(streamID, from)
-	subscribersSet := r.subscribedTupleProcessors[streamID]
+	subscribersSet := r.subscribedRecordProcessors[streamID]
 	if subscribersSet == nil {
-		subscribersSet = make(map[TupleProcessor]struct{})
+		subscribersSet = make(map[RecordProcessor]struct{})
 		r.checkpointTimers[streamID] = time.NewTimer(time.Second) // FIXME: configurable
 	}
 	subscribersSet[tp] = struct{}{}
-	r.subscribedTupleProcessors[streamID] = subscribersSet
+	r.subscribedRecordProcessors[streamID] = subscribersSet
 }
 
-func (r *Receiver) UnsubscribeFrom(streamID s.StreamID, tp TupleProcessor) {
+func (r *Receiver) UnsubscribeFrom(streamID s.StreamID, tp RecordProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.UnsubscribeFrom(streamID)
-	delete(r.subscribedTupleProcessors[streamID], tp) // FIXME: delete streamID from all maps when empty
+	delete(r.subscribedRecordProcessors[streamID], tp) // FIXME: delete streamID from all maps when empty
 }
 
-// SubmitTuple submits a new record into the worker process
-func (r *Receiver) SubmitTuple(t *s.Record, reply *string) error {
+// SubmitRecord submits a new record into the worker process
+func (r *Receiver) SubmitRecord(t *s.Record, reply *string) error {
 	r.subscribersLock.RLock()
 	defer r.subscribersLock.RUnlock()
 	log.Printf("[receiver] Received: %s", t)
@@ -79,8 +79,8 @@ func (r *Receiver) SubmitTuple(t *s.Record, reply *string) error {
 	// 	time.Sleep(time.Second)
 	// 	return errors.New("rejected for test")
 	// }
-	subscribers := make([]TupleProcessor, 0, len(r.subscribedTupleProcessors[t.StreamID]))
-	for k := range r.subscribedTupleProcessors[t.StreamID] {
+	subscribers := make([]RecordProcessor, 0, len(r.subscribedRecordProcessors[t.StreamID]))
+	for k := range r.subscribedRecordProcessors[t.StreamID] {
 		subscribers = append(subscribers, k)
 	}
 	// log.Printf("[receiver] processing %s with %+v", t, subscribers)

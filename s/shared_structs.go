@@ -21,7 +21,7 @@ func TSFromTime(ts time.Time) Timestamp {
 	return Timestamp(ts.UnixNano())
 }
 
-// Tuple is the atomic unit of data flowing through Dagger
+// Record is the atomic unit of data flowing through Dagger
 type Record struct {
 	ID        string      `json:"id"`
 	StreamID  StreamID    `json:"stream_id"`
@@ -36,7 +36,7 @@ func (t *Record) String() string {
 
 // ComputationPluginResponse  is returned from a computation plugin to the main app
 type ComputationPluginResponse struct {
-	Tuples []*Record
+	Records []*Record
 }
 
 // ComputationPluginInfo contains information about this computation plugin

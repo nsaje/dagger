@@ -58,7 +58,7 @@ func (st MultiSentTracker) SentSuccessfuly(compID s.StreamID, t *s.Record) error
 
 // ReceivedTracker persists info about which records we've already seen
 type ReceivedTracker interface {
-	PersistReceivedTuples(s.StreamID, []*s.Record) error
+	PersistReceivedRecords(s.StreamID, []*s.Record) error
 	GetRecentReceived(s.StreamID) ([]string, error)
 	ReceivedAlready(s.StreamID, *s.Record) (bool, error)
 	// PruneOlderThan
@@ -231,8 +231,8 @@ func (p *LevelDBPersister) ApplySnapshot(compID s.StreamID, snapshot *s.TaskSnap
 	return p.db.Write(batch, nil)
 }
 
-// PersistReceivedTuples save the info about which records we've already seen
-func (p *LevelDBPersister) PersistReceivedTuples(comp s.StreamID, records []*s.Record) error {
+// PersistReceivedRecords save the info about which records we've already seen
+func (p *LevelDBPersister) PersistReceivedRecords(comp s.StreamID, records []*s.Record) error {
 	batch := new(leveldb.Batch)
 	for _, r := range records {
 		batch.Put([]byte(fmt.Sprintf(receivedKeyFormat, comp, r.ID)), nil)
@@ -307,7 +307,7 @@ func (p *LevelDBPersister) ReadBuffer(compID s.StreamID, from s.Timestamp, to s.
 }
 
 // type StreamIterator interface {
-// 	Upto(s.Timestamp) chan *s.Tuple
+// 	Upto(s.Timestamp) chan *s.Record
 // }
 
 // Insert inserts a received record into the ordered queue for a computation
@@ -350,5 +350,5 @@ func (p *LevelDBPersister) ReadBuffer1(compID s.StreamID, bufID string,
 }
 
 // type StreamIterator interface {
-// 	Upto(s.Timestamp) chan *s.Tuple
+// 	Upto(s.Timestamp) chan *s.Record
 // }

@@ -89,7 +89,7 @@ func (c *TimeBucketsComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *TimeBucketsComputation) SubmitTuple(t *s.Record) ([]*s.Record, error) {
+func (c *TimeBucketsComputation) SubmitRecord(t *s.Record) ([]*s.Record, error) {
 	log.Println("[time_buckets] processing record", t)
 	bucket := s.TSFromTime(t.Timestamp.ToTime().Round(c.period))
 	_, ok := t.Data.(float64)
@@ -97,7 +97,7 @@ func (c *TimeBucketsComputation) SubmitTuple(t *s.Record) ([]*s.Record, error) {
 		return nil, fmt.Errorf("Wrong data format, expected float!")
 	}
 	if t.Timestamp < c.lastLWM {
-		return nil, fmt.Errorf("LWM semantics violated! Tuple ts: %v, lastLWM: %v", t.Timestamp, c.lastLWM)
+		return nil, fmt.Errorf("LWM semantics violated! Record ts: %v, lastLWM: %v", t.Timestamp, c.lastLWM)
 	}
 
 	c.buckets[bucket] = struct{}{}

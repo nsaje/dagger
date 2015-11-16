@@ -2,23 +2,23 @@ package dagger
 
 import "github.com/nsaje/dagger/s"
 
-// TupleProcessor is an object capable of processing a record
-type TupleProcessor interface {
-	ProcessTuple(*s.Record) error
+// RecordProcessor is an object capable of processing a record
+type RecordProcessor interface {
+	ProcessRecord(*s.Record) error
 }
 
-// LinearizedTupleProcessor is an object capable of processing a list of ordered
+// LinearizedRecordProcessor is an object capable of processing a list of ordered
 // records
-type LinearizedTupleProcessor interface {
-	ProcessTupleLinearized(*s.Record) error
+type LinearizedRecordProcessor interface {
+	ProcessRecordLinearized(*s.Record) error
 }
 
-// ProcessMultipleTuples processes multiple records with a single record processor
-func ProcessMultipleTuples(tp TupleProcessor, records []*s.Record) error {
+// ProcessMultipleRecords processes multiple records with a single record processor
+func ProcessMultipleRecords(tp RecordProcessor, records []*s.Record) error {
 	errCh := make(chan error)
 	for _, r := range records {
 		go func(t *s.Record) {
-			errCh <- tp.ProcessTuple(t)
+			errCh <- tp.ProcessRecord(t)
 		}(r)
 	}
 
@@ -33,11 +33,11 @@ func ProcessMultipleTuples(tp TupleProcessor, records []*s.Record) error {
 }
 
 // ProcessMultipleProcessors processes a single record with multiple record processors
-func ProcessMultipleProcessors(procs []TupleProcessor, t *s.Record) error {
+func ProcessMultipleProcessors(procs []RecordProcessor, t *s.Record) error {
 	errCh := make(chan error)
 	for _, proc := range procs {
-		go func(proc TupleProcessor) {
-			errCh <- proc.ProcessTuple(t)
+		go func(proc RecordProcessor) {
+			errCh <- proc.ProcessRecord(t)
 		}(proc)
 	}
 

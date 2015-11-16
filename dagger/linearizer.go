@@ -12,7 +12,7 @@ type LinearizerStore interface {
 	ReadBuffer(compID s.StreamID, from s.Timestamp, to s.Timestamp) ([]*s.Record, error)
 }
 
-// Linearizer buffers records and forwards them to the next TupleProcessor sorted
+// Linearizer buffers records and forwards them to the next RecordProcessor sorted
 // by timestamp, while making sure all the records in a certain time frame have
 // already arrived
 type Linearizer struct {
@@ -22,7 +22,7 @@ type Linearizer struct {
 	LWM        s.Timestamp
 	lwmCh      chan s.Timestamp
 	startAtLWM s.Timestamp
-	ltp        LinearizedTupleProcessor
+	ltp        LinearizedRecordProcessor
 	tmpT       chan *s.Record
 }
 
@@ -38,7 +38,7 @@ func NewLinearizer(compID s.StreamID, store LinearizerStore, lwmTracker LWMTrack
 }
 
 // SetProcessor sets the processor that received linearized tuiples
-func (l *Linearizer) SetProcessor(ltp LinearizedTupleProcessor) {
+func (l *Linearizer) SetProcessor(ltp LinearizedRecordProcessor) {
 	l.ltp = ltp
 }
 
@@ -47,8 +47,8 @@ func (l *Linearizer) SetStartLWM(time s.Timestamp) {
 	l.startAtLWM = time
 }
 
-// ProcessTuple inserts the record into the buffer sorted by timestamps
-func (l *Linearizer) ProcessTuple(t *s.Record) error {
+// ProcessRecord inserts the record into the buffer sorted by timestamps
+func (l *Linearizer) ProcessRecord(t *s.Record) error {
 	err := l.store.Insert(l.compID, t)
 	if err != nil {
 		return err
@@ -57,7 +57,7 @@ func (l *Linearizer) ProcessTuple(t *s.Record) error {
 	// calculate low water mark (LWM)
 	// LWM = min(oldest event in this computation, LWM across all publishers this
 	// computation is subscribed to)
-	err = l.lwmTracker.ProcessTuple(t)
+	err = l.lwmTracker.ProcessRecord(t)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func (l *Linearizer) ProcessTuple(t *s.Record) error {
 }
 
 // StartForwarding starts a goroutine that forwards the records from the buffer
-// to the next TupleProcessor when LWM tells us no more records will arrive in
+// to the next RecordProcessor when LWM tells us no more records will arrive in
 // the forwarded time frame
 func (l *Linearizer) StartForwarding() {
 	fromLWM := l.startAtLWM
@@ -85,7 +85,7 @@ func (l *Linearizer) StartForwarding() {
 			log.Println(r)
 		}
 		for _, r := range recs {
-			l.ltp.ProcessTupleLinearized(r)
+			l.ltp.ProcessRecordLinearized(r)
 		}
 		fromLWM = toLWM
 	}

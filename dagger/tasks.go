@@ -13,7 +13,7 @@ import (
 // Task is a unit of computation that consumes and/or produces a stream
 // and can be replicated and synced across workers
 type Task interface {
-	TupleProcessor
+	RecordProcessor
 	Run() error
 	GetSnapshot() (*s.TaskSnapshot, error)
 	Sync() (s.Timestamp, error)

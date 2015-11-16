@@ -12,7 +12,7 @@ import (
 // ComputationImplementation represents a specific computation implementation
 type ComputationImplementation interface {
 	GetInfo(definition string) (s.ComputationPluginInfo, error)
-	SubmitTuple(t *s.Record) ([]*s.Record, error)
+	SubmitRecord(t *s.Record) ([]*s.Record, error)
 	GetState() ([]byte, error)
 	SetState([]byte) error
 }
@@ -43,14 +43,14 @@ func (p *ComputationPlugin) GetInfo(definition string, response *s.ComputationPl
 	return err
 }
 
-// SubmitTuple submits the record into processing
-func (p *ComputationPlugin) SubmitTuple(t *s.Record,
+// SubmitRecord submits the record into processing
+func (p *ComputationPlugin) SubmitRecord(t *s.Record,
 	response *s.ComputationPluginResponse) error {
 	p.mx.Lock()
 	defer p.mx.Unlock()
 	*response = s.ComputationPluginResponse{}
-	newTuples, err := p.impl.SubmitTuple(t)
-	response.Tuples = newTuples
+	newRecords, err := p.impl.SubmitRecord(t)
+	response.Records = newRecords
 	return err
 }
 

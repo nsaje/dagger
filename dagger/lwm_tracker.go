@@ -10,7 +10,7 @@ import (
 var maxTime = s.Timestamp(1<<63 - 1)
 
 type LWMTracker interface {
-	TupleProcessor
+	RecordProcessor
 	SentTracker
 	BeforeDispatching([]*s.Record)
 	GetCombinedLWM() s.Timestamp
@@ -82,7 +82,7 @@ func (lwmT *lwmTracker) GetCombinedLWM() s.Timestamp {
 	return min2
 }
 
-func (lwmT *lwmTracker) ProcessTuple(t *s.Record) error {
+func (lwmT *lwmTracker) ProcessRecord(t *s.Record) error {
 	lwmT.Lock()
 	defer lwmT.Unlock()
 	if t.LWM > lwmT.upstream[t.StreamID] {

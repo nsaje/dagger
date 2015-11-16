@@ -38,7 +38,7 @@ func (c *FooComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *FooComputation) SubmitTuple(t *s.Record) ([]*s.Record, error) {
+func (c *FooComputation) SubmitRecord(t *s.Record) ([]*s.Record, error) {
 	t.Data = fmt.Sprintf("fooized: %v, state: %v", t.Data, c.counter)
 	t.ID = uuid.NewV4().String()
 	c.counter++

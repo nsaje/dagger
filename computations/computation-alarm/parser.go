@@ -1221,7 +1221,7 @@ func (p *parser) setOptions(opts []Option) {
 	}
 }
 
-type resultTuple struct {
+type resultRecord struct {
 	v   interface{}
 	b   bool
 	end savepoint
@@ -1242,7 +1242,7 @@ type parser struct {
 	memoize bool
 	// memoization table for the packrat algorithm:
 	// map[offset in source] map[expression or rule] {value, match}
-	memo map[int]map[interface{}]resultTuple
+	memo map[int]map[interface{}]resultRecord
 
 	// rules table, maps the rule identifier to the rule node
 	rules map[string]*rule
@@ -1370,25 +1370,25 @@ func (p *parser) sliceFrom(start savepoint) []byte {
 	return p.data[start.position.offset:p.pt.position.offset]
 }
 
-func (p *parser) getMemoized(node interface{}) (resultTuple, bool) {
+func (p *parser) getMemoized(node interface{}) (resultRecord, bool) {
 	if len(p.memo) == 0 {
-		return resultTuple{}, false
+		return resultRecord{}, false
 	}
 	m := p.memo[p.pt.offset]
 	if len(m) == 0 {
-		return resultTuple{}, false
+		return resultRecord{}, false
 	}
 	res, ok := m[node]
 	return res, ok
 }
 
-func (p *parser) setMemoized(pt savepoint, node interface{}, record resultTuple) {
+func (p *parser) setMemoized(pt savepoint, node interface{}, record resultRecord) {
 	if p.memo == nil {
-		p.memo = make(map[int]map[interface{}]resultTuple)
+		p.memo = make(map[int]map[interface{}]resultRecord)
 	}
 	m := p.memo[pt.offset]
 	if m == nil {
-		m = make(map[interface{}]resultTuple)
+		m = make(map[interface{}]resultRecord)
 		p.memo[pt.offset] = m
 	}
 	m[node] = record
@@ -1467,7 +1467,7 @@ func (p *parser) parseRule(rule *rule) (interface{}, bool) {
 	}
 
 	if p.memoize {
-		p.setMemoized(start, rule, resultTuple{val, ok, p.pt})
+		p.setMemoized(start, rule, resultRecord{val, ok, p.pt})
 	}
 	return val, ok
 }
@@ -1522,7 +1522,7 @@ func (p *parser) parseExpr(expr interface{}) (interface{}, bool) {
 		panic(fmt.Sprintf("unknown expression type %T", expr))
 	}
 	if p.memoize {
-		p.setMemoized(pt, expr, resultTuple{val, ok, p.pt})
+		p.setMemoized(pt, expr, resultRecord{val, ok, p.pt})
 	}
 	return val, ok
 }

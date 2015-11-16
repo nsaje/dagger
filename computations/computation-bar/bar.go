@@ -19,7 +19,7 @@ func (c BarComputation) GetInfo(definition string) (s.ComputationPluginInfo, err
 	return info, nil
 }
 
-func (c BarComputation) SubmitTuple(t *s.Record) ([]*s.Record, error) {
+func (c BarComputation) SubmitRecord(t *s.Record) ([]*s.Record, error) {
 	t.Data = fmt.Sprintf("barized: %v", t.Data)
 	return []*s.Record{t}, nil
 }
