@@ -21,7 +21,7 @@ type StreamDispatcher struct {
 	iterators    map[string]*StreamIterator
 	notifyCh     chan *s.Record
 	stopCh       chan struct{}
-	new          chan NewSubscriber
+	new          chan string
 	dropped      chan string
 	last         *s.Record
 }
@@ -29,7 +29,8 @@ type StreamDispatcher struct {
 func NewStreamDispatcher(streamID s.StreamID, coordinator Coordinator,
 	persister Persister, lwmTracker LWMTracker, groupHandler GroupHandler) *StreamDispatcher {
 	stopCh := make(chan struct{})
-	new, dropped := coordinator.WatchSubscribers(streamID, stopCh)
+	// new, dropped := coordinator.WatchSubscribers(streamID, stopCh)
+	w := coordinator.NewSubscribersWatcher(streamID)
 	return &StreamDispatcher{
 		streamID:     streamID,
 		persister:    persister,
@@ -39,8 +40,8 @@ func NewStreamDispatcher(streamID s.StreamID, coordinator Coordinator,
 		iterators:    make(map[string]*StreamIterator),
 		notifyCh:     make(chan *s.Record),
 		stopCh:       stopCh,
-		new:          new,
-		dropped:      dropped,
+		new:          w.Added(),
+		dropped:      w.Dropped(),
 	}
 }
 
@@ -64,13 +65,14 @@ func (sd *StreamDispatcher) Run() {
 			}
 		case subscriber := <-sd.new:
 			log.Println("[streamDispatcher] adding subscriber", subscriber)
-			subscriberHandler, err := newSubscriberHandler(subscriber.Addr)
+			from := sd.coordinator.GetSubscriberPosition(sd.streamID, subscriber)
+			subscriberHandler, err := newSubscriberHandler(subscriber)
 			if err != nil {
-
+				// FIXME
 			}
 			stopCh := make(chan struct{})
 			posUpdates := make(chan s.Timestamp)
-			go sd.coordinator.WatchSubscriberPosition(sd.streamID, subscriber.Addr, stopCh, posUpdates)
+			go sd.coordinator.WatchSubscriberPosition(sd.streamID, subscriber, stopCh, posUpdates)
 			iter := &StreamIterator{
 				sd.streamID,
 				sd.lwmTracker,
@@ -81,9 +83,9 @@ func (sd *StreamDispatcher) Run() {
 				sd.persister,
 				subscriberHandler,
 			}
-			sd.iterators[subscriber.Addr] = iter
-			log.Println("STARTING DISPATCH FROM", subscriber.From)
-			go iter.Dispatch(subscriber.From)
+			sd.iterators[subscriber] = iter
+			log.Println("STARTING DISPATCH FROM", from)
+			go iter.Dispatch(from)
 			// notify the new iterator of how far we've gotten
 			if sd.last != nil {
 				iter.ProcessRecord(sd.last)

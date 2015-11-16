@@ -49,13 +49,14 @@ func newTestServer(t *testing.T) *testutil.TestServer {
 }
 
 func TestSetWatcher(t *testing.T) {
+	prefix := "prefix/"
 	srv := newTestServer(t)
 	defer srv.Stop()
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
 	kv := newSimpleKV(t, conf)
 	coord := NewCoordinator(conf).(*consulCoordinator)
-	w := coord.newSetWatcher("test/")
+	w := coord.newSetWatcher(prefix)
 	add := []string{
 		"test/1",
 		"test/2",
@@ -74,10 +75,10 @@ func TestSetWatcher(t *testing.T) {
 	}
 	go func() {
 		for _, k := range add {
-			kv.Put(k, nil)
+			kv.Put(prefix+k, nil)
 		}
 		for _, k := range remove {
-			kv.Delete(k)
+			kv.Delete(prefix + k)
 		}
 	}()
 	var actual [][]string
@@ -104,11 +105,12 @@ func TestSetDiffWatcher(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Stop()
 
+	prefix := "prefix/"
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
 	kv := newSimpleKV(t, conf)
 	coord := NewCoordinator(conf).(*consulCoordinator)
-	w := coord.newSetDiffWatcher("test/")
+	w := coord.newSetDiffWatcher(prefix)
 	add := []string{
 		"test/1",
 		"test/2",
@@ -120,10 +122,10 @@ func TestSetDiffWatcher(t *testing.T) {
 	}
 	go func() {
 		for _, k := range add {
-			kv.Put(k, nil)
+			kv.Put(prefix+k, nil)
 		}
 		for _, k := range remove {
-			kv.Delete(k)
+			kv.Delete(prefix + k)
 		}
 	}()
 	var addedActual, droppedActual []string
@@ -133,7 +135,7 @@ func TestSetDiffWatcher(t *testing.T) {
 		select {
 		case <-timeout.C:
 			t.Fatalf("Timeout!")
-		case k := <-w.New():
+		case k := <-w.Added():
 			addedActual = append(addedActual, k)
 		case k := <-w.Dropped():
 			droppedActual = append(droppedActual, k)
@@ -191,7 +193,11 @@ func TestTaskWatcher(t *testing.T) {
 			t.Fatalf("Timeout!")
 		case k := <-w.New():
 			t.Log("new set:", k)
-			actual = append(actual, k)
+			ks := make([]s.StreamID, len(k), len(k))
+			for i := range k {
+				ks[i] = s.StreamID(k[i])
+			}
+			actual = append(actual, ks)
 			if len(actual) == len(expected) {
 				assert.Equal(t, expected, actual)
 				return

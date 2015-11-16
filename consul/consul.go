@@ -17,7 +17,8 @@ import (
 
 const (
 	// JobPrefix is the key prefix for tasks
-	taskPrefix = "dagger/tasks/"
+	taskPrefix        = "dagger/tasks/"
+	subscribersPrefix = "dagger/subscribers/"
 )
 
 // DefaultConfig returns the default config for Consul
@@ -92,37 +93,8 @@ func (c *consulCoordinator) Stop() {
 	session.Destroy(c.sessionID, nil) // ignoring error, session will expire anyway
 }
 
-type taskWatcher struct {
-	*setWatcher
-	new chan []s.StreamID
-}
-
-func (c *consulCoordinator) NewTaskWatcher() dagger.TaskWatcher {
-	w := &taskWatcher{
-		setWatcher: c.newSetWatcher(taskPrefix),
-		new:        make(chan []s.StreamID),
-	}
-	go w.watch()
-	return w
-}
-
-func (w *taskWatcher) watch() {
-	for {
-		select {
-		case <-w.setWatcher.done:
-			return
-		case newSet := <-w.setWatcher.New():
-			newTasks := make([]s.StreamID, len(newSet), len(newSet))
-			for i, nt := range newSet {
-				newTasks[i] = s.StreamID(nt[len(taskPrefix):])
-			}
-			w.new <- newTasks
-		}
-	}
-}
-
-func (w *taskWatcher) New() chan []s.StreamID {
-	return w.new
+func (c *consulCoordinator) NewTaskWatcher() dagger.SetWatcher {
+	return c.newSetWatcher(taskPrefix)
 }
 
 func (c *consulCoordinator) AcquireTask(task s.StreamID) (bool, error) {
@@ -153,143 +125,93 @@ func (c *consulCoordinator) ReleaseTask(task s.StreamID) (bool, error) {
 	return released, err
 }
 
-// setWatcher watches for and notifies of changes on a KV prefix
-type setWatcher struct {
-	new  chan []string
-	errc chan error
-	done chan struct{}
-}
-
-func (c *consulCoordinator) newSetWatcher(prefix string) *setWatcher {
-	w := &setWatcher{
-		new:  make(chan []string),
-		errc: make(chan error),
-		done: make(chan struct{}),
+// RegisterAsPublisher registers us as publishers of this stream and
+func (c *consulCoordinator) RegisterAsPublisher(compID s.StreamID) {
+	log.Println("[coordinator] Registering as publisher for: ", compID)
+	kv := c.client.KV()
+	pair := &api.KVPair{
+		Key:     fmt.Sprintf("dagger/publishers/%s/%s", compID, c.addr.String()),
+		Session: c.sessionID,
 	}
-	go w.watch(c.client.KV(), prefix)
-	return w
+	_, _, err := kv.Acquire(pair, nil)
+	if err != nil {
+		log.Println("[coordinator] Error registering as publisher: ", err)
+	}
 }
 
-func (w *setWatcher) watch(kv *api.KV, prefix string) {
-	var lastIndex uint64
+// SubscribeTo subscribes to topics with global coordination
+func (c *consulCoordinator) SubscribeTo(topic s.StreamID, from s.Timestamp) error {
+	kv := c.client.KV()
+	pair := &api.KVPair{
+		Key:     c.constructSubscriberKey(topic),
+		Value:   []byte(fmt.Sprintf("%d", from)),
+		Session: c.sessionID,
+	}
+	// ignore bool, since if it's false, it just means we're already subscribed
+	_, _, err := kv.Acquire(pair, nil)
+
+	if strings.ContainsAny(string(topic), "()") {
+		// only monitor publishers if it's a computation
+		go c.monitorPublishers(topic)
+	}
+	return err
+}
+
+func (c *consulCoordinator) CheckpointPosition(topic s.StreamID, from s.Timestamp) error {
+	log.Println("[TRACE] checkpointing position", topic, from)
+	kv := c.client.KV()
+	pair := &api.KVPair{
+		Key:     c.constructSubscriberKey(topic),
+		Value:   []byte(fmt.Sprintf("%d", from)),
+		Session: c.sessionID,
+	}
+	_, err := kv.Put(pair, nil)
+	if err != nil {
+		log.Println("[checkpoint] error", err)
+	}
+	return err
+}
+
+// UnsubscribeFrom unsubscribes from topics with global coordination
+func (c *consulCoordinator) UnsubscribeFrom(topic s.StreamID) error {
+	kv := c.client.KV()
+	key := c.constructSubscriberKey(topic)
+	_, err := kv.Delete(key, nil)
+	return err
+}
+
+func (c *consulCoordinator) NewSubscribersWatcher(topic s.StreamID) dagger.SetDiffWatcher {
+	return c.newSetDiffWatcher(subscribersPrefix + string(topic) + "/")
+}
+
+func (c *consulCoordinator) GetSubscriberPosition(topic s.StreamID, subscriber string) s.Timestamp {
+	pair, _, err := c.client.KV().Get(subscribersPrefix+string(topic)+"/"+subscriber, nil)
+	posNsec, err := strconv.ParseInt(string(pair.Value), 10, 64)
+	if err != nil {
+		posNsec = 0
+	}
+	pos := s.Timestamp(posNsec)
+	return pos
+}
+
+// remove
+func (c *consulCoordinator) WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan s.Timestamp) {
+	key := fmt.Sprintf("dagger/subscribers/%s/%s", topic, subscriber)
+	value := c.watch(key, stopCh, nil)
 	for {
 		select {
-		case <-w.done:
+		case <-stopCh:
 			return
-		default:
-			// do a blocking query
-			keys, queryMeta, err := kv.Keys(prefix, "",
-				&api.QueryOptions{WaitIndex: lastIndex})
-			log.Println("[consul] keys updated in ", prefix, keys)
+		case v := <-value:
+			posNsec, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
-				log.Println(err)
-				w.errc <- err
-				return
+				posNsec = 0
 			}
-			if keys != nil {
-				w.new <- keys
-			}
-			lastIndex = queryMeta.LastIndex
+			pos := s.Timestamp(posNsec)
+			position <- pos
 		}
 	}
 }
-
-func (w *setWatcher) New() chan []string {
-	return w.new
-}
-
-func (w *setWatcher) Error() chan error {
-	return w.errc
-}
-
-func (w *setWatcher) Stop() {
-	close(w.done)
-}
-
-type setDiffWatcher struct {
-	*setWatcher
-	new     chan string
-	dropped chan string
-}
-
-func (c *consulCoordinator) newSetDiffWatcher(prefix string) *setDiffWatcher {
-	w := &setDiffWatcher{
-		setWatcher: c.newSetWatcher(prefix),
-		new:        make(chan string),
-		dropped:    make(chan string),
-	}
-	go w.watch()
-	return w
-}
-
-func (w *setDiffWatcher) watch() {
-	var oldKeys []string
-	for {
-		select {
-		case <-w.done:
-			return
-		case newSet := <-w.setWatcher.New():
-			// prepare a diff set so we can know which keys are newly
-			// added and which are dropped
-			diffSet := make(map[string]struct{})
-			for _, s := range oldKeys {
-				diffSet[s] = struct{}{}
-			}
-			oldKeys = make([]string, 0)
-			for _, key := range newSet {
-				_, exists := diffSet[key]
-				if exists {
-					delete(diffSet, key)
-				} else {
-					log.Println("[consul] new key ", key)
-					w.new <- key
-				}
-				oldKeys = append(oldKeys, key)
-			}
-			for s := range diffSet {
-				w.dropped <- s
-			}
-		}
-	}
-}
-
-func (w *setDiffWatcher) New() chan string {
-	return w.new
-}
-
-func (w *setDiffWatcher) Dropped() chan string {
-	return w.dropped
-}
-
-// func (w *SetWatcher) watch(prefix string) {
-// 	lastIndex := uint64(0)
-// 	kv := c.client.KV()
-// 	oldVal := ""
-// 	go func() {
-// 		for {
-// 			select {
-// 			case <-stopCh:
-// 				return
-// 			default:
-// 				pair, queryMeta, err := kv.Get(key, &api.QueryOptions{WaitIndex: lastIndex})
-// 				if err != nil {
-// 					log.Println("[ERROR] consul watch", err) // FIXME
-// 				}
-// 				var newVal string
-// 				if pair != nil {
-// 					newVal = string(pair.Value)
-// 				}
-// 				log.Println("[watch] new val:", newVal)
-// 				if newVal != oldVal {
-// 					oldVal = newVal
-// 					value <- newVal
-// 				}
-// 				lastIndex = queryMeta.LastIndex
-// 			}
-// 		}
-// 	}()
-// 	return value
-// }
 
 // ------------- OLD --------------
 
@@ -371,61 +293,6 @@ func (w *setDiffWatcher) Dropped() chan string {
 // 	return released, err
 // }
 //
-
-// RegisterAsPublisher registers us as publishers of this stream and
-func (c *consulCoordinator) RegisterAsPublisher(compID s.StreamID) {
-	log.Println("[coordinator] Registering as publisher for: ", compID)
-	kv := c.client.KV()
-	pair := &api.KVPair{
-		Key:     fmt.Sprintf("dagger/publishers/%s/%s", compID, c.addr.String()),
-		Session: c.sessionID,
-	}
-	_, _, err := kv.Acquire(pair, nil)
-	if err != nil {
-		log.Println("[coordinator] Error registering as publisher: ", err)
-	}
-}
-
-// SubscribeTo subscribes to topics with global coordination
-func (c *consulCoordinator) SubscribeTo(topic s.StreamID, from s.Timestamp) error {
-	kv := c.client.KV()
-	pair := &api.KVPair{
-		Key:     c.constructSubscriberKey(topic),
-		Value:   []byte(fmt.Sprintf("%d", from)),
-		Session: c.sessionID,
-	}
-	// ignore bool, since if it's false, it just means we're already subscribed
-	_, _, err := kv.Acquire(pair, nil)
-
-	if strings.ContainsAny(string(topic), "()") {
-		// only monitor publishers if it's a computation
-		go c.monitorPublishers(topic)
-	}
-	return err
-}
-
-func (c *consulCoordinator) CheckpointPosition(topic s.StreamID, from s.Timestamp) error {
-	log.Println("[TRACE] checkpointing position", topic, from)
-	kv := c.client.KV()
-	pair := &api.KVPair{
-		Key:     c.constructSubscriberKey(topic),
-		Value:   []byte(fmt.Sprintf("%d", from)),
-		Session: c.sessionID,
-	}
-	_, err := kv.Put(pair, nil)
-	if err != nil {
-		log.Println("[checkpoint] error", err)
-	}
-	return err
-}
-
-// UnsubscribeFrom unsubscribes from topics with global coordination
-func (c *consulCoordinator) UnsubscribeFrom(topic s.StreamID) error {
-	kv := c.client.KV()
-	key := c.constructSubscriberKey(topic)
-	_, err := kv.Delete(key, nil)
-	return err
-}
 
 // JoinGroup joins the group that produces compID computation
 func (c *consulCoordinator) JoinGroup(compID s.StreamID) (dagger.GroupHandler, error) {
@@ -749,24 +616,6 @@ func (sl *subscribersList) fetch() error {
 	}
 	sl.subscribers = subscribers
 	return nil
-}
-
-func (c *consulCoordinator) WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan s.Timestamp) {
-	key := fmt.Sprintf("dagger/subscribers/%s/%s", topic, subscriber)
-	value := c.watch(key, stopCh, nil)
-	for {
-		select {
-		case <-stopCh:
-			return
-		case v := <-value:
-			posNsec, err := strconv.ParseInt(v, 10, 64)
-			if err != nil {
-				posNsec = 0
-			}
-			pos := s.Timestamp(posNsec)
-			position <- pos
-		}
-	}
 }
 
 func (c *consulCoordinator) watch(key string, stopCh chan struct{}, value chan string) chan string {

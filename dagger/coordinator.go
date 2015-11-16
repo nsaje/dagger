@@ -21,6 +21,21 @@ type NewSubscriber struct {
 	From s.Timestamp
 }
 
+// SetWatcher watches for changes in a set in coordination store
+type SetWatcher interface {
+	New() chan []string
+	Error() chan error
+	Stop()
+}
+
+// SetDiffWatcher watches for differences in a set in coordination store
+type SetDiffWatcher interface {
+	Added() chan string
+	Dropped() chan string
+	Error() chan error
+	Stop()
+}
+
 // Coordinator coordinates topics, their publishers and subscribers
 type Coordinator interface {
 	// GetSubscribers(string) ([]string, error)
@@ -43,6 +58,8 @@ type SubscribeCoordinator interface {
 // PublishCoordinator handles the coordination of publishing a stream
 type PublishCoordinator interface {
 	GetSubscribers(streamID s.StreamID) ([]string, error) // DEPRECATE
+	NewSubscribersWatcher(s.StreamID) SetDiffWatcher
+	GetSubscriberPosition(s.StreamID, string) s.Timestamp
 	WatchSubscribers(streamID s.StreamID, stopCh chan struct{}) (chan NewSubscriber, chan string)
 	WatchSubscriberPosition(topic s.StreamID, subscriber string, stopCh chan struct{}, position chan s.Timestamp)
 	RegisterAsPublisher(streamID s.StreamID)
@@ -57,7 +74,7 @@ type GroupHandler interface {
 type TaskCoordinator interface {
 	// NewTaskWatcher creates a watcher that watches when new tasks show up or
 	// are dropped
-	NewTaskWatcher() TaskWatcher
+	NewTaskWatcher() SetWatcher
 	// AcquireTask tries to take a task from the task list. If another worker
 	// manages to take the task, the call returns false.
 	AcquireTask(s.StreamID) (bool, error)
@@ -65,18 +82,6 @@ type TaskCoordinator interface {
 	TaskAcquired(s.StreamID)
 	// ReleaseTask releases the lock on the task so others can try to acquire it
 	ReleaseTask(s.StreamID) (bool, error)
-}
-
-// TaskWatcher watches for and notifies of new available tasks
-type TaskWatcher interface {
-	Watcher
-	New() chan []s.StreamID
-}
-
-// Watcher watches for changes in coordination store
-type Watcher interface {
-	Error() chan error
-	Stop()
 }
 
 // ReplicationCoordinator coordinates replication of records onto multiple

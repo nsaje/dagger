@@ -75,31 +75,31 @@ func (cm *TaskManager) ManageTasks() {
 			log.Println("got new tasks", candidateTasks)
 			randomOrder := rand.Perm(len(candidateTasks))
 			for _, i := range randomOrder {
-				streamID := candidateTasks[i]
+				streamID := s.StreamID(candidateTasks[i])
 				if _, alreadyTaken := cm.tasks[streamID]; alreadyTaken {
 					continue
 				}
 				if _, found := unapplicableSet[streamID]; found {
 					continue
 				}
-				gotTask, err := cm.coordinator.AcquireTask(candidateTasks[i])
+				gotTask, err := cm.coordinator.AcquireTask(streamID)
 				if err != nil {
 					// FIXME
 					log.Println("[ERROR][coordinator]:", err)
 					panic(err)
 				}
 				if gotTask {
-					log.Println("[coordinator] Got task:", candidateTasks[i])
+					log.Println("[coordinator] Got task:", streamID)
 					err = cm.serecTask(streamID)
 					if err != nil {
 						log.Println("Error setting up computation:", err) // FIXME
-						cm.coordinator.ReleaseTask(candidateTasks[i])     // FIXME ensure someone else tries to acquire
+						cm.coordinator.ReleaseTask(streamID)              // FIXME ensure someone else tries to acquire
 						unapplicableSet[streamID] = struct{}{}
 						continue
 					}
 					// job set up successfuly, register as publisher and delete the job
 					log.Println("[coordinator] Deleting job: ", streamID)
-					cm.coordinator.TaskAcquired(candidateTasks[i])
+					cm.coordinator.TaskAcquired(streamID)
 					cm.coordinator.RegisterAsPublisher(streamID)
 				}
 			}
