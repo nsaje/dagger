@@ -92,8 +92,8 @@ func (c *consulCoordinator) Stop() {
 	session.Destroy(c.sessionID, nil) // ignoring error, session will expire anyway
 }
 
-func (c *consulCoordinator) NewTaskWatcher() dagger.SetWatcher {
-	return c.newSetWatcher(taskPrefix)
+func (c *consulCoordinator) WatchTasks(stop chan struct{}) (chan []string, chan error) {
+	return c.watchSet(taskPrefix, stop)
 }
 
 func (c *consulCoordinator) AcquireTask(task s.StreamID) (bool, error) {
@@ -179,8 +179,8 @@ func (c *consulCoordinator) UnsubscribeFrom(topic s.StreamID) error {
 	return err
 }
 
-func (c *consulCoordinator) NewSubscribersWatcher(topic s.StreamID) dagger.SetDiffWatcher {
-	return c.newSetDiffWatcher(subscribersPrefix + string(topic) + "/")
+func (c *consulCoordinator) WatchSubscribers(topic s.StreamID, stop chan struct{}) (chan string, chan string, chan error) {
+	return c.watchSetDiff(subscribersPrefix+string(topic)+"/", stop)
 }
 
 func (c *consulCoordinator) GetSubscriberPosition(topic s.StreamID, subscriber string) (s.Timestamp, error) {
@@ -191,8 +191,20 @@ func (c *consulCoordinator) GetSubscriberPosition(topic s.StreamID, subscriber s
 	return s.TSFromString(string(pair.Value)), nil
 }
 
-func (c *consulCoordinator) NewSubscriberPositionWatcher(topic s.StreamID, subscriber string) dagger.ValueWatcher {
-	return c.newValueWatcher(subscribersPrefix + string(topic) + "/" + subscriber)
+func (c *consulCoordinator) WatchSubscriberPosition(topic s.StreamID, subscriber string, stop chan struct{}) (chan s.Timestamp, chan error) {
+	new, errc := c.watchValue(subscribersPrefix+string(topic)+"/"+subscriber, stop)
+	posc := make(chan s.Timestamp)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case v := <-new:
+				posc <- s.TSFromString(string(v))
+			}
+		}
+	}()
+	return posc, errc
 }
 
 // ------------- OLD --------------

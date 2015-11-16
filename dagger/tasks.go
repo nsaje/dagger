@@ -63,15 +63,15 @@ func ParseComputationID(s s.StreamID) (string, string, error) {
 // ManageTasks watches for new tasks and tries to acquire and run them
 func (cm *TaskManager) ManageTasks() {
 	unapplicableSet := make(map[s.StreamID]struct{})
-	w := cm.coordinator.NewTaskWatcher()
+	new, errc := cm.coordinator.WatchTasks(cm.done)
 	for {
 		select {
 		case <-cm.done:
 			return
-		case err := <-w.Error():
+		case err := <-errc:
 			log.Println("[error] managetasks", err)
 			return
-		case candidateTasks := <-w.New():
+		case candidateTasks := <-new:
 			log.Println("got new tasks", candidateTasks)
 			randomOrder := rand.Perm(len(candidateTasks))
 			for _, i := range randomOrder {

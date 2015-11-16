@@ -16,31 +16,6 @@ type NewSubscriber struct {
 	From s.Timestamp
 }
 
-// ValueWatcher watches for changes of a value
-type ValueWatcher interface {
-	Watcher
-	New() chan string
-}
-
-// SetWatcher watches for changes in a set in coordination store
-type SetWatcher interface {
-	Watcher
-	New() chan []string
-}
-
-// SetDiffWatcher watches for differences in a set in coordination store
-type SetDiffWatcher interface {
-	Watcher
-	Added() chan string
-	Dropped() chan string
-}
-
-// Watcher is a base interface for watchers
-type Watcher interface {
-	Error() chan error
-	Stop()
-}
-
 // Coordinator coordinates topics, their publishers and subscribers
 type Coordinator interface {
 	// GetSubscribers(string) ([]string, error)
@@ -63,9 +38,9 @@ type SubscribeCoordinator interface {
 // PublishCoordinator handles the coordination of publishing a stream
 type PublishCoordinator interface {
 	GetSubscribers(streamID s.StreamID) ([]string, error) // DEPRECATE
-	NewSubscribersWatcher(s.StreamID) SetDiffWatcher
+	WatchSubscribers(s.StreamID, chan struct{}) (chan string, chan string, chan error)
 	GetSubscriberPosition(s.StreamID, string) (s.Timestamp, error)
-	NewSubscriberPositionWatcher(s.StreamID, string) ValueWatcher
+	WatchSubscriberPosition(s.StreamID, string, chan struct{}) (chan s.Timestamp, chan error)
 	RegisterAsPublisher(streamID s.StreamID)
 }
 
@@ -76,9 +51,9 @@ type GroupHandler interface {
 
 // TaskCoordinator allows watching and taking new available tasks
 type TaskCoordinator interface {
-	// NewTaskWatcher creates a watcher that watches when new tasks show up or
+	// WatchTasks creates a watcher that watches when new tasks show up or
 	// are dropped
-	NewTaskWatcher() SetWatcher
+	WatchTasks(chan struct{}) (chan []string, chan error)
 	// AcquireTask tries to take a task from the task list. If another worker
 	// manages to take the task, the call returns false.
 	AcquireTask(s.StreamID) (bool, error)

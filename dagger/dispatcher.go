@@ -29,8 +29,7 @@ type StreamDispatcher struct {
 func NewStreamDispatcher(streamID s.StreamID, coordinator Coordinator,
 	persister Persister, lwmTracker LWMTracker, groupHandler GroupHandler) *StreamDispatcher {
 	stopCh := make(chan struct{})
-	// new, dropped := coordinator.WatchSubscribers(streamID, stopCh)
-	w := coordinator.NewSubscribersWatcher(streamID)
+	new, dropped, _ := coordinator.WatchSubscribers(streamID, stopCh) // FIXME: handle errc
 	return &StreamDispatcher{
 		streamID:     streamID,
 		persister:    persister,
@@ -40,8 +39,8 @@ func NewStreamDispatcher(streamID s.StreamID, coordinator Coordinator,
 		iterators:    make(map[string]*StreamIterator),
 		notifyCh:     make(chan *s.Record),
 		stopCh:       stopCh,
-		new:          w.Added(),
-		dropped:      w.Dropped(),
+		new:          new,
+		dropped:      dropped,
 	}
 }
 
@@ -74,12 +73,13 @@ func (sd *StreamDispatcher) Run() {
 				// FIXME
 			}
 			stopCh := make(chan struct{})
-			w := sd.coordinator.NewSubscriberPositionWatcher(sd.streamID, subscriber)
+			posUpdates, posErr := sd.coordinator.WatchSubscriberPosition(sd.streamID, subscriber, stopCh)
 			iter := &StreamIterator{
 				sd.streamID,
 				sd.lwmTracker,
 				sd.groupHandler,
-				w,
+				posUpdates,
+				posErr,
 				make(chan *s.Record),
 				stopCh,
 				sd.persister,
@@ -107,7 +107,8 @@ type StreamIterator struct {
 	compID            s.StreamID
 	lwmTracker        LWMTracker
 	groupHandler      GroupHandler
-	positionWatcher   ValueWatcher
+	posUpdates        chan s.Timestamp
+	posErr            chan error
 	notify            chan *s.Record
 	stopCh            chan struct{}
 	persister         Persister
@@ -162,10 +163,10 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 		select {
 		case <-si.stopCh:
 			return
-		case updatedPos := <-si.positionWatcher.New():
+		case updatedPos := <-si.posUpdates:
 			log.Println("[iterator] updating position to:", updatedPos)
 			// from = updatedPos
-		case <-si.positionWatcher.Error():
+		case <-si.posErr:
 			log.Println("[ERROR] position watcher error")
 			// close(si.stopCh) // FIXME: do this or not?
 		case r := <-toSend:

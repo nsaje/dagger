@@ -56,7 +56,7 @@ func TestSetWatcher(t *testing.T) {
 	conf.Address = srv.HTTPAddr
 	kv := newSimpleKV(t, conf)
 	coord := NewCoordinator(conf).(*consulCoordinator)
-	w := coord.newSetWatcher(prefix)
+	newc, errc := coord.watchSet(prefix, nil)
 	add := []string{
 		"test/1",
 		"test/2",
@@ -67,6 +67,7 @@ func TestSetWatcher(t *testing.T) {
 		"test/2",
 	}
 	expected := [][]string{
+		{},
 		add[:1],
 		add[:2],
 		add[:3],
@@ -88,12 +89,12 @@ LOOP:
 		select {
 		case <-timeout.C:
 			break LOOP
-		case k := <-w.New():
+		case k := <-newc:
 			actual = append(actual, k)
 			if len(actual) == len(expected) {
 				break LOOP
 			}
-		case err := <-w.Error():
+		case err := <-errc:
 			t.Fatalf(err.Error())
 		}
 	}
@@ -110,7 +111,7 @@ func TestSetDiffWatcher(t *testing.T) {
 	conf.Address = srv.HTTPAddr
 	kv := newSimpleKV(t, conf)
 	coord := NewCoordinator(conf).(*consulCoordinator)
-	w := coord.newSetDiffWatcher(prefix)
+	addc, droppedc, errc := coord.watchSetDiff(prefix, nil)
 	add := []string{
 		"test/1",
 		"test/2",
@@ -135,11 +136,11 @@ func TestSetDiffWatcher(t *testing.T) {
 		select {
 		case <-timeout.C:
 			t.Fatalf("Timeout!")
-		case k := <-w.Added():
+		case k := <-addc:
 			addedActual = append(addedActual, k)
-		case k := <-w.Dropped():
+		case k := <-droppedc:
 			droppedActual = append(droppedActual, k)
-		case err := <-w.Error():
+		case err := <-errc:
 			t.Fatalf(err.Error())
 		}
 		if len(addedActual) == len(add) &&
@@ -159,7 +160,7 @@ func TestTaskWatcher(t *testing.T) {
 	conf.Address = srv.HTTPAddr
 	kv := newSimpleKV(t, conf)
 	coord := NewCoordinator(conf)
-	w := coord.NewTaskWatcher()
+	newc, errc := coord.WatchTasks(nil)
 	add := []s.StreamID{
 		"task1",
 		"task2",
@@ -170,6 +171,7 @@ func TestTaskWatcher(t *testing.T) {
 		"task2",
 	}
 	expected := [][]s.StreamID{
+		{},
 		add[:1],
 		add[:2],
 		add[:3],
@@ -191,7 +193,7 @@ func TestTaskWatcher(t *testing.T) {
 		select {
 		case <-timeout.C:
 			t.Fatalf("Timeout!")
-		case k := <-w.New():
+		case k := <-newc:
 			t.Log("new set:", k)
 			ks := make([]s.StreamID, len(k), len(k))
 			for i := range k {
@@ -202,7 +204,7 @@ func TestTaskWatcher(t *testing.T) {
 				assert.Equal(t, expected, actual)
 				return
 			}
-		case err := <-w.Error():
+		case err := <-errc:
 			t.Fatalf(err.Error())
 		}
 	}
