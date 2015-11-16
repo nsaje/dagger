@@ -12,16 +12,16 @@ type inmemTupleTracker struct {
 	sync.RWMutex
 }
 
-func (tt *inmemTupleTracker) PersistReceivedTuples(compID s.StreamID, tuples []*s.Tuple) error {
+func (tt *inmemTupleTracker) PersistReceivedTuples(compID s.StreamID, records []*s.Record) error {
 	tt.Lock()
 	defer tt.Unlock()
-	for _, t := range tuples {
+	for _, t := range records {
 		tt.set[t.ID] = struct{}{}
 	}
 	return nil
 }
 
-func (tt *inmemTupleTracker) ReceivedAlready(compID s.StreamID, t *s.Tuple) (bool, error) {
+func (tt *inmemTupleTracker) ReceivedAlready(compID s.StreamID, t *s.Record) (bool, error) {
 	tt.RLock()
 	defer tt.RUnlock()
 	_, found := tt.set[t.ID]
@@ -37,27 +37,27 @@ func (tt *inmemTupleTracker) GetRecentReceived(s.StreamID) ([]string, error) {
 }
 
 func TestDeduplicate(t *testing.T) {
-	tupleTracker := &inmemTupleTracker{set: make(map[string]struct{})}
-	tupleTracker.PersistReceivedTuples(s.StreamID("test"), []*s.Tuple{&s.Tuple{ID: "0"}})
+	recordTracker := &inmemTupleTracker{set: make(map[string]struct{})}
+	recordTracker.PersistReceivedTuples(s.StreamID("test"), []*s.Record{&s.Record{ID: "0"}})
 
-	deduplicator, _ := NewDeduplicator(s.StreamID("test"), tupleTracker)
+	deduplicator, _ := NewDeduplicator(s.StreamID("test"), recordTracker)
 
-	tups := []*s.Tuple{
-		&s.Tuple{ID: "0"},
-		&s.Tuple{ID: "1"},
-		&s.Tuple{ID: "1"},
-		&s.Tuple{ID: "2"},
+	tups := []*s.Record{
+		&s.Record{ID: "0"},
+		&s.Record{ID: "1"},
+		&s.Record{ID: "1"},
+		&s.Record{ID: "2"},
 	}
 
-	tupleTracker.PersistReceivedTuples("test", tups)
+	recordTracker.PersistReceivedTuples("test", tups)
 
-	var actual []*s.Tuple
+	var actual []*s.Record
 	for _, tup := range tups {
 		if seen, _ := deduplicator.Seen(tup); !seen {
 			actual = append(actual, tup)
 		}
 	}
 	if len(actual) != 2 {
-		t.Errorf("Duplicate tuples: %v", actual)
+		t.Errorf("Duplicate records: %v", actual)
 	}
 }

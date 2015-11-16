@@ -10,7 +10,7 @@ import (
 	"github.com/twinj/uuid"
 )
 
-// FooComputation simply prepends "fooized" to a tuple
+// FooComputation simply prepends "fooized" to a record
 type FooComputation struct {
 	counter int
 }
@@ -38,11 +38,11 @@ func (c *FooComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *FooComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
+func (c *FooComputation) SubmitTuple(t *s.Record) ([]*s.Record, error) {
 	t.Data = fmt.Sprintf("fooized: %v, state: %v", t.Data, c.counter)
 	t.ID = uuid.NewV4().String()
 	c.counter++
-	return []*s.Tuple{t}, nil
+	return []*s.Record{t}, nil
 }
 
 func main() {

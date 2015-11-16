@@ -12,7 +12,7 @@ import (
 	"github.com/nsaje/dagger/s"
 )
 
-// Receiver receives new tuples via incoming RPC calls
+// Receiver receives new records via incoming RPC calls
 type Receiver struct {
 	conf                      *Config
 	coordinator               Coordinator
@@ -69,8 +69,8 @@ func (r *Receiver) UnsubscribeFrom(streamID s.StreamID, tp TupleProcessor) {
 	delete(r.subscribedTupleProcessors[streamID], tp) // FIXME: delete streamID from all maps when empty
 }
 
-// SubmitTuple submits a new tuple into the worker process
-func (r *Receiver) SubmitTuple(t *s.Tuple, reply *string) error {
+// SubmitTuple submits a new record into the worker process
+func (r *Receiver) SubmitTuple(t *s.Record, reply *string) error {
 	r.subscribersLock.RLock()
 	defer r.subscribersLock.RUnlock()
 	log.Printf("[receiver] Received: %s", t)
@@ -121,7 +121,7 @@ func (r *Receiver) SetTaskManager(tm *TaskManager) {
 	r.taskManager = tm
 }
 
-// Listen starts receiving incoming tuples over RPC
+// Listen starts receiving incoming records over RPC
 func (r *Receiver) Listen() {
 	for {
 		if conn, err := r.listener.Accept(); err != nil {

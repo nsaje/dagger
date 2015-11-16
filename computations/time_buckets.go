@@ -11,8 +11,8 @@ import (
 )
 
 type TimeBucketsProcessor interface {
-	ProcessBucket(bucket s.Timestamp, t *s.Tuple) error
-	FinalizeBucket(bucket s.Timestamp) *s.Tuple
+	ProcessBucket(bucket s.Timestamp, t *s.Record) error
+	FinalizeBucket(bucket s.Timestamp) *s.Record
 	GetState() ([]byte, error)
 	SetState([]byte) error
 }
@@ -89,8 +89,8 @@ func (c *TimeBucketsComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *TimeBucketsComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
-	log.Println("[time_buckets] processing tuple", t)
+func (c *TimeBucketsComputation) SubmitTuple(t *s.Record) ([]*s.Record, error) {
+	log.Println("[time_buckets] processing record", t)
 	bucket := s.TSFromTime(t.Timestamp.ToTime().Round(c.period))
 	_, ok := t.Data.(float64)
 	if !ok {
@@ -104,7 +104,7 @@ func (c *TimeBucketsComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
 	log.Println("[time_buckets] submitting to processor ", t)
 	c.processor.ProcessBucket(bucket, t)
 
-	var productions []*s.Tuple
+	var productions []*s.Record
 
 	for bucket, _ := range c.buckets {
 		if bucket+s.Timestamp(c.period) < t.LWM {

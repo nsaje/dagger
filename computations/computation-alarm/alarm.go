@@ -22,32 +22,32 @@ type AlarmComputation struct {
 }
 
 type valueTable struct {
-	Values     map[s.StreamID][]*s.Tuple
+	Values     map[s.StreamID][]*s.Record
 	MaxPeriods map[s.StreamID]int
 	LWM        s.Timestamp
 }
 
 func newValueTable() valueTable {
 	return valueTable{
-		make(map[s.StreamID][]*s.Tuple),
+		make(map[s.StreamID][]*s.Record),
 		make(map[s.StreamID]int),
 		s.Timestamp(0),
 	}
 }
 
-func (vt *valueTable) getLastN(streamID s.StreamID, n int) []*s.Tuple {
+func (vt *valueTable) getLastN(streamID s.StreamID, n int) []*s.Record {
 	timeSeries := vt.Values[streamID]
 	i := sort.Search(len(timeSeries), func(i int) bool {
 		return timeSeries[i].Timestamp > vt.LWM
 	})
 	if i < n {
-		// not enough tuples in time series
+		// not enough records in time series
 		return nil
 	}
 
 	evalSlice := timeSeries[i-n : i]
 
-	// delete old tuples
+	// delete old records
 	deleteTo := i - vt.MaxPeriods[streamID]
 	if deleteTo > 0 {
 		timeSeries = timeSeries[deleteTo:]
@@ -57,11 +57,11 @@ func (vt *valueTable) getLastN(streamID s.StreamID, n int) []*s.Tuple {
 	return evalSlice
 }
 
-func (vt *valueTable) insert(t *s.Tuple) {
+func (vt *valueTable) insert(t *s.Record) {
 	timeSeries := vt.Values[t.StreamID]
 	vt.LWM = t.LWM
 
-	// find the correct place for our tuple
+	// find the correct place for our record
 	i := sort.Search(len(timeSeries), func(i int) bool {
 		return timeSeries[i].Timestamp > t.Timestamp
 	})
@@ -147,7 +147,7 @@ func (c *AlarmComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *AlarmComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
+func (c *AlarmComputation) SubmitTuple(t *s.Record) ([]*s.Record, error) {
 	_, ok := t.Data.(float64)
 	if !ok {
 		return nil, fmt.Errorf("Wrong data format, expected float!")
@@ -156,13 +156,13 @@ func (c *AlarmComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
 	c.state.ValueTable.insert(t)
 	fired, values := c.state.definition.tree.eval(c.state.ValueTable)
 	if fired {
-		new := &s.Tuple{
+		new := &s.Record{
 			Data: fmt.Sprintf("Alarm '%s' fired with values %+v",
 				c.state.StringDefinition, values),
 			Timestamp: t.Timestamp,
 			ID:        uuid.NewV4().String(),
 		}
-		return []*s.Tuple{new}, nil
+		return []*s.Record{new}, nil
 	} else {
 		log.Printf("Alarm '%s' NOT fired with values %+v",
 			c.state.StringDefinition, values)

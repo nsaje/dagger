@@ -1382,7 +1382,7 @@ func (p *parser) getMemoized(node interface{}) (resultTuple, bool) {
 	return res, ok
 }
 
-func (p *parser) setMemoized(pt savepoint, node interface{}, tuple resultTuple) {
+func (p *parser) setMemoized(pt savepoint, node interface{}, record resultTuple) {
 	if p.memo == nil {
 		p.memo = make(map[int]map[interface{}]resultTuple)
 	}
@@ -1391,7 +1391,7 @@ func (p *parser) setMemoized(pt savepoint, node interface{}, tuple resultTuple) 
 		m = make(map[interface{}]resultTuple)
 		p.memo[pt.offset] = m
 	}
-	m[node] = tuple
+	m[node] = record
 }
 
 func (p *parser) buildRulesTable(g *grammar) {

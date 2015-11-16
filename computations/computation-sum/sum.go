@@ -55,18 +55,18 @@ func (c *SumProcessor) SetState(state []byte) error {
 	return nil
 }
 
-// ProcessBucket updates the bucket with a new tuple
-func (c *SumProcessor) ProcessBucket(bucket s.Timestamp, t *s.Tuple) error {
+// ProcessBucket updates the bucket with a new record
+func (c *SumProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
 	log.Println("[avg] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Sums[bucket] += value
 	return nil
 }
 
-// FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *SumProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
+// FinalizeBucket produces a new record from the bucket and deletes it
+func (c *SumProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 	log.Println("[avg] finalizing", bucket)
-	new := &s.Tuple{
+	new := &s.Record{
 		Data:      c.state.Sums[bucket],
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),

@@ -11,7 +11,7 @@ import (
 
 // Producer represents a specific producer implementation
 type Producer struct {
-	Stream chan s.Tuple
+	Stream chan s.Record
 	server pie.Server
 }
 
@@ -19,7 +19,7 @@ type Producer struct {
 func InitProducer() Producer {
 	plugin := pie.NewProvider()
 	producer := Producer{
-		Stream: make(chan s.Tuple),
+		Stream: make(chan s.Record),
 		server: plugin,
 	}
 	if err := plugin.RegisterName("Producer", producer); err != nil {
@@ -29,8 +29,8 @@ func InitProducer() Producer {
 	return producer
 }
 
-// GetNext returns the next value in the tuple stream
-func (p Producer) GetNext(arg string, response *s.Tuple) error {
+// GetNext returns the next value in the record stream
+func (p Producer) GetNext(arg string, response *s.Record) error {
 	log.Printf("got call for GetNext\n")
 	*response = <-p.Stream
 	log.Printf("response sent: %s", *response)

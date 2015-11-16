@@ -59,8 +59,8 @@ func (c *AvgProcessor) SetState(state []byte) error {
 	return nil
 }
 
-// ProcessBucket updates the bucket with a new tuple
-func (c *AvgProcessor) ProcessBucket(bucket s.Timestamp, t *s.Tuple) error {
+// ProcessBucket updates the bucket with a new record
+func (c *AvgProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
 	log.Println("[avg] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Counts[bucket]++
@@ -68,10 +68,10 @@ func (c *AvgProcessor) ProcessBucket(bucket s.Timestamp, t *s.Tuple) error {
 	return nil
 }
 
-// FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *AvgProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
+// FinalizeBucket produces a new record from the bucket and deletes it
+func (c *AvgProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 	log.Println("[avg] finalizing", bucket)
-	new := &s.Tuple{
+	new := &s.Record{
 		Data:      c.state.Sums[bucket] / float64(c.state.Counts[bucket]),
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),

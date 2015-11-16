@@ -25,7 +25,7 @@ func NewHttpAPI(receiver *Receiver, dispatcher *Dispatcher) HttpAPI {
 		dispatcher,
 		&httpSubscribers{
 			receiver: receiver,
-			subs:     make(map[s.StreamID]map[chan *s.Tuple]struct{}),
+			subs:     make(map[s.StreamID]map[chan *s.Record]struct{}),
 			lock:     &sync.RWMutex{},
 		},
 	}
@@ -47,11 +47,11 @@ func (api HttpAPI) submit(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := CreateTupleFromJSON(body)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error parsing tuple: %s", err), 500)
+		http.Error(w, fmt.Sprintf("Error parsing record: %s", err), 500)
 	}
 	err = api.dispatcher.ProcessTuple(t)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error dispatching tuple: %s", err), 500)
+		http.Error(w, fmt.Sprintf("Error dispatching record: %s", err), 500)
 	}
 }
 
@@ -64,17 +64,17 @@ func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := CreateTuple(streamID, string(data))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error creating tuple: %s", err), 500)
+		http.Error(w, fmt.Sprintf("Error creating record: %s", err), 500)
 	}
 	err = api.dispatcher.ProcessTuple(t)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error dispatching tuple: %s", err), 500)
+		http.Error(w, fmt.Sprintf("Error dispatching record: %s", err), 500)
 	}
 }
 
-// CreateTupleFromJSON parses a complete tuple from JSON and adds LWM and ID
-func CreateTupleFromJSON(b []byte) (*s.Tuple, error) {
-	var t s.Tuple
+// CreateTupleFromJSON parses a complete record from JSON and adds LWM and ID
+func CreateTupleFromJSON(b []byte) (*s.Record, error) {
+	var t s.Record
 	err := json.Unmarshal(b, &t)
 	if err != nil {
 		return nil, fmt.Errorf("Error parsing JSON: %s", err)
@@ -91,13 +91,13 @@ func CreateTupleFromJSON(b []byte) (*s.Tuple, error) {
 	return &t, nil
 }
 
-// CreateTuple creates a new tuple with given stream ID and data
-func CreateTuple(streamID s.StreamID, data string) (*s.Tuple, error) {
+// CreateTuple creates a new record with given stream ID and data
+func CreateTuple(streamID s.StreamID, data string) (*s.Record, error) {
 	if len(streamID) == 0 {
 		return nil, errors.New("Stream ID shouldn't be empty")
 	}
 	now := s.Timestamp(time.Now().UnixNano())
-	t := s.Tuple{
+	t := s.Record{
 		StreamID:  streamID,
 		ID:        uuid.NewV4().String(),
 		Timestamp: now,
@@ -107,7 +107,7 @@ func CreateTuple(streamID s.StreamID, data string) (*s.Tuple, error) {
 	return &t, nil
 }
 
-func validate(t *s.Tuple) error {
+func validate(t *s.Record) error {
 	if len(t.StreamID) == 0 {
 		return errors.New("'stream_id' should not be empty")
 	}
@@ -128,7 +128,7 @@ func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "stream id missing in URL", 400)
 		return
 	}
-	ch := make(chan *s.Tuple)
+	ch := make(chan *s.Record)
 	disconnected := w.(http.CloseNotifier).CloseNotify()
 
 	api.subscribers.SubscribeTo(topicGlob, ch)
@@ -148,23 +148,23 @@ func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 
 type httpSubscribers struct {
 	receiver *Receiver
-	subs     map[s.StreamID]map[chan *s.Tuple]struct{}
+	subs     map[s.StreamID]map[chan *s.Record]struct{}
 	lock     *sync.RWMutex
 }
 
-func (hs *httpSubscribers) SubscribeTo(streamID s.StreamID, ch chan *s.Tuple) {
+func (hs *httpSubscribers) SubscribeTo(streamID s.StreamID, ch chan *s.Record) {
 	hs.lock.Lock()
 	defer hs.lock.Unlock()
 	subscribersSet := hs.subs[streamID]
 	if subscribersSet == nil {
-		subscribersSet = make(map[chan *s.Tuple]struct{})
+		subscribersSet = make(map[chan *s.Record]struct{})
 		hs.receiver.SubscribeTo(streamID, s.Timestamp(0), hs)
 	}
 	subscribersSet[ch] = struct{}{}
 	hs.subs[streamID] = subscribersSet
 }
 
-func (hs *httpSubscribers) UnsubscribeFrom(streamID s.StreamID, ch chan *s.Tuple) {
+func (hs *httpSubscribers) UnsubscribeFrom(streamID s.StreamID, ch chan *s.Record) {
 	hs.lock.Lock()
 	defer hs.lock.Unlock()
 	delete(hs.subs[streamID], ch)
@@ -173,7 +173,7 @@ func (hs *httpSubscribers) UnsubscribeFrom(streamID s.StreamID, ch chan *s.Tuple
 	}
 }
 
-func (hs *httpSubscribers) ProcessTuple(t *s.Tuple) error {
+func (hs *httpSubscribers) ProcessTuple(t *s.Record) error {
 	hs.lock.RLock()
 	defer hs.lock.RUnlock()
 	for ch := range hs.subs[t.StreamID] {

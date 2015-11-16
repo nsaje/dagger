@@ -56,16 +56,16 @@ func (c *MinProcessor) SetState(state []byte) error {
 	return nil
 }
 
-// ProcessBucket updates the bucket with a new tuple
-func (c *MinProcessor) ProcessBucket(bucket s.Timestamp, t *s.Tuple) error {
+// ProcessBucket updates the bucket with a new record
+func (c *MinProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
 	log.Println("[Min] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Values[bucket] = append(c.state.Values[bucket], value)
 	return nil
 }
 
-// FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *MinProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
+// FinalizeBucket produces a new record from the bucket and deletes it
+func (c *MinProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 	log.Println("[Min] finalizing", bucket)
 	min := math.Inf(1)
 	for _, v := range c.state.Values[bucket] {
@@ -73,7 +73,7 @@ func (c *MinProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
 			min = v
 		}
 	}
-	new := &s.Tuple{
+	new := &s.Record{
 		Data:      min,
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),

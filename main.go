@@ -27,7 +27,7 @@ func main() {
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "appmetrics",
-					Usage: "InfluxDB URL for app metrics (how many tuples are being processed etc.)",
+					Usage: "InfluxDB URL for app metrics (how many records are being processed etc.)",
 				},
 			},
 		},
@@ -38,7 +38,7 @@ func main() {
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "streamID, s",
-					Usage: "Stream ID to publish tuples on",
+					Usage: "Stream ID to publish records on",
 				},
 			},
 			Action: command.Producer,
@@ -51,12 +51,12 @@ func main() {
 			Flags: []cli.Flag{
 				cli.BoolFlag{
 					Name:  "dataonly",
-					Usage: "print only the 'Data' field of the tuple if true",
+					Usage: "print only the 'Data' field of the record if true",
 				},
 				cli.StringFlag{
 					Name:  "from",
 					Value: "0",
-					Usage: "subscribe to tuples from specified Unix nanosecond timestamp onward",
+					Usage: "subscribe to records from specified Unix nanosecond timestamp onward",
 				},
 			},
 		},

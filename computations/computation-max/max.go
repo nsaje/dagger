@@ -56,16 +56,16 @@ func (c *MaxProcessor) SetState(state []byte) error {
 	return nil
 }
 
-// ProcessBucket updates the bucket with a new tuple
-func (c *MaxProcessor) ProcessBucket(bucket s.Timestamp, t *s.Tuple) error {
+// ProcessBucket updates the bucket with a new record
+func (c *MaxProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
 	log.Println("[Max] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Values[bucket] = append(c.state.Values[bucket], value)
 	return nil
 }
 
-// FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *MaxProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
+// FinalizeBucket produces a new record from the bucket and deletes it
+func (c *MaxProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 	log.Println("[Max] finalizing", bucket)
 	max := math.Inf(-1)
 	for _, v := range c.state.Values[bucket] {
@@ -73,7 +73,7 @@ func (c *MaxProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
 			max = v
 		}
 	}
-	new := &s.Tuple{
+	new := &s.Record{
 		Data:      max,
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),

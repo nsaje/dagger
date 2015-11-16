@@ -20,7 +20,7 @@ func main() {
 	counter := 0
 	for {
 		time.Sleep(1000 * time.Millisecond)
-		s := s.Tuple{StreamID: "test", Data: counter, LWM: s.Timestamp(time.Now().UnixNano()), Timestamp: s.Timestamp(time.Now().UnixNano())}
+		s := s.Record{StreamID: "test", Data: counter, LWM: s.Timestamp(time.Now().UnixNano()), Timestamp: s.Timestamp(time.Now().UnixNano())}
 		p.Stream <- s
 		counter++
 	}

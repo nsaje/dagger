@@ -11,7 +11,7 @@ import (
 	"github.com/nsaje/dagger/s"
 )
 
-// StreamDispatcher dispatches tuples from a single stream to registered subscribers
+// StreamDispatcher dispatches records from a single stream to registered subscribers
 type StreamDispatcher struct {
 	streamID     s.StreamID
 	persister    Persister
@@ -19,11 +19,11 @@ type StreamDispatcher struct {
 	coordinator  Coordinator
 	groupHandler GroupHandler
 	iterators    map[string]*StreamIterator
-	notifyCh     chan *s.Tuple
+	notifyCh     chan *s.Record
 	stopCh       chan struct{}
 	new          chan NewSubscriber
 	dropped      chan string
-	last         *s.Tuple
+	last         *s.Record
 }
 
 func NewStreamDispatcher(streamID s.StreamID, coordinator Coordinator,
@@ -37,15 +37,15 @@ func NewStreamDispatcher(streamID s.StreamID, coordinator Coordinator,
 		coordinator:  coordinator,
 		groupHandler: groupHandler,
 		iterators:    make(map[string]*StreamIterator),
-		notifyCh:     make(chan *s.Tuple),
+		notifyCh:     make(chan *s.Record),
 		stopCh:       stopCh,
 		new:          new,
 		dropped:      dropped,
 	}
 }
 
-func (sd *StreamDispatcher) ProcessTuple(t *s.Tuple) error {
-	sd.lwmTracker.BeforeDispatching([]*s.Tuple{t})
+func (sd *StreamDispatcher) ProcessTuple(t *s.Record) error {
+	sd.lwmTracker.BeforeDispatching([]*s.Record{t})
 	sd.notifyCh <- t
 	return nil
 }
@@ -76,7 +76,7 @@ func (sd *StreamDispatcher) Run() {
 				sd.lwmTracker,
 				sd.groupHandler,
 				posUpdates,
-				make(chan *s.Tuple),
+				make(chan *s.Record),
 				stopCh,
 				sd.persister,
 				subscriberHandler,
@@ -104,13 +104,13 @@ type StreamIterator struct {
 	lwmTracker        LWMTracker
 	groupHandler      GroupHandler
 	positionUpdates   chan s.Timestamp
-	notify            chan *s.Tuple
+	notify            chan *s.Record
 	stopCh            chan struct{}
 	persister         Persister
 	subscriberHandler *subscriberHandler
 }
 
-func (si *StreamIterator) ProcessTuple(t *s.Tuple) error {
+func (si *StreamIterator) ProcessTuple(t *s.Record) error {
 	log.Println("[iterator] processing", t)
 	si.notify <- t
 	return nil
@@ -126,11 +126,11 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 	// var newTo, newFrom s.Timestamp
 	// newTo = to
 	readCompletedCh := make(chan struct{})
-	toSend := make(chan *s.Tuple)
+	toSend := make(chan *s.Record)
 	var newDataReady, readCompleted bool
-	sentSuccessfuly := make(chan *s.Tuple)
+	sentSuccessfuly := make(chan *s.Record)
 
-	var lastSent *s.Tuple
+	var lastSent *s.Record
 	flushAfter := 500 * time.Millisecond
 	lwmFlushTimer := time.NewTimer(flushAfter)
 	lwmFlushTimer.Stop()
@@ -162,7 +162,7 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 			log.Println("[iterator] updating position to:", updatedPos)
 			// from = updatedPos
 		case t := <-toSend:
-			log.Println("[iterator] sending tuple:", t)
+			log.Println("[iterator] sending record:", t)
 			compLWM := si.lwmTracker.GetCombinedLWM()
 			if compLWM < t.Timestamp {
 				t.LWM = compLWM
@@ -180,7 +180,7 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 				}
 			}
 		case t := <-sentSuccessfuly:
-			// + 1 so the just successfuly sent tuple isn't sent again
+			// + 1 so the just successfuly sent record isn't sent again
 			from = t.Timestamp + 1
 			lastSent = t
 			si.lwmTracker.SentSuccessfuly("FIXME", t)
@@ -213,7 +213,7 @@ func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
 	}
 }
 
-// Dispatcher dispatches tuples to registered subscribers
+// Dispatcher dispatches records to registered subscribers
 type Dispatcher struct {
 	conf        *Config
 	coordinator Coordinator
@@ -227,10 +227,10 @@ func NewDispatcher(conf *Config, coordinator Coordinator) *Dispatcher {
 		sync.RWMutex{}}
 }
 
-// ProcessTuple sends tuple to registered subscribers via RPC
-func (d *Dispatcher) ProcessTuple(t *s.Tuple) error {
+// ProcessTuple sends record to registered subscribers via RPC
+func (d *Dispatcher) ProcessTuple(t *s.Record) error {
 	subscribers, err := d.coordinator.GetSubscribers(t.StreamID)
-	log.Printf("[dispatcher] tuple: %v, subscribers: %v\n", t, subscribers)
+	log.Printf("[dispatcher] record: %v, subscribers: %v\n", t, subscribers)
 	if err != nil {
 		return err
 	}
@@ -257,31 +257,31 @@ func (d *Dispatcher) ProcessTuple(t *s.Tuple) error {
 	return ProcessMultipleProcessors(subscriberHandlers, t)
 }
 
-// BufferedDispatcher bufferes produced tuples and sends them with retrying
+// BufferedDispatcher bufferes produced records and sends them with retrying
 // until they are ACKed
 type BufferedDispatcher struct {
 	streamID    s.StreamID
-	buffer      chan *s.Tuple
+	buffer      chan *s.Record
 	dispatcher  TupleProcessor
 	stopCh      chan struct{}
 	sentTracker SentTracker
 	lwmTracker  LWMTracker
-	lwmFlush    chan *s.Tuple
+	lwmFlush    chan *s.Record
 	wg          sync.WaitGroup
 }
 
 // StartBufferedDispatcher creates a new buffered dispatcher and starts workers
-// that will be consuming off the queue an sending tuples
+// that will be consuming off the queue an sending records
 func StartBufferedDispatcher(compID s.StreamID, dispatcher TupleProcessor, sentTracker SentTracker, lwmTracker LWMTracker,
 	stopCh chan struct{}) *BufferedDispatcher {
 	bd := &BufferedDispatcher{
 		streamID:    compID,
-		buffer:      make(chan *s.Tuple, 100), // FIXME: make it configurable
+		buffer:      make(chan *s.Record, 100), // FIXME: make it configurable
 		dispatcher:  dispatcher,
 		sentTracker: sentTracker,
 		lwmTracker:  lwmTracker,
 		stopCh:      stopCh,
-		lwmFlush:    make(chan *s.Tuple),
+		lwmFlush:    make(chan *s.Record),
 	}
 
 	go bd.lwmFlusher()
@@ -295,21 +295,21 @@ func StartBufferedDispatcher(compID s.StreamID, dispatcher TupleProcessor, sentT
 	return bd
 }
 
-// Stop blocks until all buffered tuples are sent
+// Stop blocks until all buffered records are sent
 func (bd *BufferedDispatcher) Stop() {
 	close(bd.buffer)
 	bd.wg.Wait()
 }
 
-// ProcessTuple sends the tuple to the buffered channel
-func (bd *BufferedDispatcher) ProcessTuple(t *s.Tuple) error {
-	bd.lwmTracker.BeforeDispatching([]*s.Tuple{t})
+// ProcessTuple sends the record to the buffered channel
+func (bd *BufferedDispatcher) ProcessTuple(t *s.Record) error {
+	bd.lwmTracker.BeforeDispatching([]*s.Record{t})
 	bd.buffer <- t
 	return nil
 }
 
 func (bd *BufferedDispatcher) lwmFlusher() {
-	var lastSent *s.Tuple
+	var lastSent *s.Record
 	flushAfter := 500 * time.Millisecond
 	lwmFlushTimer := time.NewTimer(flushAfter)
 	for {
@@ -320,7 +320,7 @@ func (bd *BufferedDispatcher) lwmFlusher() {
 			}
 			lwmFlushTimer.Reset(flushAfter)
 		case <-lwmFlushTimer.C:
-			// resend last tuple in case we havent sent anything in a while
+			// resend last record in case we havent sent anything in a while
 			// to update receiver's LWM
 			if lastSent != nil {
 				lwm := bd.lwmTracker.GetLocalLWM()
@@ -345,21 +345,21 @@ func (bd *BufferedDispatcher) dispatch() {
 	for {
 		select {
 		case t, ok := <-bd.buffer:
-			if !ok { // channel closed, no more tuples coming in
+			if !ok { // channel closed, no more records coming in
 				return
 			}
 			t.LWM = bd.lwmTracker.GetCombinedLWM()
 			for {
 				err := bd.dispatcher.ProcessTuple(t)
 				if err != nil {
-					log.Println("[dispatcher] Retrying tuple", t)
+					log.Println("[dispatcher] Retrying record", t)
 					time.Sleep(time.Second) // exponential backoff?
 					continue
 				}
 				if bd.sentTracker != nil {
 					bd.sentTracker.SentSuccessfuly(bd.streamID, t)
 				}
-				bd.lwmFlush <- t // notify the LWM heartbeat mechanism that we've sent a tuple
+				bd.lwmFlush <- t // notify the LWM heartbeat mechanism that we've sent a record
 				break
 			}
 		}
@@ -380,18 +380,18 @@ func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
 	return &subscriberHandler{client, make(chan struct{}, 10)}, nil // FIXME: make configurable
 }
 
-func (s *subscriberHandler) ProcessTuple(t *s.Tuple) error {
+func (s *subscriberHandler) ProcessTuple(t *s.Record) error {
 	var reply string
 	err := s.client.Call("Receiver.SubmitTuple", t, &reply)
 	if err != nil {
-		log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)
+		log.Printf("[dispatcher][WARNING] record %v failed delivery: %v", t, err)
 		return err
 	}
-	log.Printf("[dispatcher] ACK received for tuple %s", t)
+	log.Printf("[dispatcher] ACK received for record %s", t)
 	return nil
 }
 
-func (s *subscriberHandler) ProcessTupleAsync(t *s.Tuple, sentSuccessfuly chan *s.Tuple) {
+func (s *subscriberHandler) ProcessTupleAsync(t *s.Record, sentSuccessfuly chan *s.Record) {
 	var reply string
 	s.semaphore <- struct{}{}
 	call := s.client.Go("Receiver.SubmitTuple", t, &reply, nil)
@@ -400,12 +400,12 @@ func (s *subscriberHandler) ProcessTupleAsync(t *s.Tuple, sentSuccessfuly chan *
 		<-s.semaphore
 		err := call.Error
 		if err != nil {
-			log.Printf("[dispatcher][WARNING] tuple %v failed delivery: %v", t, err)
+			log.Printf("[dispatcher][WARNING] record %v failed delivery: %v", t, err)
 			// FIXME error handling
 			// return err
 			return
 		}
 		sentSuccessfuly <- t
-		log.Printf("[dispatcher] ACK received for tuple %s", t)
+		log.Printf("[dispatcher] ACK received for record %s", t)
 	}()
 }

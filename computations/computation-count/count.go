@@ -56,17 +56,17 @@ func (c *CountProcessor) SetState(state []byte) error {
 	return nil
 }
 
-// ProcessBucket updates the bucket with a new tuple
-func (c *CountProcessor) ProcessBucket(bucket s.Timestamp, t *s.Tuple) error {
+// ProcessBucket updates the bucket with a new record
+func (c *CountProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
 	log.Println("[avg] processing", t)
 	c.state.Counts[bucket]++
 	return nil
 }
 
-// FinalizeBucket produces a new tuple from the bucket and deletes it
-func (c *CountProcessor) FinalizeBucket(bucket s.Timestamp) *s.Tuple {
+// FinalizeBucket produces a new record from the bucket and deletes it
+func (c *CountProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 	log.Println("[avg] finalizing", bucket)
-	new := &s.Tuple{
+	new := &s.Record{
 		Data:      c.state.Counts[bucket],
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),

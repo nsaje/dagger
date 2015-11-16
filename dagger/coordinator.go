@@ -79,7 +79,7 @@ type Watcher interface {
 	Stop()
 }
 
-// ReplicationCoordinator coordinates replication of tuples onto multiple
+// ReplicationCoordinator coordinates replication of records onto multiple
 // computations on multiple hosts for high availability
 type ReplicationCoordinator interface {
 	JoinGroup(streamID s.StreamID) (GroupHandler, error)

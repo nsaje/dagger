@@ -6,14 +6,14 @@ import (
 	"github.com/nsaje/dagger/s"
 )
 
-// LinearizerStore represents a sorted persistent buffer of tuples
+// LinearizerStore represents a sorted persistent buffer of records
 type LinearizerStore interface {
-	Insert(compID s.StreamID, t *s.Tuple) error
-	ReadBuffer(compID s.StreamID, from s.Timestamp, to s.Timestamp) ([]*s.Tuple, error)
+	Insert(compID s.StreamID, t *s.Record) error
+	ReadBuffer(compID s.StreamID, from s.Timestamp, to s.Timestamp) ([]*s.Record, error)
 }
 
-// Linearizer buffers tuples and forwards them to the next TupleProcessor sorted
-// by timestamp, while making sure all the tuples in a certain time frame have
+// Linearizer buffers records and forwards them to the next TupleProcessor sorted
+// by timestamp, while making sure all the records in a certain time frame have
 // already arrived
 type Linearizer struct {
 	compID     s.StreamID
@@ -23,7 +23,7 @@ type Linearizer struct {
 	lwmCh      chan s.Timestamp
 	startAtLWM s.Timestamp
 	ltp        LinearizedTupleProcessor
-	tmpT       chan *s.Tuple
+	tmpT       chan *s.Record
 }
 
 // NewLinearizer creates a new linearizer for a certain computation
@@ -33,7 +33,7 @@ func NewLinearizer(compID s.StreamID, store LinearizerStore, lwmTracker LWMTrack
 		store:      store,
 		lwmTracker: lwmTracker,
 		lwmCh:      make(chan s.Timestamp),
-		tmpT:       make(chan *s.Tuple),
+		tmpT:       make(chan *s.Record),
 	}
 }
 
@@ -47,8 +47,8 @@ func (l *Linearizer) SetStartLWM(time s.Timestamp) {
 	l.startAtLWM = time
 }
 
-// ProcessTuple inserts the tuple into the buffer sorted by timestamps
-func (l *Linearizer) ProcessTuple(t *s.Tuple) error {
+// ProcessTuple inserts the record into the buffer sorted by timestamps
+func (l *Linearizer) ProcessTuple(t *s.Record) error {
 	err := l.store.Insert(l.compID, t)
 	if err != nil {
 		return err
@@ -67,8 +67,8 @@ func (l *Linearizer) ProcessTuple(t *s.Tuple) error {
 	return nil
 }
 
-// StartForwarding starts a goroutine that forwards the tuples from the buffer
-// to the next TupleProcessor when LWM tells us no more tuples will arrive in
+// StartForwarding starts a goroutine that forwards the records from the buffer
+// to the next TupleProcessor when LWM tells us no more records will arrive in
 // the forwarded time frame
 func (l *Linearizer) StartForwarding() {
 	fromLWM := l.startAtLWM

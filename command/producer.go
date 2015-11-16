@@ -13,7 +13,7 @@ import (
 	"github.com/nsaje/dagger/s"
 )
 
-// Producer reads tuples from stdin and submits them
+// Producer reads records from stdin and submits them
 // to registered subscribers via RPC
 func Producer(c *cli.Context) {
 	conf := dagger.DefaultConfig(c)
@@ -47,16 +47,16 @@ func Producer(c *cli.Context) {
 			log.Println("error:", err)
 			break
 		}
-		tuple, err := dagger.CreateTuple(streamID, strings.TrimSpace(line))
+		record, err := dagger.CreateTuple(streamID, strings.TrimSpace(line))
 		if err != nil {
 			log.Println("error:", err)
 			break
 		}
 		log.Println("read", line)
-		// bufferedDispatcher.ProcessTuple(tuple)
-		persister.Insert1(streamID, "p", tuple)
-		dispatcher.ProcessTuple(tuple)
-		// tmpT = tuple
+		// bufferedDispatcher.ProcessTuple(record)
+		persister.Insert1(streamID, "p", record)
+		dispatcher.ProcessTuple(record)
+		// tmpT = record
 	}
 	// bufferedDispatcher.Stop()
 	// tmpT.LWM = s.Timestamp(time.Now().UnixNano()).Add(time.Hour)

@@ -8,7 +8,7 @@ import (
 	"github.com/nsaje/dagger/s"
 )
 
-// BarComputation simply prepends "barized" to a tuple
+// BarComputation simply prepends "barized" to a record
 type BarComputation struct{}
 
 func (c BarComputation) GetInfo(definition string) (s.ComputationPluginInfo, error) {
@@ -19,9 +19,9 @@ func (c BarComputation) GetInfo(definition string) (s.ComputationPluginInfo, err
 	return info, nil
 }
 
-func (c BarComputation) SubmitTuple(t *s.Tuple) ([]*s.Tuple, error) {
+func (c BarComputation) SubmitTuple(t *s.Record) ([]*s.Record, error) {
 	t.Data = fmt.Sprintf("barized: %v", t.Data)
-	return []*s.Tuple{t}, nil
+	return []*s.Record{t}, nil
 }
 
 func (c BarComputation) GetState() ([]byte, error) {
