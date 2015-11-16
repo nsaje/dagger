@@ -19,7 +19,7 @@ const (
 )
 
 type Node interface {
-	eval(valueTable valueTable) (bool, map[string][]float64)
+	eval(valueTable valueTable) (bool, map[s.StreamID][]float64)
 	getLeafNodes() []LeafNode
 }
 
@@ -65,7 +65,7 @@ type BinNode struct {
 	right Node
 }
 
-func mergeValues(l map[string][]float64, r map[string][]float64) map[string][]float64 {
+func mergeValues(l map[s.StreamID][]float64, r map[s.StreamID][]float64) map[s.StreamID][]float64 {
 	values := l
 	for k, rightVal := range r {
 		leftVal := l[k]
@@ -78,7 +78,7 @@ func mergeValues(l map[string][]float64, r map[string][]float64) map[string][]fl
 	return values
 }
 
-func (n BinNode) eval(vt valueTable) (bool, map[string][]float64) {
+func (n BinNode) eval(vt valueTable) (bool, map[s.StreamID][]float64) {
 	leftResult, leftValues := n.left.eval(vt)
 	rightResult, rightValues := n.right.eval(vt)
 	values := mergeValues(leftValues, rightValues)

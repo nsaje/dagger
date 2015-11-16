@@ -50,16 +50,16 @@ type ComputationPluginState struct {
 	State []byte
 }
 
-// ComputationSnapshot is used for synchronizing computation state between workers
-type ComputationSnapshot struct {
+// TaskSnapshot is used for synchronizing task state between workers
+type TaskSnapshot struct {
 	Received      []string
 	InputBuffer   []*Tuple
-	LastTimestamp Timestamp
+	LastTimestamp Timestamp `json:",string"`
 	Produced      []*Tuple
 	PluginState   *ComputationPluginState
 }
 
-func (s *ComputationSnapshot) String() string {
+func (s *TaskSnapshot) String() string {
 	return fmt.Sprintf("LastTimestamp: %v, InputBuffer: %v, Received: %v, Produced: %v, PluginState: %s",
 		s.LastTimestamp,
 		len(s.Received),

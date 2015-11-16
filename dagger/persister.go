@@ -22,8 +22,8 @@ const (
 type Persister interface {
 	Close()
 	CommitComputation(compID s.StreamID, in *s.Tuple, out []*s.Tuple) error
-	GetSnapshot(compID s.StreamID) (*s.ComputationSnapshot, error)
-	ApplySnapshot(compID s.StreamID, snapshot *s.ComputationSnapshot) error
+	GetSnapshot(compID s.StreamID) (*s.TaskSnapshot, error)
+	ApplySnapshot(compID s.StreamID, snapshot *s.TaskSnapshot) error
 	LinearizerStore
 	StreamBuffer
 	SentTracker
@@ -111,13 +111,13 @@ func (p *LevelDBPersister) CommitComputation(compID s.StreamID, in *s.Tuple, out
 }
 
 // GetSnapshot returns the snapshot of the computation's persisted state
-func (p *LevelDBPersister) GetSnapshot(compID s.StreamID) (*s.ComputationSnapshot, error) {
+func (p *LevelDBPersister) GetSnapshot(compID s.StreamID) (*s.TaskSnapshot, error) {
 	dbSnapshot, err := p.db.GetSnapshot()
 	defer dbSnapshot.Release()
 	if err != nil {
 		return nil, fmt.Errorf("[persister] Error getting snapshot: %s", err)
 	}
-	var snapshot s.ComputationSnapshot
+	var snapshot s.TaskSnapshot
 	// get received tuples
 	snapshot.Received = make([]string, 0)
 	keyPrefix := fmt.Sprintf(receivedKeyFormat, compID, "")
@@ -185,7 +185,7 @@ func (p *LevelDBPersister) GetSnapshot(compID s.StreamID) (*s.ComputationSnapsho
 }
 
 // ApplySnapshot applies the snapshot of the computation's persisted state
-func (p *LevelDBPersister) ApplySnapshot(compID s.StreamID, snapshot *s.ComputationSnapshot) error {
+func (p *LevelDBPersister) ApplySnapshot(compID s.StreamID, snapshot *s.TaskSnapshot) error {
 	batch := new(leveldb.Batch)
 	log.Println("[persister] Applying snapshot", snapshot)
 

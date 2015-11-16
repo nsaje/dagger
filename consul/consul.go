@@ -786,6 +786,7 @@ func (c *consulCoordinator) watch(key string, stopCh chan struct{}, value chan s
 				pair, queryMeta, err := kv.Get(key, &api.QueryOptions{WaitIndex: lastIndex})
 				if err != nil {
 					log.Println("[ERROR] consul watch", err) // FIXME
+					return
 				}
 				var newVal string
 				if pair != nil {

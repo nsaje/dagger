@@ -15,7 +15,7 @@ import (
 type Task interface {
 	TupleProcessor
 	Run() error
-	GetSnapshot() ([]byte, error)
+	GetSnapshot() (*s.TaskSnapshot, error)
 	Sync() (s.Timestamp, error)
 	Stop()
 }
@@ -147,7 +147,7 @@ func (cm *TaskManager) setupTask(streamID s.StreamID) error {
 }
 
 // GetSnapshot returns a snapshot of the requested task
-func (cm *TaskManager) GetSnapshot(streamID s.StreamID) ([]byte, error) {
+func (cm *TaskManager) GetSnapshot(streamID s.StreamID) (*s.TaskSnapshot, error) {
 	comp, has := cm.tasks[streamID]
 	if !has {
 		return nil, fmt.Errorf("Computation not found!")

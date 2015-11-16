@@ -1,7 +1,6 @@
 package dagger
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -40,7 +39,7 @@ func (comp *statelessComputation) ProcessTuple(t *s.Tuple) error {
 	return ProcessMultipleTuples(comp.dispatcher, response.Tuples)
 }
 
-func (comp *statelessComputation) GetSnapshot() ([]byte, error) {
+func (comp *statelessComputation) GetSnapshot() (*s.TaskSnapshot, error) {
 	return nil, nil
 }
 
@@ -198,7 +197,7 @@ func (comp *statefulComputation) ProcessTupleLinearized(t *s.Tuple) error {
 	return nil
 }
 
-func (comp *statefulComputation) GetSnapshot() ([]byte, error) {
+func (comp *statefulComputation) GetSnapshot() (*s.TaskSnapshot, error) {
 	log.Println("[computations] trying to acquire sync lock...")
 	comp.Lock()
 	log.Println("[computations] ... sync lock acquired!")
@@ -212,7 +211,7 @@ func (comp *statefulComputation) GetSnapshot() ([]byte, error) {
 		return nil, err
 	}
 	snapshot.PluginState = pluginState
-	return json.Marshal(snapshot) // FIXME
+	return snapshot, nil
 }
 
 // StartComputationPlugin starts the plugin process
@@ -294,8 +293,8 @@ func newMasterHandler(addr string) (*masterHandler, error) {
 	return &masterHandler{client}, nil
 }
 
-func (mh *masterHandler) Sync(compID s.StreamID) (*s.ComputationSnapshot, error) {
-	var reply s.ComputationSnapshot
+func (mh *masterHandler) Sync(compID s.StreamID) (*s.TaskSnapshot, error) {
+	var reply s.TaskSnapshot
 	log.Println("[computations] issuing a sync request for computation", compID)
 	err := mh.client.Call("Receiver.Sync", compID, &reply)
 	return &reply, err

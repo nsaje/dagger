@@ -10,7 +10,7 @@ AlarmDefinition <- _ e:Expr _ mb:MatchBy? {
   if mb != nil {
     matchBy = mb.(string)
   }
-  return AlarmDefinition{e.(Node), matchBy}, nil
+  return alarmDefinition{e.(Node), matchBy}, nil
 }
 
 MatchBy <- ',' _ matchBy:Any {
@@ -39,7 +39,7 @@ SubExpr <- streamID:StreamID _ op:RelationalOperator _ thresholdValue:Float64 _ 
     periods = times.(int)
   }
   return LeafNode{
-    streamID.(string),
+    s.StreamID(streamID.(string)),
     op.(RelationalOperator),
     thresholdValue.(float64),
     periods,
