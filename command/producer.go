@@ -30,7 +30,7 @@ func Producer(c *cli.Context) {
 	// dispatcher := dagger.NewDispatcher(conf, coordinator)
 	// bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
 	streamID := s.StreamID(c.String("streamID"))
-	persister, err := dagger.NewPersister(conf)
+	persister, err := dagger.NewPersister("/tmp/dagger")
 	if err != nil {
 		log.Fatalf("error opening database")
 	}

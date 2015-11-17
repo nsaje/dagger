@@ -17,7 +17,7 @@ import (
 func Subscriber(c *cli.Context) {
 	conf := dagger.DefaultConfig(c)
 
-	persister, err := dagger.NewPersister(conf)
+	persister, err := dagger.NewPersister("/tmp/dagger")
 	if err != nil {
 		log.Fatalf("error opening database")
 	}

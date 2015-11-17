@@ -34,7 +34,7 @@ func Worker(c *cli.Context) {
 	conf := dagger.DefaultConfig(c)
 	fmt.Println("ARGS:", c.GlobalFlagNames())
 
-	persister, err := dagger.NewPersister(conf)
+	persister, err := dagger.NewPersister("/tmp/dagger")
 	if err != nil {
 		log.Fatalf("Error opening database")
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"path"
 
 	"github.com/nsaje/dagger/s"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -65,8 +66,8 @@ type ReceivedTracker interface {
 }
 
 // NewPersister initializes and returns a new Persister instance
-func NewPersister(conf *Config) (Persister, error) {
-	filename := "daggerDB-" + uuid.NewV4().String()
+func NewPersister(dir string) (Persister, error) {
+	filename := path.Join(dir, "daggerDB-"+uuid.NewV4().String())
 	db, err := leveldb.OpenFile(filename, nil)
 	if err != nil {
 		return nil, err
