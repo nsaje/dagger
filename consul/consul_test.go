@@ -209,3 +209,52 @@ func TestTaskWatcher(t *testing.T) {
 		}
 	}
 }
+
+func TestWatchSubscribers(t *testing.T) {
+	// Create a server
+	srv := newTestServer(t)
+	defer srv.Stop()
+
+	prefix := subscribersPrefix
+	conf := api.DefaultConfig()
+	conf.Address = srv.HTTPAddr
+	kv := newSimpleKV(t, conf)
+	coord := NewCoordinator(conf).(*consulCoordinator)
+	add := []string{
+		"test/a",
+		"test/b",
+		"test{t1=v1,t2=v2}/c",
+		"test{t1=v1}/d",
+	}
+	remove := []string{}
+	addc, droppedc, errc := coord.WatchSubscribers(s.StreamID("test{t1=v1}"), nil)
+	go func() {
+		for _, k := range add {
+			kv.Put(prefix+k, nil)
+		}
+		for _, k := range remove {
+			kv.Delete(prefix + k)
+		}
+	}()
+	var addedActual, droppedActual []string
+	timeout := time.NewTimer(5 * time.Second)
+
+	expectedA := []string{"a", "b", "d"}
+	for {
+		select {
+		case <-timeout.C:
+			t.Fatalf("Timeout!")
+		case k := <-addc:
+			addedActual = append(addedActual, k)
+		case k := <-droppedc:
+			droppedActual = append(droppedActual, k)
+		case err := <-errc:
+			t.Fatalf(err.Error())
+		}
+		if len(addedActual) == len(expectedA) &&
+			len(droppedActual) == len(remove) {
+			break
+		}
+	}
+	assert.Equal(t, expectedA, addedActual)
+}

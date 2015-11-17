@@ -179,8 +179,27 @@ func (c *consulCoordinator) UnsubscribeFrom(topic s.StreamID) error {
 	return err
 }
 
-func (c *consulCoordinator) WatchSubscribers(topic s.StreamID, stop chan struct{}) (chan string, chan string, chan error) {
-	return c.watchSetDiff(subscribersPrefix+string(topic)+"/", stop)
+func (c *consulCoordinator) WatchSubscribers(streamID s.StreamID, stop chan struct{}) (chan string, chan string, chan error) {
+	topic := dagger.StripTags(streamID)
+	publisherTags := dagger.ParseTags(streamID)
+	added, dropped, errc := c.watchSetDiff(subscribersPrefix+string(topic), stop)
+	filtered := make(chan string)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case sub := <-added:
+				if tagsMatch(sub, publisherTags) {
+					idx := strings.LastIndex(sub, "/")
+					if idx >= 0 {
+						filtered <- sub[idx+1:]
+					}
+				}
+			}
+		}
+	}()
+	return filtered, dropped, errc
 }
 
 func (c *consulCoordinator) GetSubscriberPosition(topic s.StreamID, subscriber string) (s.Timestamp, error) {
@@ -439,28 +458,26 @@ func (sl *subscribersList) fetch() error {
 		return err
 	}
 	sl.lastIndex = queryMeta.LastIndex
-	subscribers := filterTags(keys, sl.tags)
-	sl.subscribers = subscribers
-	return nil
-}
-
-func filterTags(subscribers []string, publisherTags dagger.Tags) []string {
-	filtered := make([]string, 0, len(subscribers))
-	for _, key := range subscribers {
-		tags := dagger.ParseTags(s.StreamID(key))
-		log.Println("[coordinator][tags] Publisher", publisherTags, ", subscriber", tags)
-		tagsMatch := true
-		for k, v := range tags {
-			if publisherTags[k] != v {
-				tagsMatch = false
-			}
-		}
-		if tagsMatch {
-			idx := strings.LastIndex(key, "/")
+	filtered := make([]string, 0, len(keys))
+	for _, sub := range keys {
+		if tagsMatch(sub, sl.tags) {
+			idx := strings.LastIndex(sub, "/")
 			if idx > 0 {
-				filtered = append(filtered, key[idx+1:])
+				filtered = append(filtered, sub[idx+1:])
 			}
 		}
 	}
-	return filtered
+	sl.subscribers = filtered
+	return nil
+}
+
+func tagsMatch(subscriber string, publisherTags dagger.Tags) bool {
+	tags := dagger.ParseTags(s.StreamID(subscriber))
+	log.Println("[coordinator][tags] Publisher", publisherTags, ", subscriber", tags)
+	for k, v := range tags {
+		if publisherTags[k] != v {
+			return false
+		}
+	}
+	return true
 }
