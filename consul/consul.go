@@ -148,11 +148,6 @@ func (c *consulCoordinator) SubscribeTo(topic s.StreamID, from s.Timestamp) erro
 	}
 	// ignore bool, since if it's false, it just means we're already subscribed
 	_, _, err := kv.Acquire(pair, nil)
-
-	if strings.ContainsAny(string(topic), "()") {
-		// only monitor publishers if it's a computation
-		go c.monitorPublishers(topic)
-	}
 	return err
 }
 
@@ -184,6 +179,7 @@ func (c *consulCoordinator) WatchSubscribers(streamID s.StreamID, stop chan stru
 	publisherTags := dagger.ParseTags(streamID)
 	added, dropped, errc := c.watchSetDiff(subscribersPrefix+string(topic), stop)
 	filtered := make(chan string)
+	filteredDropped := make(chan string)
 	go func() {
 		for {
 			select {
@@ -192,14 +188,15 @@ func (c *consulCoordinator) WatchSubscribers(streamID s.StreamID, stop chan stru
 			case sub := <-added:
 				if tagsMatch(sub, publisherTags) {
 					idx := strings.LastIndex(sub, "/")
-					if idx >= 0 {
-						filtered <- sub[idx+1:]
-					}
+					filtered <- sub[idx+1:]
 				}
+			case sub := <-dropped:
+				idx := strings.LastIndex(sub, "/")
+				filteredDropped <- sub[idx+1:]
 			}
 		}
 	}()
-	return filtered, dropped, errc
+	return filtered, filteredDropped, errc
 }
 
 func (c *consulCoordinator) GetSubscriberPosition(topic s.StreamID, subscriber string) (s.Timestamp, error) {
@@ -342,39 +339,51 @@ func (gh *groupHandler) fetch() error {
 	return nil
 }
 
-func (c *consulCoordinator) monitorPublishers(topic s.StreamID) {
+func (c *consulCoordinator) EnsurePublisherNum(topic s.StreamID, n int, stop chan struct{}) chan error {
 	prefix := fmt.Sprintf("dagger/publishers/%s", topic)
-	kv := c.client.KV()
-	lastIndex := uint64(0)
 	lastNumPublishers := -1
-	for {
-		keys, queryMeta, err := kv.Keys(prefix, "", &api.QueryOptions{WaitIndex: lastIndex})
-		log.Println("[coordinator] Publishers checked in ", prefix)
-		if err != nil {
-			log.Fatal("ERROR:", err)
-			// FIXME
-			continue
-		}
-		// log.Println("last index before, after ", lastIndex, queryMeta.LastIndex)
-		lastIndex = queryMeta.LastIndex
-
-		// if there are no publishers registered, post a new job
-		if len(keys) != lastNumPublishers && len(keys) < 2 {
-			log.Printf("[coordinator] Number of publishers of %s is %d, posting a job.", topic, len(keys))
-			// log.Println("Publishers: ", keys)
-			pair := &api.KVPair{
-				Key: taskPrefix + string(topic),
+	kv := c.client.KV()
+	new, errc := c.watchSet(prefix, nil)
+	go func() {
+		for {
+			select {
+			case keys := <-new:
+				// if there are no publishers registered, post a new job
+				if len(keys) != lastNumPublishers && len(keys) < 2 {
+					log.Printf("[coordinator] Number of publishers of %s is %d, posting a job.", topic, len(keys))
+					// log.Println("Publishers: ", keys)
+					pair := &api.KVPair{
+						Key: taskPrefix + string(topic),
+					}
+					_, err := kv.Put(pair, nil)
+					if err != nil {
+						errc <- fmt.Errorf("consul error: %s", err)
+					}
+				} else { // FIXME: do this more elegantly
+					if len(keys) == 2 {
+						log.Printf("[coordinator] Number of publishers of %s is %d, not posting a job.", topic, len(keys))
+						// log.Println("Publishers: ", keys)
+					}
+				}
+				lastNumPublishers = len(keys)
 			}
-			kv.Put(pair, nil) // FIXME error handling
-		} else { // FIXME: do this more elegantly
-			if len(keys) == 2 {
-				log.Printf("[coordinator] Number of publishers of %s is %d, not posting a job.", topic, len(keys))
-				// log.Println("Publishers: ", keys)
-			}
 		}
-		lastNumPublishers = len(keys)
-	}
+	}()
+	return errc
 }
+
+func tagsMatch(subscriber string, publisherTags dagger.Tags) bool {
+	tags := dagger.ParseTags(s.StreamID(subscriber))
+	log.Println("[coordinator][tags] Publisher", publisherTags, ", subscriber", tags)
+	for k, v := range tags {
+		if publisherTags[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// LEGACY ONLY, TO BE REMOVED
 
 // GetSubscribers returns the addresses of subscribers interested in a certain topic
 func (c *consulCoordinator) GetSubscribers(topic s.StreamID) ([]string, error) {
@@ -469,15 +478,4 @@ func (sl *subscribersList) fetch() error {
 	}
 	sl.subscribers = filtered
 	return nil
-}
-
-func tagsMatch(subscriber string, publisherTags dagger.Tags) bool {
-	tags := dagger.ParseTags(s.StreamID(subscriber))
-	log.Println("[coordinator][tags] Publisher", publisherTags, ", subscriber", tags)
-	for k, v := range tags {
-		if publisherTags[k] != v {
-			return false
-		}
-	}
-	return true
 }

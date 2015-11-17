@@ -31,6 +31,7 @@ type Coordinator interface {
 // SubscribeCoordinator handles the act of subscribing to a stream
 type SubscribeCoordinator interface {
 	SubscribeTo(streamID s.StreamID, from s.Timestamp) error
+	EnsurePublisherNum(s.StreamID, int, chan struct{}) chan error
 	CheckpointPosition(streamID s.StreamID, from s.Timestamp) error
 	UnsubscribeFrom(streamID s.StreamID) error
 }

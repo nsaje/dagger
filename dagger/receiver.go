@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,24 +15,26 @@ import (
 
 // Receiver receives new records via incoming RPC calls
 type Receiver struct {
-	conf                      *Config
-	coordinator               Coordinator
-	server                    *rpc.Server
-	listener                  net.Listener
-	taskManager               *TaskManager
+	conf                       *Config
+	coordinator                Coordinator
+	server                     *rpc.Server
+	listener                   net.Listener
+	taskManager                *TaskManager
 	subscribedRecordProcessors map[s.StreamID]map[RecordProcessor]struct{}
-	checkpointTimers          map[s.StreamID]*time.Timer
-	subscribersLock           *sync.RWMutex
+	publisherMonitors          map[s.StreamID]chan struct{}
+	checkpointTimers           map[s.StreamID]*time.Timer
+	subscribersLock            *sync.RWMutex
 }
 
 // NewReceiver initializes a new receiver
 func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
 	r := &Receiver{
-		conf:                      conf,
-		coordinator:               coordinator,
+		conf:                       conf,
+		coordinator:                coordinator,
 		subscribedRecordProcessors: make(map[s.StreamID]map[RecordProcessor]struct{}),
-		checkpointTimers:          make(map[s.StreamID]*time.Timer),
-		subscribersLock:           &sync.RWMutex{},
+		publisherMonitors:          make(map[s.StreamID]chan struct{}),
+		checkpointTimers:           make(map[s.StreamID]*time.Timer),
+		subscribersLock:            &sync.RWMutex{},
 	}
 	r.server = rpc.NewServer()
 	r.server.Register(r)
@@ -52,9 +55,15 @@ func (r *Receiver) ListenAddr() net.Addr {
 func (r *Receiver) SubscribeTo(streamID s.StreamID, from s.Timestamp, tp RecordProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
-	r.coordinator.SubscribeTo(streamID, from)
 	subscribersSet := r.subscribedRecordProcessors[streamID]
 	if subscribersSet == nil {
+		r.coordinator.SubscribeTo(streamID, from) // FIXME: return error
+		if strings.ContainsAny(string(streamID), "()") {
+			// only monitor publishers if it's a computation
+			stop := make(chan struct{})
+			r.coordinator.EnsurePublisherNum(streamID, 2, stop)
+			r.publisherMonitors[streamID] = stop
+		}
 		subscribersSet = make(map[RecordProcessor]struct{})
 		r.checkpointTimers[streamID] = time.NewTimer(time.Second) // FIXME: configurable
 	}
@@ -62,11 +71,19 @@ func (r *Receiver) SubscribeTo(streamID s.StreamID, from s.Timestamp, tp RecordP
 	r.subscribedRecordProcessors[streamID] = subscribersSet
 }
 
-func (r *Receiver) UnsubscribeFrom(streamID s.StreamID, tp RecordProcessor) {
+func (r *Receiver) UnsubscribeFrom(streamID s.StreamID, rp RecordProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.UnsubscribeFrom(streamID)
-	delete(r.subscribedRecordProcessors[streamID], tp) // FIXME: delete streamID from all maps when empty
+	subProcs := r.subscribedRecordProcessors[streamID]
+	if subProcs != nil {
+		delete(subProcs, rp)
+		if len(subProcs) == 0 {
+			delete(r.subscribedRecordProcessors, streamID)
+			close(r.publisherMonitors[streamID])
+			delete(r.publisherMonitors, streamID)
+		}
+	}
 }
 
 // SubmitRecord submits a new record into the worker process

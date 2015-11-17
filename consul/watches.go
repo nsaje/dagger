@@ -54,8 +54,10 @@ func (c *consulCoordinator) watchValue(key string, stop chan struct{}) (chan []b
 			case <-stop:
 				return
 			case s := <-new:
-				kvpair := s.(*api.KVPair)
-				vals <- kvpair.Value
+				kvpair, ok := s.(*api.KVPair)
+				if ok && kvpair != nil {
+					vals <- kvpair.Value
+				}
 			}
 		}
 	}()
