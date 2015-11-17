@@ -124,20 +124,6 @@ func (c *consulCoordinator) ReleaseTask(task s.StreamID) (bool, error) {
 	return released, err
 }
 
-// RegisterAsPublisher registers us as publishers of this stream and
-func (c *consulCoordinator) RegisterAsPublisher(compID s.StreamID) {
-	log.Println("[coordinator] Registering as publisher for: ", compID)
-	kv := c.client.KV()
-	pair := &api.KVPair{
-		Key:     fmt.Sprintf("dagger/publishers/%s/%s", compID, c.addr.String()),
-		Session: c.sessionID,
-	}
-	_, _, err := kv.Acquire(pair, nil)
-	if err != nil {
-		log.Println("[coordinator] Error registering as publisher: ", err)
-	}
-}
-
 // SubscribeTo subscribes to topics with global coordination
 func (c *consulCoordinator) SubscribeTo(topic s.StreamID, from s.Timestamp) error {
 	kv := c.client.KV()
@@ -149,6 +135,50 @@ func (c *consulCoordinator) SubscribeTo(topic s.StreamID, from s.Timestamp) erro
 	// ignore bool, since if it's false, it just means we're already subscribed
 	_, _, err := kv.Acquire(pair, nil)
 	return err
+}
+
+func (c *consulCoordinator) EnsurePublisherNum(topic s.StreamID, n int, stop chan struct{}) chan error {
+	prefix := fmt.Sprintf("dagger/publishers/%s", topic)
+	lastNumPublishers := -1
+	kv := c.client.KV()
+	new, errc := c.watchSet(prefix, nil)
+	go func() {
+		for {
+			select {
+			case keys := <-new:
+				// if there are no publishers registered, post a new job
+				if len(keys) != lastNumPublishers && len(keys) < 2 {
+					log.Printf("[coordinator] Number of publishers of %s is %d, posting a job.", topic, len(keys))
+					// log.Println("Publishers: ", keys)
+					pair := &api.KVPair{
+						Key: taskPrefix + string(topic),
+					}
+					_, err := kv.Put(pair, nil)
+					if err != nil {
+						errc <- fmt.Errorf("consul error: %s", err)
+					}
+				} else { // FIXME: do this more elegantly
+					if len(keys) == 2 {
+						log.Printf("[coordinator] Number of publishers of %s is %d, not posting a job.", topic, len(keys))
+						// log.Println("Publishers: ", keys)
+					}
+				}
+				lastNumPublishers = len(keys)
+			}
+		}
+	}()
+	return errc
+}
+
+func tagsMatch(subscriber string, publisherTags dagger.Tags) bool {
+	tags := dagger.ParseTags(s.StreamID(subscriber))
+	log.Println("[coordinator][tags] Publisher", publisherTags, ", subscriber", tags)
+	for k, v := range tags {
+		if publisherTags[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *consulCoordinator) CheckpointPosition(topic s.StreamID, from s.Timestamp) error {
@@ -221,6 +251,20 @@ func (c *consulCoordinator) WatchSubscriberPosition(topic s.StreamID, subscriber
 		}
 	}()
 	return posc, errc
+}
+
+// RegisterAsPublisher registers us as publishers of this stream and
+func (c *consulCoordinator) RegisterAsPublisher(compID s.StreamID) {
+	log.Println("[coordinator] Registering as publisher for: ", compID)
+	kv := c.client.KV()
+	pair := &api.KVPair{
+		Key:     fmt.Sprintf("dagger/publishers/%s/%s", compID, c.addr.String()),
+		Session: c.sessionID,
+	}
+	_, _, err := kv.Acquire(pair, nil)
+	if err != nil {
+		log.Println("[coordinator] Error registering as publisher: ", err)
+	}
 }
 
 // ------------- OLD --------------
@@ -337,50 +381,6 @@ func (gh *groupHandler) fetch() error {
 	log.Println("[coordinator] New leader:", gh.currentLeader)
 
 	return nil
-}
-
-func (c *consulCoordinator) EnsurePublisherNum(topic s.StreamID, n int, stop chan struct{}) chan error {
-	prefix := fmt.Sprintf("dagger/publishers/%s", topic)
-	lastNumPublishers := -1
-	kv := c.client.KV()
-	new, errc := c.watchSet(prefix, nil)
-	go func() {
-		for {
-			select {
-			case keys := <-new:
-				// if there are no publishers registered, post a new job
-				if len(keys) != lastNumPublishers && len(keys) < 2 {
-					log.Printf("[coordinator] Number of publishers of %s is %d, posting a job.", topic, len(keys))
-					// log.Println("Publishers: ", keys)
-					pair := &api.KVPair{
-						Key: taskPrefix + string(topic),
-					}
-					_, err := kv.Put(pair, nil)
-					if err != nil {
-						errc <- fmt.Errorf("consul error: %s", err)
-					}
-				} else { // FIXME: do this more elegantly
-					if len(keys) == 2 {
-						log.Printf("[coordinator] Number of publishers of %s is %d, not posting a job.", topic, len(keys))
-						// log.Println("Publishers: ", keys)
-					}
-				}
-				lastNumPublishers = len(keys)
-			}
-		}
-	}()
-	return errc
-}
-
-func tagsMatch(subscriber string, publisherTags dagger.Tags) bool {
-	tags := dagger.ParseTags(s.StreamID(subscriber))
-	log.Println("[coordinator][tags] Publisher", publisherTags, ", subscriber", tags)
-	for k, v := range tags {
-		if publisherTags[k] != v {
-			return false
-		}
-	}
-	return true
 }
 
 // LEGACY ONLY, TO BE REMOVED

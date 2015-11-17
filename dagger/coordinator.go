@@ -28,6 +28,20 @@ type Coordinator interface {
 	Stop()
 }
 
+// TaskCoordinator allows watching and taking new available tasks
+type TaskCoordinator interface {
+	// WatchTasks creates a watcher that watches when new tasks show up or
+	// are dropped
+	WatchTasks(chan struct{}) (chan []string, chan error)
+	// AcquireTask tries to take a task from the task list. If another worker
+	// manages to take the task, the call returns false.
+	AcquireTask(s.StreamID) (bool, error)
+	// TaskAcquired marks the task as successfuly acquired
+	TaskAcquired(s.StreamID)
+	// ReleaseTask releases the lock on the task so others can try to acquire it
+	ReleaseTask(s.StreamID) (bool, error)
+}
+
 // SubscribeCoordinator handles the act of subscribing to a stream
 type SubscribeCoordinator interface {
 	SubscribeTo(streamID s.StreamID, from s.Timestamp) error
@@ -48,20 +62,6 @@ type PublishCoordinator interface {
 // GroupHandler handles leadership status of a group
 type GroupHandler interface {
 	GetStatus() (bool, string, error)
-}
-
-// TaskCoordinator allows watching and taking new available tasks
-type TaskCoordinator interface {
-	// WatchTasks creates a watcher that watches when new tasks show up or
-	// are dropped
-	WatchTasks(chan struct{}) (chan []string, chan error)
-	// AcquireTask tries to take a task from the task list. If another worker
-	// manages to take the task, the call returns false.
-	AcquireTask(s.StreamID) (bool, error)
-	// TaskAcquired marks the task as successfuly acquired
-	TaskAcquired(s.StreamID)
-	// ReleaseTask releases the lock on the task so others can try to acquire it
-	ReleaseTask(s.StreamID) (bool, error)
 }
 
 // ReplicationCoordinator coordinates replication of records onto multiple
