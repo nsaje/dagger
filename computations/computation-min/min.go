@@ -9,7 +9,7 @@ import (
 	"os/signal"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 	"github.com/twinj/uuid"
 )
 
@@ -20,12 +20,12 @@ type MinProcessor struct {
 
 // MinCompState contains state needed for this statistic
 type MinCompState struct {
-	Values map[s.Timestamp][]float64
+	Values map[dagger.Timestamp][]float64
 }
 
 // MinCompStateJSON modified for JSON transport
 type MinCompStateJSON struct {
-	Buckets []s.Timestamp
+	Buckets []dagger.Timestamp
 	Values  [][]float64
 }
 
@@ -57,7 +57,7 @@ func (c *MinProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new record
-func (c *MinProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
+func (c *MinProcessor) ProcessBucket(bucket dagger.Timestamp, t *dagger.Record) error {
 	log.Println("[Min] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Values[bucket] = append(c.state.Values[bucket], value)
@@ -65,7 +65,7 @@ func (c *MinProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
 }
 
 // FinalizeBucket produces a new record from the bucket and deletes it
-func (c *MinProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
+func (c *MinProcessor) FinalizeBucket(bucket dagger.Timestamp) *dagger.Record {
 	log.Println("[Min] finalizing", bucket)
 	min := math.Inf(1)
 	for _, v := range c.state.Values[bucket] {
@@ -73,7 +73,7 @@ func (c *MinProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 			min = v
 		}
 	}
-	new := &s.Record{
+	new := &dagger.Record{
 		Data:      min,
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),
@@ -86,14 +86,14 @@ func (c *MinProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 // NewMinProcessorState initializes state struct
 func NewMinProcessorState() MinCompState {
 	return MinCompState{
-		Values: make(map[s.Timestamp][]float64),
+		Values: make(map[dagger.Timestamp][]float64),
 	}
 }
 
 // NewMinProcessorStateJSON initializes state struct for transfer via JSON
 func NewMinProcessorStateJSON() MinCompStateJSON {
 	return MinCompStateJSON{
-		Buckets: make([]s.Timestamp, 0),
+		Buckets: make([]dagger.Timestamp, 0),
 		Values:  make([][]float64, 0),
 	}
 }

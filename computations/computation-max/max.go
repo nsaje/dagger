@@ -9,7 +9,7 @@ import (
 	"os/signal"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 	"github.com/twinj/uuid"
 )
 
@@ -20,12 +20,12 @@ type MaxProcessor struct {
 
 // MaxCompState contains state needed for this statistic
 type MaxCompState struct {
-	Values map[s.Timestamp][]float64
+	Values map[dagger.Timestamp][]float64
 }
 
 // MaxCompStateJSON modified for JSON transport
 type MaxCompStateJSON struct {
-	Buckets []s.Timestamp
+	Buckets []dagger.Timestamp
 	Values  [][]float64
 }
 
@@ -57,7 +57,7 @@ func (c *MaxProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new record
-func (c *MaxProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
+func (c *MaxProcessor) ProcessBucket(bucket dagger.Timestamp, t *dagger.Record) error {
 	log.Println("[Max] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Values[bucket] = append(c.state.Values[bucket], value)
@@ -65,7 +65,7 @@ func (c *MaxProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
 }
 
 // FinalizeBucket produces a new record from the bucket and deletes it
-func (c *MaxProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
+func (c *MaxProcessor) FinalizeBucket(bucket dagger.Timestamp) *dagger.Record {
 	log.Println("[Max] finalizing", bucket)
 	max := math.Inf(-1)
 	for _, v := range c.state.Values[bucket] {
@@ -73,7 +73,7 @@ func (c *MaxProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 			max = v
 		}
 	}
-	new := &s.Record{
+	new := &dagger.Record{
 		Data:      max,
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),
@@ -86,14 +86,14 @@ func (c *MaxProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 // NewMaxProcessorState initializes state struct
 func NewMaxProcessorState() MaxCompState {
 	return MaxCompState{
-		Values: make(map[s.Timestamp][]float64),
+		Values: make(map[dagger.Timestamp][]float64),
 	}
 }
 
 // NewMaxProcessorStateJSON initializes state struct for transfer via JSON
 func NewMaxProcessorStateJSON() MaxCompStateJSON {
 	return MaxCompStateJSON{
-		Buckets: make([]s.Timestamp, 0),
+		Buckets: make([]dagger.Timestamp, 0),
 		Values:  make([][]float64, 0),
 	}
 }

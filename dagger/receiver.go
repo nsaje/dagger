@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nsaje/dagger/s"
+	
 )
 
 // Receiver receives new records via incoming RPC calls
@@ -20,9 +20,9 @@ type Receiver struct {
 	server                     *rpc.Server
 	listener                   net.Listener
 	taskManager                *TaskManager
-	subscribedRecordProcessors map[s.StreamID]map[RecordProcessor]struct{}
-	publisherMonitors          map[s.StreamID]chan struct{}
-	checkpointTimers           map[s.StreamID]*time.Timer
+	subscribedRecordProcessors map[StreamID]map[RecordProcessor]struct{}
+	publisherMonitors          map[StreamID]chan struct{}
+	checkpointTimers           map[StreamID]*time.Timer
 	subscribersLock            *sync.RWMutex
 }
 
@@ -31,9 +31,9 @@ func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
 	r := &Receiver{
 		conf:                       conf,
 		coordinator:                coordinator,
-		subscribedRecordProcessors: make(map[s.StreamID]map[RecordProcessor]struct{}),
-		publisherMonitors:          make(map[s.StreamID]chan struct{}),
-		checkpointTimers:           make(map[s.StreamID]*time.Timer),
+		subscribedRecordProcessors: make(map[StreamID]map[RecordProcessor]struct{}),
+		publisherMonitors:          make(map[StreamID]chan struct{}),
+		checkpointTimers:           make(map[StreamID]*time.Timer),
 		subscribersLock:            &sync.RWMutex{},
 	}
 	r.server = rpc.NewServer()
@@ -52,7 +52,7 @@ func (r *Receiver) ListenAddr() net.Addr {
 	return r.listener.Addr()
 }
 
-func (r *Receiver) SubscribeTo(streamID s.StreamID, from s.Timestamp, tp RecordProcessor) {
+func (r *Receiver) SubscribeTo(streamID StreamID, from Timestamp, tp RecordProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	subscribersSet := r.subscribedRecordProcessors[streamID]
@@ -71,7 +71,7 @@ func (r *Receiver) SubscribeTo(streamID s.StreamID, from s.Timestamp, tp RecordP
 	r.subscribedRecordProcessors[streamID] = subscribersSet
 }
 
-func (r *Receiver) UnsubscribeFrom(streamID s.StreamID, rp RecordProcessor) {
+func (r *Receiver) UnsubscribeFrom(streamID StreamID, rp RecordProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.UnsubscribeFrom(streamID)
@@ -87,7 +87,7 @@ func (r *Receiver) UnsubscribeFrom(streamID s.StreamID, rp RecordProcessor) {
 }
 
 // SubmitRecord submits a new record into the worker process
-func (r *Receiver) SubmitRecord(t *s.Record, reply *string) error {
+func (r *Receiver) SubmitRecord(t *Record, reply *string) error {
 	r.subscribersLock.RLock()
 	defer r.subscribersLock.RUnlock()
 	log.Printf("[receiver] Received: %s", t)
@@ -120,7 +120,7 @@ func (r *Receiver) SubmitRecord(t *s.Record, reply *string) error {
 }
 
 // Sync is the RPC method called by slave workers wanting to sync a computation
-func (r *Receiver) Sync(compID s.StreamID, reply *s.TaskSnapshot) error {
+func (r *Receiver) Sync(compID StreamID, reply *TaskSnapshot) error {
 	log.Printf("[receiver] Sync request for %s", compID)
 	if r.taskManager == nil {
 		return fmt.Errorf("[receiver] Task manager doesn't exist")

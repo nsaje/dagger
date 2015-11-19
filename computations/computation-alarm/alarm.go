@@ -7,7 +7,7 @@ import (
 	"sort"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 	"github.com/twinj/uuid"
 )
 
@@ -22,20 +22,20 @@ type AlarmComputation struct {
 }
 
 type valueTable struct {
-	Values     map[s.StreamID][]*s.Record
-	MaxPeriods map[s.StreamID]int
-	LWM        s.Timestamp
+	Values     map[dagger.StreamID][]*dagger.Record
+	MaxPeriods map[dagger.StreamID]int
+	LWM        dagger.Timestamp
 }
 
 func newValueTable() valueTable {
 	return valueTable{
-		make(map[s.StreamID][]*s.Record),
-		make(map[s.StreamID]int),
-		s.Timestamp(0),
+		make(map[dagger.StreamID][]*dagger.Record),
+		make(map[dagger.StreamID]int),
+		dagger.Timestamp(0),
 	}
 }
 
-func (vt *valueTable) getLastN(streamID s.StreamID, n int) []*s.Record {
+func (vt *valueTable) getLastN(streamID dagger.StreamID, n int) []*dagger.Record {
 	timeSeries := vt.Values[streamID]
 	i := sort.Search(len(timeSeries), func(i int) bool {
 		return timeSeries[i].Timestamp > vt.LWM
@@ -57,7 +57,7 @@ func (vt *valueTable) getLastN(streamID s.StreamID, n int) []*s.Record {
 	return evalSlice
 }
 
-func (vt *valueTable) insert(t *s.Record) {
+func (vt *valueTable) insert(t *dagger.Record) {
 	timeSeries := vt.Values[t.StreamID]
 	vt.LWM = t.LWM
 
@@ -100,15 +100,15 @@ func parseDefinition(definition string) (alarmDefinition, error) {
 	return alarmDefinition, nil
 }
 
-func (c *AlarmComputation) GetInfo(definition string) (s.ComputationPluginInfo, error) {
+func (c *AlarmComputation) GetInfo(definition string) (dagger.ComputationPluginInfo, error) {
 	log.Println("parsing definition:", definition)
 	alarmDefinition, err := parseDefinition(definition)
 	if err != nil {
-		return s.ComputationPluginInfo{}, err
+		return dagger.ComputationPluginInfo{}, err
 	}
 	leafNodes := alarmDefinition.tree.getLeafNodes()
-	inputs := make([]s.StreamID, 0, len(leafNodes))
-	maxPeriods := make(map[s.StreamID]int)
+	inputs := make([]dagger.StreamID, 0, len(leafNodes))
+	maxPeriods := make(map[dagger.StreamID]int)
 	for _, leafNode := range leafNodes {
 		inputs = append(inputs, leafNode.streamID)
 		currMax := maxPeriods[leafNode.streamID]
@@ -121,7 +121,7 @@ func (c *AlarmComputation) GetInfo(definition string) (s.ComputationPluginInfo, 
 	c.state.StringDefinition = definition
 	c.state.NumInputs = len(inputs)
 	c.state.ValueTable.MaxPeriods = maxPeriods
-	info := s.ComputationPluginInfo{
+	info := dagger.ComputationPluginInfo{
 		Inputs:   inputs,
 		Stateful: true,
 	}
@@ -147,7 +147,7 @@ func (c *AlarmComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *AlarmComputation) SubmitRecord(t *s.Record) ([]*s.Record, error) {
+func (c *AlarmComputation) SubmitRecord(t *dagger.Record) ([]*dagger.Record, error) {
 	_, ok := t.Data.(float64)
 	if !ok {
 		return nil, fmt.Errorf("Wrong data format, expected float!")
@@ -156,13 +156,13 @@ func (c *AlarmComputation) SubmitRecord(t *s.Record) ([]*s.Record, error) {
 	c.state.ValueTable.insert(t)
 	fired, values := c.state.definition.tree.eval(c.state.ValueTable)
 	if fired {
-		new := &s.Record{
+		new := &dagger.Record{
 			Data: fmt.Sprintf("Alarm '%s' fired with values %+v",
 				c.state.StringDefinition, values),
 			Timestamp: t.Timestamp,
 			ID:        uuid.NewV4().String(),
 		}
-		return []*s.Record{new}, nil
+		return []*dagger.Record{new}, nil
 	} else {
 		log.Printf("Alarm '%s' NOT fired with values %+v",
 			c.state.StringDefinition, values)
@@ -174,13 +174,13 @@ func (c *AlarmComputation) SubmitRecord(t *s.Record) ([]*s.Record, error) {
 	// 	c.state.buckets[i].evaluated = true
 	// 	c.state.buckets[i].fired = fired
 	// 	if fired {
-	// 		new := &s.Record{
+	// 		new := &dagger.Record{
 	// 			Data: fmt.Sprintf("Alarm %+v fired with values %v",
 	// 				c.state.definition.tree, c.state.buckets[i].values),
 	// 			Timestamp: t.Timestamp,
 	// 			ID:        uuid.NewV4().String(),
 	// 		}
-	// 		return []*s.Record{new}, nil
+	// 		return []*dagger.Record{new}, nil
 	// 	}
 	// }
 

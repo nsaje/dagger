@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nsaje/dagger/s"
+	
 	"github.com/twinj/uuid"
 )
 
@@ -25,7 +25,7 @@ func NewHttpAPI(receiver *Receiver, dispatcher *Dispatcher) HttpAPI {
 		dispatcher,
 		&httpSubscribers{
 			receiver: receiver,
-			subs:     make(map[s.StreamID]map[chan *s.Record]struct{}),
+			subs:     make(map[StreamID]map[chan *Record]struct{}),
 			lock:     &sync.RWMutex{},
 		},
 	}
@@ -56,7 +56,7 @@ func (api HttpAPI) submit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
-	streamID := s.StreamID(r.FormValue("s"))
+	streamID := StreamID(r.FormValue("s"))
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
@@ -73,8 +73,8 @@ func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateRecordFromJSON parses a complete record from JSON and adds LWM and ID
-func CreateRecordFromJSON(b []byte) (*s.Record, error) {
-	var t s.Record
+func CreateRecordFromJSON(b []byte) (*Record, error) {
+	var t Record
 	err := json.Unmarshal(b, &t)
 	if err != nil {
 		return nil, fmt.Errorf("Error parsing JSON: %s", err)
@@ -85,19 +85,19 @@ func CreateRecordFromJSON(b []byte) (*s.Record, error) {
 		return nil, fmt.Errorf("Record validation error: %s", err)
 	}
 
-	t.LWM = s.Timestamp(time.Now().UnixNano()) // FIXME: think this through
+	t.LWM = Timestamp(time.Now().UnixNano()) // FIXME: think this through
 	t.ID = uuid.NewV4().String()
 
 	return &t, nil
 }
 
 // CreateRecord creates a new record with given stream ID and data
-func CreateRecord(streamID s.StreamID, data string) (*s.Record, error) {
+func CreateRecord(streamID StreamID, data string) (*Record, error) {
 	if len(streamID) == 0 {
 		return nil, errors.New("Stream ID shouldn't be empty")
 	}
-	now := s.Timestamp(time.Now().UnixNano())
-	t := s.Record{
+	now := Timestamp(time.Now().UnixNano())
+	t := Record{
 		StreamID:  streamID,
 		ID:        uuid.NewV4().String(),
 		Timestamp: now,
@@ -107,7 +107,7 @@ func CreateRecord(streamID s.StreamID, data string) (*s.Record, error) {
 	return &t, nil
 }
 
-func validate(t *s.Record) error {
+func validate(t *Record) error {
 	if len(t.StreamID) == 0 {
 		return errors.New("'stream_id' should not be empty")
 	}
@@ -123,12 +123,12 @@ func validate(t *s.Record) error {
 }
 
 func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
-	topicGlob := s.StreamID(r.FormValue("s"))
+	topicGlob := StreamID(r.FormValue("s"))
 	if len(topicGlob) == 0 {
 		http.Error(w, "stream id missing in URL", 400)
 		return
 	}
-	ch := make(chan *s.Record)
+	ch := make(chan *Record)
 	disconnected := w.(http.CloseNotifier).CloseNotify()
 
 	api.subscribers.SubscribeTo(topicGlob, ch)
@@ -148,23 +148,23 @@ func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 
 type httpSubscribers struct {
 	receiver *Receiver
-	subs     map[s.StreamID]map[chan *s.Record]struct{}
+	subs     map[StreamID]map[chan *Record]struct{}
 	lock     *sync.RWMutex
 }
 
-func (hs *httpSubscribers) SubscribeTo(streamID s.StreamID, ch chan *s.Record) {
+func (hs *httpSubscribers) SubscribeTo(streamID StreamID, ch chan *Record) {
 	hs.lock.Lock()
 	defer hs.lock.Unlock()
 	subscribersSet := hs.subs[streamID]
 	if subscribersSet == nil {
-		subscribersSet = make(map[chan *s.Record]struct{})
-		hs.receiver.SubscribeTo(streamID, s.Timestamp(0), hs)
+		subscribersSet = make(map[chan *Record]struct{})
+		hs.receiver.SubscribeTo(streamID, Timestamp(0), hs)
 	}
 	subscribersSet[ch] = struct{}{}
 	hs.subs[streamID] = subscribersSet
 }
 
-func (hs *httpSubscribers) UnsubscribeFrom(streamID s.StreamID, ch chan *s.Record) {
+func (hs *httpSubscribers) UnsubscribeFrom(streamID StreamID, ch chan *Record) {
 	hs.lock.Lock()
 	defer hs.lock.Unlock()
 	delete(hs.subs[streamID], ch)
@@ -173,7 +173,7 @@ func (hs *httpSubscribers) UnsubscribeFrom(streamID s.StreamID, ch chan *s.Recor
 	}
 }
 
-func (hs *httpSubscribers) ProcessRecord(t *s.Record) error {
+func (hs *httpSubscribers) ProcessRecord(t *Record) error {
 	hs.lock.RLock()
 	defer hs.lock.RUnlock()
 	for ch := range hs.subs[t.StreamID] {

@@ -8,7 +8,7 @@ import (
 	"os/signal"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 	"github.com/twinj/uuid"
 )
 
@@ -19,13 +19,13 @@ type AvgProcessor struct {
 
 // AvgCompState contains state needed for this statistic
 type AvgCompState struct {
-	Sums   map[s.Timestamp]float64
-	Counts map[s.Timestamp]int
+	Sums   map[dagger.Timestamp]float64
+	Counts map[dagger.Timestamp]int
 }
 
 // AvgCompStateJSON modified for JSON transport
 type AvgCompStateJSON struct {
-	Buckets []s.Timestamp
+	Buckets []dagger.Timestamp
 	Sums    []float64
 	Counts  []int
 }
@@ -60,7 +60,7 @@ func (c *AvgProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new record
-func (c *AvgProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
+func (c *AvgProcessor) ProcessBucket(bucket dagger.Timestamp, t *dagger.Record) error {
 	log.Println("[avg] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Counts[bucket]++
@@ -69,9 +69,9 @@ func (c *AvgProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
 }
 
 // FinalizeBucket produces a new record from the bucket and deletes it
-func (c *AvgProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
+func (c *AvgProcessor) FinalizeBucket(bucket dagger.Timestamp) *dagger.Record {
 	log.Println("[avg] finalizing", bucket)
-	new := &s.Record{
+	new := &dagger.Record{
 		Data:      c.state.Sums[bucket] / float64(c.state.Counts[bucket]),
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),
@@ -85,15 +85,15 @@ func (c *AvgProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 // NewAvgProcessorState initializes state struct
 func NewAvgProcessorState() AvgCompState {
 	return AvgCompState{
-		Sums:   make(map[s.Timestamp]float64),
-		Counts: make(map[s.Timestamp]int),
+		Sums:   make(map[dagger.Timestamp]float64),
+		Counts: make(map[dagger.Timestamp]int),
 	}
 }
 
 // NewAvgProcessorStateJSON initializes state struct for transfer via JSON
 func NewAvgProcessorStateJSON() AvgCompStateJSON {
 	return AvgCompStateJSON{
-		Buckets: make([]s.Timestamp, 0),
+		Buckets: make([]dagger.Timestamp, 0),
 		Sums:    make([]float64, 0),
 		Counts:  make([]int, 0),
 	}

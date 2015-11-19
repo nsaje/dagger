@@ -10,7 +10,6 @@ import (
 	"github.com/codegangsta/cli"
 	"github.com/nsaje/dagger/consul"
 	"github.com/nsaje/dagger/dagger"
-	"github.com/nsaje/dagger/s"
 )
 
 // Producer reads records from stdin and submits them
@@ -29,7 +28,7 @@ func Producer(c *cli.Context) {
 	lwmTracker := dagger.NewLWMTracker()
 	// dispatcher := dagger.NewDispatcher(conf, coordinator)
 	// bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
-	streamID := s.StreamID(c.String("streamID"))
+	streamID := dagger.StreamID(c.String("streamID"))
 	persister, err := dagger.NewPersister("/tmp/dagger")
 	if err != nil {
 		log.Fatalf("error opening database")
@@ -39,7 +38,7 @@ func Producer(c *cli.Context) {
 	go dispatcher.Run()
 
 	reader := bufio.NewReader(os.Stdin)
-	// var tmpT *s.Record
+	// var tmpT *dagger.Record
 	for {
 		var line string
 		line, err := reader.ReadString('\n')
@@ -59,7 +58,7 @@ func Producer(c *cli.Context) {
 		// tmpT = record
 	}
 	// bufferedDispatcher.Stop()
-	// tmpT.LWM = s.Timestamp(time.Now().UnixNano()).Add(time.Hour)
+	// tmpT.LWM = dagger.Timestamp(time.Now().UnixNano()).Add(time.Hour)
 	// dispatcher.ProcessRecord(tmpT)
 	time.Sleep(10000 * time.Second)
 	log.Println("EXITING")

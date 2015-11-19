@@ -1,6 +1,6 @@
 package main
 
-import "github.com/nsaje/dagger/s"
+import "github.com/nsaje/dagger/dagger"
 
 type RelationalOperator int
 
@@ -19,12 +19,12 @@ const (
 )
 
 type Node interface {
-	eval(valueTable valueTable) (bool, map[s.StreamID][]float64)
+	eval(valueTable valueTable) (bool, map[dagger.StreamID][]float64)
 	getLeafNodes() []LeafNode
 }
 
 type LeafNode struct {
-	streamID           s.StreamID
+	streamID           dagger.StreamID
 	relationalOperator RelationalOperator
 	threshold          float64
 	periods            int
@@ -34,9 +34,9 @@ func (n LeafNode) getLeafNodes() []LeafNode {
 	return []LeafNode{n}
 }
 
-func (n LeafNode) eval(vt valueTable) (bool, map[s.StreamID][]float64) {
+func (n LeafNode) eval(vt valueTable) (bool, map[dagger.StreamID][]float64) {
 	result := true
-	values := make(map[s.StreamID][]float64)
+	values := make(map[dagger.StreamID][]float64)
 	values[n.streamID] = make([]float64, n.periods)
 	lastNRecords := vt.getLastN(n.streamID, n.periods)
 	if len(lastNRecords) == 0 {
@@ -65,7 +65,7 @@ type BinNode struct {
 	right Node
 }
 
-func mergeValues(l map[s.StreamID][]float64, r map[s.StreamID][]float64) map[s.StreamID][]float64 {
+func mergeValues(l map[dagger.StreamID][]float64, r map[dagger.StreamID][]float64) map[dagger.StreamID][]float64 {
 	values := l
 	for k, rightVal := range r {
 		leftVal := l[k]
@@ -78,7 +78,7 @@ func mergeValues(l map[s.StreamID][]float64, r map[s.StreamID][]float64) map[s.S
 	return values
 }
 
-func (n BinNode) eval(vt valueTable) (bool, map[s.StreamID][]float64) {
+func (n BinNode) eval(vt valueTable) (bool, map[dagger.StreamID][]float64) {
 	leftResult, leftValues := n.left.eval(vt)
 	rightResult, rightValues := n.right.eval(vt)
 	values := mergeValues(leftValues, rightValues)

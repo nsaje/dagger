@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/nsaje/dagger/producers"
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 )
 
 // TestProducerPlugin produces an incremented value every second
@@ -20,7 +20,7 @@ func main() {
 	counter := 0
 	for {
 		time.Sleep(1000 * time.Millisecond)
-		s := s.Record{StreamID: "test", Data: counter, LWM: s.Timestamp(time.Now().UnixNano()), Timestamp: s.Timestamp(time.Now().UnixNano())}
+		s := dagger.Record{StreamID: "test", Data: counter, LWM: dagger.Timestamp(time.Now().UnixNano()), Timestamp: dagger.Timestamp(time.Now().UnixNano())}
 		p.Stream <- s
 		counter++
 	}

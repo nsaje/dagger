@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,34 +16,34 @@ func TestParser(t *testing.T) {
 	}
 	expected := []alarmDefinition{
 		alarmDefinition{
-			LeafNode{s.StreamID("test"), GT, 15.0, 3},
+			LeafNode{dagger.StreamID("test"), GT, 15.0, 3},
 			"",
 		},
 		alarmDefinition{
 			BinNode{OR,
-				LeafNode{s.StreamID("avg(cpu_util{t1=v1,t2=v2}, 5s)"), GT, 30.0, 1},
+				LeafNode{dagger.StreamID("avg(cpu_util{t1=v1,t2=v2}, 5s)"), GT, 30.0, 1},
 				BinNode{AND,
-					LeafNode{s.StreamID("avg(sum(test))"), GT, 16.0, 1},
-					LeafNode{s.StreamID("sum(test2)"), LT, 13.0, 1}},
+					LeafNode{dagger.StreamID("avg(sum(test))"), GT, 16.0, 1},
+					LeafNode{dagger.StreamID("sum(test2)"), LT, 13.0, 1}},
 			},
 			"",
 		},
 		alarmDefinition{
 			BinNode{AND,
 				BinNode{OR,
-					LeafNode{s.StreamID("avg(cpu_util{t1=v1,t2=v2}, 5s)"), GT, 30.0, 1},
-					LeafNode{s.StreamID("avg(sum(test))"), GT, 16.0, 1},
+					LeafNode{dagger.StreamID("avg(cpu_util{t1=v1,t2=v2}, 5s)"), GT, 30.0, 1},
+					LeafNode{dagger.StreamID("avg(sum(test))"), GT, 16.0, 1},
 				},
-				LeafNode{s.StreamID("sum(test2)"), LT, 13.0, 1},
+				LeafNode{dagger.StreamID("sum(test2)"), LT, 13.0, 1},
 			},
 			"",
 		},
 		alarmDefinition{
 			BinNode{OR,
-				LeafNode{s.StreamID("avg(cpu_util{t1=v1,t2=v2}, 5s)"), GT, 30.0, 1},
+				LeafNode{dagger.StreamID("avg(cpu_util{t1=v1,t2=v2}, 5s)"), GT, 30.0, 1},
 				BinNode{AND,
-					LeafNode{s.StreamID("avg(sum(test{t1=v1}))"), GT, 16.0, 1},
-					LeafNode{s.StreamID("sum(test2)"), LT, 13.0, 1}},
+					LeafNode{dagger.StreamID("avg(sum(test{t1=v1}))"), GT, 16.0, 1},
+					LeafNode{dagger.StreamID("sum(test2)"), LT, 13.0, 1}},
 			},
 			"t1",
 		},

@@ -7,39 +7,39 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 )
 
 type TimeBucketsProcessor interface {
-	ProcessBucket(bucket s.Timestamp, t *s.Record) error
-	FinalizeBucket(bucket s.Timestamp) *s.Record
+	ProcessBucket(bucket dagger.Timestamp, t *dagger.Record) error
+	FinalizeBucket(bucket dagger.Timestamp) *dagger.Record
 	GetState() ([]byte, error)
 	SetState([]byte) error
 }
 
 type TimeBucketsState struct {
-	LastLWM        s.Timestamp      `json:"last_lwm"`
+	LastLWM        dagger.Timestamp      `json:"last_lwm"`
 	ProcessorState *json.RawMessage `json:"processor_state"`
 }
 
 type TimeBucketsComputation struct {
 	period    time.Duration
-	buckets   map[s.Timestamp]struct{}
+	buckets   map[dagger.Timestamp]struct{}
 	processor TimeBucketsProcessor
-	lastLWM   s.Timestamp
+	lastLWM   dagger.Timestamp
 }
 
 func NewTimeBucketsComputation(processor TimeBucketsProcessor) *TimeBucketsComputation {
 	return &TimeBucketsComputation{
 		processor: processor,
-		buckets:   make(map[s.Timestamp]struct{}),
+		buckets:   make(map[dagger.Timestamp]struct{}),
 	}
 }
 
-func (c *TimeBucketsComputation) GetInfo(definition string) (s.ComputationPluginInfo, error) {
+func (c *TimeBucketsComputation) GetInfo(definition string) (dagger.ComputationPluginInfo, error) {
 	var stream string
 	var period string
-	info := s.ComputationPluginInfo{}
+	info := dagger.ComputationPluginInfo{}
 	info.Stateful = true
 
 	tokens := strings.Split(definition, ",")
@@ -48,7 +48,7 @@ func (c *TimeBucketsComputation) GetInfo(definition string) (s.ComputationPlugin
 	}
 	stream = strings.TrimSpace(tokens[0])
 	period = strings.TrimSpace(tokens[1])
-	info.Inputs = []s.StreamID{s.StreamID(stream)}
+	info.Inputs = []dagger.StreamID{dagger.StreamID(stream)}
 
 	p, err := time.ParseDuration(period)
 	if err != nil {
@@ -89,9 +89,9 @@ func (c *TimeBucketsComputation) SetState(state []byte) error {
 	return nil
 }
 
-func (c *TimeBucketsComputation) SubmitRecord(t *s.Record) ([]*s.Record, error) {
+func (c *TimeBucketsComputation) SubmitRecord(t *dagger.Record) ([]*dagger.Record, error) {
 	log.Println("[time_buckets] processing record", t)
-	bucket := s.TSFromTime(t.Timestamp.ToTime().Round(c.period))
+	bucket := dagger.TSFromTime(t.Timestamp.ToTime().Round(c.period))
 	_, ok := t.Data.(float64)
 	if !ok {
 		return nil, fmt.Errorf("Wrong data format, expected float!")
@@ -104,10 +104,10 @@ func (c *TimeBucketsComputation) SubmitRecord(t *s.Record) ([]*s.Record, error) 
 	log.Println("[time_buckets] submitting to processor ", t)
 	c.processor.ProcessBucket(bucket, t)
 
-	var productions []*s.Record
+	var productions []*dagger.Record
 
 	for bucket, _ := range c.buckets {
-		if bucket+s.Timestamp(c.period) < t.LWM {
+		if bucket+dagger.Timestamp(c.period) < t.LWM {
 			log.Println("bucket %s before LWM %s!", bucket, t.LWM)
 			new := c.processor.FinalizeBucket(bucket)
 			delete(c.buckets, bucket)

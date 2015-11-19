@@ -3,23 +3,23 @@ package dagger
 import (
 	"fmt"
 
-	"github.com/nsaje/dagger/s"
+	
 	"github.com/willf/bloom"
 )
 
 // Deduplicator throws away duplicate records (and ACKs their senders)
 type Deduplicator interface {
-	Seen(t *s.Record) (bool, error)
+	Seen(t *Record) (bool, error)
 }
 
 type dedup struct {
-	computation  s.StreamID
+	computation  StreamID
 	recordTracker ReceivedTracker
 	filter       *bloom.BloomFilter
 }
 
 // NewDeduplicator initializes a new deduplicator
-func NewDeduplicator(computation s.StreamID, recordTracker ReceivedTracker) (Deduplicator, error) {
+func NewDeduplicator(computation StreamID, recordTracker ReceivedTracker) (Deduplicator, error) {
 	dd := &dedup{
 		computation:  computation,
 		recordTracker: recordTracker,
@@ -36,7 +36,7 @@ func NewDeduplicator(computation s.StreamID, recordTracker ReceivedTracker) (Ded
 	return dd, nil
 }
 
-func (d *dedup) Seen(t *s.Record) (bool, error) {
+func (d *dedup) Seen(t *Record) (bool, error) {
 	var seen bool
 	var err error
 	if seen = d.filter.TestAndAddString(t.ID); seen {

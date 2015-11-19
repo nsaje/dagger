@@ -6,7 +6,7 @@ import (
 
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/testutil"
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -161,16 +161,16 @@ func TestTaskWatcher(t *testing.T) {
 	kv := newSimpleKV(t, conf)
 	coord := NewCoordinator(conf)
 	newc, errc := coord.WatchTasks(nil)
-	add := []s.StreamID{
+	add := []dagger.StreamID{
 		"task1",
 		"task2",
 		"task3",
 	}
-	remove := []s.StreamID{
+	remove := []dagger.StreamID{
 		"task1",
 		"task2",
 	}
-	expected := [][]s.StreamID{
+	expected := [][]dagger.StreamID{
 		{},
 		add[:1],
 		add[:2],
@@ -186,7 +186,7 @@ func TestTaskWatcher(t *testing.T) {
 			kv.Delete(taskPrefix + string(k))
 		}
 	}()
-	var actual [][]s.StreamID
+	var actual [][]dagger.StreamID
 	timeout := time.NewTimer(2 * time.Second)
 
 	for {
@@ -195,9 +195,9 @@ func TestTaskWatcher(t *testing.T) {
 			t.Fatalf("Timeout!")
 		case k := <-newc:
 			t.Log("new set:", k)
-			ks := make([]s.StreamID, len(k), len(k))
+			ks := make([]dagger.StreamID, len(k), len(k))
 			for i := range k {
-				ks[i] = s.StreamID(k[i])
+				ks[i] = dagger.StreamID(k[i])
 			}
 			actual = append(actual, ks)
 			if len(actual) == len(expected) {
@@ -227,7 +227,7 @@ func TestWatchSubscribers(t *testing.T) {
 		"test{t1=v1}/d",
 	}
 	remove := []string{}
-	addc, droppedc, errc := coord.WatchSubscribers(s.StreamID("test{t1=v1}"), nil)
+	addc, droppedc, errc := coord.WatchSubscribers(dagger.StreamID("test{t1=v1}"), nil)
 	go func() {
 		for _, k := range add {
 			kv.Put(prefix+k, nil)

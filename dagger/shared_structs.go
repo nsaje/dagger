@@ -1,4 +1,4 @@
-package s
+package dagger
 
 import (
 	"fmt"

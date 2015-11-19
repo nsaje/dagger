@@ -4,7 +4,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/nsaje/dagger/s"
+	
 )
 
 // Tags are key-value metadata attached to a stream
@@ -13,7 +13,7 @@ type Tags map[string]string
 // NewSubscriber encapsulates information about a new subscription
 type NewSubscriber struct {
 	Addr string
-	From s.Timestamp
+	From Timestamp
 }
 
 // Coordinator coordinates topics, their publishers and subscribers
@@ -35,28 +35,28 @@ type TaskCoordinator interface {
 	WatchTasks(chan struct{}) (chan []string, chan error)
 	// AcquireTask tries to take a task from the task list. If another worker
 	// manages to take the task, the call returns false.
-	AcquireTask(s.StreamID) (bool, error)
+	AcquireTask(StreamID) (bool, error)
 	// TaskAcquired marks the task as successfuly acquired
-	TaskAcquired(s.StreamID)
+	TaskAcquired(StreamID)
 	// ReleaseTask releases the lock on the task so others can try to acquire it
-	ReleaseTask(s.StreamID) (bool, error)
+	ReleaseTask(StreamID) (bool, error)
 }
 
 // SubscribeCoordinator handles the act of subscribing to a stream
 type SubscribeCoordinator interface {
-	SubscribeTo(streamID s.StreamID, from s.Timestamp) error
-	EnsurePublisherNum(s.StreamID, int, chan struct{}) chan error
-	CheckpointPosition(streamID s.StreamID, from s.Timestamp) error
-	UnsubscribeFrom(streamID s.StreamID) error
+	SubscribeTo(streamID StreamID, from Timestamp) error
+	EnsurePublisherNum(StreamID, int, chan struct{}) chan error
+	CheckpointPosition(streamID StreamID, from Timestamp) error
+	UnsubscribeFrom(streamID StreamID) error
 }
 
 // PublishCoordinator handles the coordination of publishing a stream
 type PublishCoordinator interface {
-	GetSubscribers(streamID s.StreamID) ([]string, error) // DEPRECATE
-	WatchSubscribers(s.StreamID, chan struct{}) (chan string, chan string, chan error)
-	GetSubscriberPosition(s.StreamID, string) (s.Timestamp, error)
-	WatchSubscriberPosition(s.StreamID, string, chan struct{}) (chan s.Timestamp, chan error)
-	RegisterAsPublisher(streamID s.StreamID)
+	GetSubscribers(streamID StreamID) ([]string, error) // DEPRECATE
+	WatchSubscribers(StreamID, chan struct{}) (chan string, chan string, chan error)
+	GetSubscriberPosition(StreamID, string) (Timestamp, error)
+	WatchSubscriberPosition(StreamID, string, chan struct{}) (chan Timestamp, chan error)
+	RegisterAsPublisher(streamID StreamID)
 }
 
 // GroupHandler handles leadership status of a group
@@ -67,11 +67,11 @@ type GroupHandler interface {
 // ReplicationCoordinator coordinates replication of records onto multiple
 // computations on multiple hosts for high availability
 type ReplicationCoordinator interface {
-	JoinGroup(streamID s.StreamID) (GroupHandler, error)
+	JoinGroup(streamID StreamID) (GroupHandler, error)
 }
 
 // ParseTags returns kv pairs encoded in stream ID
-func ParseTags(s s.StreamID) Tags {
+func ParseTags(s StreamID) Tags {
 	topic := string(s)
 	tags := make(Tags)
 	idx0 := strings.Index(topic, "{")
@@ -94,12 +94,12 @@ func ParseTags(s s.StreamID) Tags {
 	return tags
 }
 
-// StripTags removes the kv pairs encoded in s.StreamID
-func StripTags(sid s.StreamID) s.StreamID {
+// StripTags removes the kv pairs encoded in StreamID
+func StripTags(sid StreamID) StreamID {
 	topic := string(sid)
 	idx0 := strings.Index(topic, "{")
 	if idx0 > 0 {
-		return s.StreamID(topic[:idx0])
+		return StreamID(topic[:idx0])
 	}
-	return s.StreamID(topic)
+	return StreamID(topic)
 }

@@ -39,7 +39,7 @@ SubExpr <- streamID:StreamID _ op:RelationalOperator _ thresholdValue:Float64 _ 
     periods = times.(int)
   }
   return LeafNode{
-    s.StreamID(streamID.(string)),
+    dagger.StreamID(streamID.(string)),
     op.(RelationalOperator),
     thresholdValue.(float64),
     periods,

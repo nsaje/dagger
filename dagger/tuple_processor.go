@@ -1,23 +1,21 @@
 package dagger
 
-import "github.com/nsaje/dagger/s"
-
 // RecordProcessor is an object capable of processing a record
 type RecordProcessor interface {
-	ProcessRecord(*s.Record) error
+	ProcessRecord(*Record) error
 }
 
 // LinearizedRecordProcessor is an object capable of processing a list of ordered
 // records
 type LinearizedRecordProcessor interface {
-	ProcessRecordLinearized(*s.Record) error
+	ProcessRecordLinearized(*Record) error
 }
 
 // ProcessMultipleRecords processes multiple records with a single record processor
-func ProcessMultipleRecords(tp RecordProcessor, records []*s.Record) error {
+func ProcessMultipleRecords(tp RecordProcessor, records []*Record) error {
 	errCh := make(chan error)
 	for _, r := range records {
-		go func(t *s.Record) {
+		go func(t *Record) {
 			errCh <- tp.ProcessRecord(t)
 		}(r)
 	}
@@ -33,7 +31,7 @@ func ProcessMultipleRecords(tp RecordProcessor, records []*s.Record) error {
 }
 
 // ProcessMultipleProcessors processes a single record with multiple record processors
-func ProcessMultipleProcessors(procs []RecordProcessor, t *s.Record) error {
+func ProcessMultipleProcessors(procs []RecordProcessor, t *Record) error {
 	errCh := make(chan error)
 	for _, proc := range procs {
 		go func(proc RecordProcessor) {

@@ -8,7 +8,7 @@ import (
 	"os/signal"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 	"github.com/twinj/uuid"
 )
 
@@ -19,13 +19,13 @@ type CountProcessor struct {
 
 // CountCompState contains state needed for this statistic
 type CountCompState struct {
-	Sums   map[s.Timestamp]float64
-	Counts map[s.Timestamp]int
+	Sums   map[dagger.Timestamp]float64
+	Counts map[dagger.Timestamp]int
 }
 
 // CountCompStateJSON modified for JSON transport
 type CountCompStateJSON struct {
-	Buckets []s.Timestamp
+	Buckets []dagger.Timestamp
 	Counts  []int
 }
 
@@ -57,16 +57,16 @@ func (c *CountProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new record
-func (c *CountProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
+func (c *CountProcessor) ProcessBucket(bucket dagger.Timestamp, t *dagger.Record) error {
 	log.Println("[avg] processing", t)
 	c.state.Counts[bucket]++
 	return nil
 }
 
 // FinalizeBucket produces a new record from the bucket and deletes it
-func (c *CountProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
+func (c *CountProcessor) FinalizeBucket(bucket dagger.Timestamp) *dagger.Record {
 	log.Println("[avg] finalizing", bucket)
-	new := &s.Record{
+	new := &dagger.Record{
 		Data:      c.state.Counts[bucket],
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),
@@ -79,14 +79,14 @@ func (c *CountProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 // NewCountProcessorState initializes state struct
 func NewCountProcessorState() CountCompState {
 	return CountCompState{
-		Counts: make(map[s.Timestamp]int),
+		Counts: make(map[dagger.Timestamp]int),
 	}
 }
 
 // NewCountProcessorStateJSON initializes state struct for transfer via JSON
 func NewCountProcessorStateJSON() CountCompStateJSON {
 	return CountCompStateJSON{
-		Buckets: make([]s.Timestamp, 0),
+		Buckets: make([]dagger.Timestamp, 0),
 		Counts:  make([]int, 0),
 	}
 }

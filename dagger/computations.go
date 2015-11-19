@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/natefinch/pie"
-	"github.com/nsaje/dagger/s"
+	
 )
 
 type statelessComputation struct {
@@ -20,8 +20,8 @@ type statelessComputation struct {
 	dispatcher RecordProcessor
 }
 
-func (comp *statelessComputation) Sync() (s.Timestamp, error) {
-	return s.Timestamp(0), nil
+func (comp *statelessComputation) Sync() (Timestamp, error) {
+	return Timestamp(0), nil
 }
 
 func (comp *statelessComputation) Run() error {
@@ -31,7 +31,7 @@ func (comp *statelessComputation) Run() error {
 func (comp *statelessComputation) Stop() {
 }
 
-func (comp *statelessComputation) ProcessRecord(t *s.Record) error {
+func (comp *statelessComputation) ProcessRecord(t *Record) error {
 	response, err := comp.plugin.SubmitRecord(t)
 	if err != nil {
 		return err
@@ -39,12 +39,12 @@ func (comp *statelessComputation) ProcessRecord(t *s.Record) error {
 	return ProcessMultipleRecords(comp.dispatcher, response.Records)
 }
 
-func (comp *statelessComputation) GetSnapshot() (*s.TaskSnapshot, error) {
+func (comp *statelessComputation) GetSnapshot() (*TaskSnapshot, error) {
 	return nil, nil
 }
 
 type statefulComputation struct {
-	streamID     s.StreamID
+	streamID     StreamID
 	plugin       ComputationPlugin
 	groupHandler GroupHandler
 	linearizer   *Linearizer
@@ -57,7 +57,7 @@ type statefulComputation struct {
 	initialized  bool
 }
 
-func newStatefulComputation(streamID s.StreamID, coordinator Coordinator,
+func newStatefulComputation(streamID StreamID, coordinator Coordinator,
 	persister Persister, plugin ComputationPlugin) (*statefulComputation, error) {
 	groupHandler, err := coordinator.JoinGroup(streamID)
 	if err != nil {
@@ -92,10 +92,10 @@ func newStatefulComputation(streamID s.StreamID, coordinator Coordinator,
 	return computation, nil
 }
 
-func (comp *statefulComputation) Sync() (s.Timestamp, error) {
+func (comp *statefulComputation) Sync() (Timestamp, error) {
 	comp.Lock()
 	defer comp.Unlock()
-	var from s.Timestamp
+	var from Timestamp
 	for !comp.initialized {
 		log.Printf("[computations] Computation %s not initialized, syncing with group",
 			comp.streamID)
@@ -153,7 +153,7 @@ func (comp *statefulComputation) Run() error {
 func (comp *statefulComputation) Stop() {
 }
 
-func (comp *statefulComputation) ProcessRecord(t *s.Record) error {
+func (comp *statefulComputation) ProcessRecord(t *Record) error {
 	err := comp.linearizer.ProcessRecord(t)
 	if err != nil {
 		return err
@@ -161,7 +161,7 @@ func (comp *statefulComputation) ProcessRecord(t *s.Record) error {
 	return nil
 }
 
-func (comp *statefulComputation) ProcessRecordLinearized(t *s.Record) error {
+func (comp *statefulComputation) ProcessRecordLinearized(t *Record) error {
 	// acquire a lock, so we wait in case there's synchronization with
 	// a slave going on
 	comp.Lock()
@@ -197,7 +197,7 @@ func (comp *statefulComputation) ProcessRecordLinearized(t *s.Record) error {
 	return nil
 }
 
-func (comp *statefulComputation) GetSnapshot() (*s.TaskSnapshot, error) {
+func (comp *statefulComputation) GetSnapshot() (*TaskSnapshot, error) {
 	log.Println("[computations] trying to acquire sync lock...")
 	comp.Lock()
 	log.Println("[computations] ... sync lock acquired!")
@@ -215,7 +215,7 @@ func (comp *statefulComputation) GetSnapshot() (*s.TaskSnapshot, error) {
 }
 
 // StartComputationPlugin starts the plugin process
-func StartComputationPlugin(name string, compID s.StreamID) (ComputationPlugin, error) {
+func StartComputationPlugin(name string, compID StreamID) (ComputationPlugin, error) {
 	log.Printf("[computations] Launching computation plugin '%s'", name)
 	path := path.Join(os.Getenv("DAGGER_PLUGIN_PATH"), "computation-"+name)
 	client, err := pie.StartProviderCodec(jsonrpc.NewClientCodec,
@@ -236,38 +236,38 @@ func StartComputationPlugin(name string, compID s.StreamID) (ComputationPlugin, 
 // ComputationPlugin handles the running and interacting with a computation
 // plugin process
 type ComputationPlugin interface {
-	GetInfo(definition string) (*s.ComputationPluginInfo, error)
-	SubmitRecord(t *s.Record) (*s.ComputationPluginResponse, error)
-	GetState() (*s.ComputationPluginState, error)
-	SetState(*s.ComputationPluginState) error
+	GetInfo(definition string) (*ComputationPluginInfo, error)
+	SubmitRecord(t *Record) (*ComputationPluginResponse, error)
+	GetState() (*ComputationPluginState, error)
+	SetState(*ComputationPluginState) error
 }
 
 type computationPlugin struct {
 	client *rpc.Client
 	name   string
-	compID s.StreamID
+	compID StreamID
 }
 
-func (p *computationPlugin) GetInfo(definition string) (*s.ComputationPluginInfo, error) {
-	var result s.ComputationPluginInfo
+func (p *computationPlugin) GetInfo(definition string) (*ComputationPluginInfo, error) {
+	var result ComputationPluginInfo
 	err := p.client.Call("Computation.GetInfo", definition, &result)
 	return &result, err
 }
 
-func (p *computationPlugin) GetState() (*s.ComputationPluginState, error) {
-	var result s.ComputationPluginState
+func (p *computationPlugin) GetState() (*ComputationPluginState, error) {
+	var result ComputationPluginState
 	err := p.client.Call("Computation.GetState", struct{}{}, &result)
 	return &result, err
 }
 
-func (p *computationPlugin) SetState(state *s.ComputationPluginState) error {
+func (p *computationPlugin) SetState(state *ComputationPluginState) error {
 	var result string
 	err := p.client.Call("Computation.SetState", state, &result)
 	return err
 }
 
-func (p *computationPlugin) SubmitRecord(t *s.Record) (*s.ComputationPluginResponse, error) {
-	var result s.ComputationPluginResponse
+func (p *computationPlugin) SubmitRecord(t *Record) (*ComputationPluginResponse, error) {
+	var result ComputationPluginResponse
 	err := p.client.Call("Computation.SubmitRecord", t, &result)
 	if err != nil {
 		return nil, fmt.Errorf("Error submitting record to plugin %s: %s",
@@ -293,8 +293,8 @@ func newMasterHandler(addr string) (*masterHandler, error) {
 	return &masterHandler{client}, nil
 }
 
-func (mh *masterHandler) Sync(compID s.StreamID) (*s.TaskSnapshot, error) {
-	var reply s.TaskSnapshot
+func (mh *masterHandler) Sync(compID StreamID) (*TaskSnapshot, error) {
+	var reply TaskSnapshot
 	log.Println("[computations] issuing a sync request for computation", compID)
 	err := mh.client.Call("Receiver.Sync", compID, &reply)
 	return &reply, err

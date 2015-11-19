@@ -8,25 +8,25 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nsaje/dagger/s"
+	
 )
 
 // StreamDispatcher dispatches records from a single stream to registered subscribers
 type StreamDispatcher struct {
-	streamID     s.StreamID
+	streamID     StreamID
 	persister    Persister
 	lwmTracker   LWMTracker
 	coordinator  Coordinator
 	groupHandler GroupHandler
 	iterators    map[string]*StreamIterator
-	notifyCh     chan *s.Record
+	notifyCh     chan *Record
 	stopCh       chan struct{}
 	new          chan string
 	dropped      chan string
-	last         *s.Record
+	last         *Record
 }
 
-func NewStreamDispatcher(streamID s.StreamID, coordinator Coordinator,
+func NewStreamDispatcher(streamID StreamID, coordinator Coordinator,
 	persister Persister, lwmTracker LWMTracker, groupHandler GroupHandler) *StreamDispatcher {
 	stopCh := make(chan struct{})
 	new, dropped, _ := coordinator.WatchSubscribers(streamID, stopCh) // FIXME: handle errc
@@ -37,15 +37,15 @@ func NewStreamDispatcher(streamID s.StreamID, coordinator Coordinator,
 		coordinator:  coordinator,
 		groupHandler: groupHandler,
 		iterators:    make(map[string]*StreamIterator),
-		notifyCh:     make(chan *s.Record),
+		notifyCh:     make(chan *Record),
 		stopCh:       stopCh,
 		new:          new,
 		dropped:      dropped,
 	}
 }
 
-func (sd *StreamDispatcher) ProcessRecord(t *s.Record) error {
-	sd.lwmTracker.BeforeDispatching([]*s.Record{t})
+func (sd *StreamDispatcher) ProcessRecord(t *Record) error {
+	sd.lwmTracker.BeforeDispatching([]*Record{t})
 	sd.notifyCh <- t
 	return nil
 }
@@ -80,7 +80,7 @@ func (sd *StreamDispatcher) Run() {
 				sd.groupHandler,
 				posUpdates,
 				posErr,
-				make(chan *s.Record),
+				make(chan *Record),
 				stopCh,
 				sd.persister,
 				subscriberHandler,
@@ -104,18 +104,18 @@ func (sd *StreamDispatcher) Run() {
 }
 
 type StreamIterator struct {
-	compID            s.StreamID
+	compID            StreamID
 	lwmTracker        LWMTracker
 	groupHandler      GroupHandler
-	posUpdates        chan s.Timestamp
+	posUpdates        chan Timestamp
 	posErr            chan error
-	notify            chan *s.Record
+	notify            chan *Record
 	stopCh            chan struct{}
 	persister         Persister
 	subscriberHandler *subscriberHandler
 }
 
-func (si *StreamIterator) ProcessRecord(t *s.Record) error {
+func (si *StreamIterator) ProcessRecord(t *Record) error {
 	log.Println("[iterator] processing", t)
 	si.notify <- t
 	return nil
@@ -125,17 +125,17 @@ func (si *StreamIterator) Stop() {
 	close(si.stopCh)
 }
 
-func (si *StreamIterator) Dispatch(startAt s.Timestamp) {
+func (si *StreamIterator) Dispatch(startAt Timestamp) {
 	from := startAt
-	to := s.Timestamp(1<<63 - 1)
-	// var newTo, newFrom s.Timestamp
+	to := Timestamp(1<<63 - 1)
+	// var newTo, newFrom Timestamp
 	// newTo = to
 	readCompletedCh := make(chan struct{})
-	toSend := make(chan *s.Record)
+	toSend := make(chan *Record)
 	var newDataReady, readCompleted bool
-	sentSuccessfuly := make(chan *s.Record)
+	sentSuccessfuly := make(chan *Record)
 
-	var lastSent *s.Record
+	var lastSent *Record
 	flushAfter := 500 * time.Millisecond
 	lwmFlushTimer := time.NewTimer(flushAfter)
 	lwmFlushTimer.Stop()
@@ -236,7 +236,7 @@ func NewDispatcher(conf *Config, coordinator Coordinator) *Dispatcher {
 }
 
 // ProcessRecord sends record to registered subscribers via RPC
-func (d *Dispatcher) ProcessRecord(t *s.Record) error {
+func (d *Dispatcher) ProcessRecord(t *Record) error {
 	subscribers, err := d.coordinator.GetSubscribers(t.StreamID)
 	log.Printf("[dispatcher] record: %v, subscribers: %v\n", t, subscribers)
 	if err != nil {
@@ -268,28 +268,28 @@ func (d *Dispatcher) ProcessRecord(t *s.Record) error {
 // BufferedDispatcher bufferes produced records and sends them with retrying
 // until they are ACKed
 type BufferedDispatcher struct {
-	streamID    s.StreamID
-	buffer      chan *s.Record
+	streamID    StreamID
+	buffer      chan *Record
 	dispatcher  RecordProcessor
 	stopCh      chan struct{}
 	sentTracker SentTracker
 	lwmTracker  LWMTracker
-	lwmFlush    chan *s.Record
+	lwmFlush    chan *Record
 	wg          sync.WaitGroup
 }
 
 // StartBufferedDispatcher creates a new buffered dispatcher and starts workers
 // that will be consuming off the queue an sending records
-func StartBufferedDispatcher(compID s.StreamID, dispatcher RecordProcessor, sentTracker SentTracker, lwmTracker LWMTracker,
+func StartBufferedDispatcher(compID StreamID, dispatcher RecordProcessor, sentTracker SentTracker, lwmTracker LWMTracker,
 	stopCh chan struct{}) *BufferedDispatcher {
 	bd := &BufferedDispatcher{
 		streamID:    compID,
-		buffer:      make(chan *s.Record, 100), // FIXME: make it configurable
+		buffer:      make(chan *Record, 100), // FIXME: make it configurable
 		dispatcher:  dispatcher,
 		sentTracker: sentTracker,
 		lwmTracker:  lwmTracker,
 		stopCh:      stopCh,
-		lwmFlush:    make(chan *s.Record),
+		lwmFlush:    make(chan *Record),
 	}
 
 	go bd.lwmFlusher()
@@ -310,14 +310,14 @@ func (bd *BufferedDispatcher) Stop() {
 }
 
 // ProcessRecord sends the record to the buffered channel
-func (bd *BufferedDispatcher) ProcessRecord(t *s.Record) error {
-	bd.lwmTracker.BeforeDispatching([]*s.Record{t})
+func (bd *BufferedDispatcher) ProcessRecord(t *Record) error {
+	bd.lwmTracker.BeforeDispatching([]*Record{t})
 	bd.buffer <- t
 	return nil
 }
 
 func (bd *BufferedDispatcher) lwmFlusher() {
-	var lastSent *s.Record
+	var lastSent *Record
 	flushAfter := 500 * time.Millisecond
 	lwmFlushTimer := time.NewTimer(flushAfter)
 	for {
@@ -388,7 +388,7 @@ func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
 	return &subscriberHandler{client, make(chan struct{}, 10)}, nil // FIXME: make configurable
 }
 
-func (s *subscriberHandler) ProcessRecord(t *s.Record) error {
+func (s *subscriberHandler) ProcessRecord(t *Record) error {
 	var reply string
 	err := s.client.Call("Receiver.SubmitRecord", t, &reply)
 	if err != nil {
@@ -399,7 +399,7 @@ func (s *subscriberHandler) ProcessRecord(t *s.Record) error {
 	return nil
 }
 
-func (s *subscriberHandler) ProcessRecordAsync(t *s.Record, sentSuccessfuly chan *s.Record) {
+func (s *subscriberHandler) ProcessRecordAsync(t *Record, sentSuccessfuly chan *Record) {
 	var reply string
 	s.semaphore <- struct{}{}
 	call := s.client.Go("Receiver.SubmitRecord", t, &reply, nil)

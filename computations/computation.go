@@ -6,13 +6,13 @@ import (
 	"sync"
 
 	"github.com/natefinch/pie"
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 )
 
 // ComputationImplementation represents a specific computation implementation
 type ComputationImplementation interface {
-	GetInfo(definition string) (s.ComputationPluginInfo, error)
-	SubmitRecord(t *s.Record) ([]*s.Record, error)
+	GetInfo(definition string) (dagger.ComputationPluginInfo, error)
+	SubmitRecord(t *dagger.Record) ([]*dagger.Record, error)
 	GetState() ([]byte, error)
 	SetState([]byte) error
 }
@@ -35,7 +35,7 @@ type ComputationPlugin struct {
 }
 
 // GetInfo returns the inputs to this computation
-func (p *ComputationPlugin) GetInfo(definition string, response *s.ComputationPluginInfo) error {
+func (p *ComputationPlugin) GetInfo(definition string, response *dagger.ComputationPluginInfo) error {
 	p.mx.RLock()
 	defer p.mx.RUnlock()
 	info, err := p.impl.GetInfo(definition)
@@ -44,11 +44,11 @@ func (p *ComputationPlugin) GetInfo(definition string, response *s.ComputationPl
 }
 
 // SubmitRecord submits the record into processing
-func (p *ComputationPlugin) SubmitRecord(t *s.Record,
-	response *s.ComputationPluginResponse) error {
+func (p *ComputationPlugin) SubmitRecord(t *dagger.Record,
+	response *dagger.ComputationPluginResponse) error {
 	p.mx.Lock()
 	defer p.mx.Unlock()
-	*response = s.ComputationPluginResponse{}
+	*response = dagger.ComputationPluginResponse{}
 	newRecords, err := p.impl.SubmitRecord(t)
 	response.Records = newRecords
 	return err
@@ -56,17 +56,17 @@ func (p *ComputationPlugin) SubmitRecord(t *s.Record,
 
 // GetState returns the dump of computation's state to dagger
 func (p *ComputationPlugin) GetState(_ struct{},
-	response *s.ComputationPluginState) error {
+	response *dagger.ComputationPluginState) error {
 	p.mx.RLock()
 	defer p.mx.RUnlock()
-	*response = s.ComputationPluginState{}
+	*response = dagger.ComputationPluginState{}
 	state, err := p.impl.GetState()
 	response.State = state
 	return err
 }
 
 // SetState seeds the state of the computation
-func (p *ComputationPlugin) SetState(state *s.ComputationPluginState,
+func (p *ComputationPlugin) SetState(state *dagger.ComputationPluginState,
 	response *string) error {
 	p.mx.Lock()
 	defer p.mx.Unlock()

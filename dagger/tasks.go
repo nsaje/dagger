@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/nsaje/dagger/s"
+	
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -15,14 +15,14 @@ import (
 type Task interface {
 	RecordProcessor
 	Run() error
-	GetSnapshot() (*s.TaskSnapshot, error)
-	Sync() (s.Timestamp, error)
+	GetSnapshot() (*TaskSnapshot, error)
+	Sync() (Timestamp, error)
 	Stop()
 }
 
 // TaskManager manages tasks
 type TaskManager struct {
-	tasks       map[s.StreamID]Task
+	tasks       map[StreamID]Task
 	coordinator Coordinator
 	receiver    *Receiver
 	persister   Persister
@@ -39,7 +39,7 @@ func NewTaskManager(coordinator Coordinator,
 	c := metrics.NewCounter()
 	metrics.Register("processing", c)
 	tm := &TaskManager{
-		tasks:       make(map[s.StreamID]Task),
+		tasks:       make(map[StreamID]Task),
 		coordinator: coordinator,
 		receiver:    receiver,
 		persister:   persister,
@@ -51,7 +51,7 @@ func NewTaskManager(coordinator Coordinator,
 }
 
 // ParseComputationID parses a computation definition
-func ParseComputationID(s s.StreamID) (string, string, error) {
+func ParseComputationID(s StreamID) (string, string, error) {
 	c := strings.TrimSpace(string(s))
 	firstParen := strings.Index(c, "(")
 	if firstParen < 1 || c[len(c)-1] != ')' {
@@ -62,7 +62,7 @@ func ParseComputationID(s s.StreamID) (string, string, error) {
 
 // ManageTasks watches for new tasks and tries to acquire and run them
 func (cm *TaskManager) ManageTasks() {
-	unapplicableSet := make(map[s.StreamID]struct{})
+	unapplicableSet := make(map[StreamID]struct{})
 	new, errc := cm.coordinator.WatchTasks(cm.done)
 	for {
 		select {
@@ -75,7 +75,7 @@ func (cm *TaskManager) ManageTasks() {
 			log.Println("got new tasks", candidateTasks)
 			randomOrder := rand.Perm(len(candidateTasks))
 			for _, i := range randomOrder {
-				streamID := s.StreamID(candidateTasks[i])
+				streamID := StreamID(candidateTasks[i])
 				if _, alreadyTaken := cm.tasks[streamID]; alreadyTaken {
 					continue
 				}
@@ -107,7 +107,7 @@ func (cm *TaskManager) ManageTasks() {
 	}
 }
 
-func (cm *TaskManager) serecTask(streamID s.StreamID) error {
+func (cm *TaskManager) serecTask(streamID StreamID) error {
 	name, definition, err := ParseComputationID(streamID)
 	if err != nil {
 		return err
@@ -147,7 +147,7 @@ func (cm *TaskManager) serecTask(streamID s.StreamID) error {
 }
 
 // GetSnapshot returns a snapshot of the requested task
-func (cm *TaskManager) GetSnapshot(streamID s.StreamID) (*s.TaskSnapshot, error) {
+func (cm *TaskManager) GetSnapshot(streamID StreamID) (*TaskSnapshot, error) {
 	comp, has := cm.tasks[streamID]
 	if !has {
 		return nil, fmt.Errorf("Computation not found!")

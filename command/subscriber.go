@@ -7,7 +7,6 @@ import (
 
 	"github.com/nsaje/dagger/consul"
 	"github.com/nsaje/dagger/dagger"
-	"github.com/nsaje/dagger/s"
 
 	"github.com/codegangsta/cli"
 )
@@ -38,7 +37,7 @@ func Subscriber(c *cli.Context) {
 	}
 	log.Println("Coordinator started")
 
-	topicGlob := s.StreamID(c.Args().First())
+	topicGlob := dagger.StreamID(c.Args().First())
 	// linearizer := dagger.NewLinearizer(prnter, []string{topicGlob})
 	// go linearizer.Linearize()
 	lwmTracker := dagger.NewLWMTracker()
@@ -49,7 +48,7 @@ func Subscriber(c *cli.Context) {
 	if err != nil {
 		panic(err)
 	}
-	receiver.SubscribeTo(topicGlob, s.Timestamp(from), linearizer)
+	receiver.SubscribeTo(topicGlob, dagger.Timestamp(from), linearizer)
 	// receiver.SubscribeTo(topicGlob, linearizer)
 	log.Printf("Subscribed to %s", topicGlob)
 
@@ -64,7 +63,7 @@ type printer struct {
 	dataonly bool
 }
 
-func (p *printer) ProcessRecordLinearized(t *s.Record) error {
+func (p *printer) ProcessRecordLinearized(t *dagger.Record) error {
 	log.Println("in printer")
 	if p.dataonly {
 		fmt.Println(t.Data)

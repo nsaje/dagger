@@ -5,23 +5,23 @@ import (
 	"log"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 )
 
 // BarComputation simply prepends "barized" to a record
 type BarComputation struct{}
 
-func (c BarComputation) GetInfo(definition string) (s.ComputationPluginInfo, error) {
-	info := s.ComputationPluginInfo{
-		Inputs:   []s.StreamID{s.StreamID(definition)},
+func (c BarComputation) GetInfo(definition string) (dagger.ComputationPluginInfo, error) {
+	info := dagger.ComputationPluginInfo{
+		Inputs:   []dagger.StreamID{dagger.StreamID(definition)},
 		Stateful: false,
 	}
 	return info, nil
 }
 
-func (c BarComputation) SubmitRecord(t *s.Record) ([]*s.Record, error) {
+func (c BarComputation) SubmitRecord(t *dagger.Record) ([]*dagger.Record, error) {
 	t.Data = fmt.Sprintf("barized: %v", t.Data)
-	return []*s.Record{t}, nil
+	return []*dagger.Record{t}, nil
 }
 
 func (c BarComputation) GetState() ([]byte, error) {

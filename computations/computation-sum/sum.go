@@ -8,7 +8,7 @@ import (
 	"os/signal"
 
 	"github.com/nsaje/dagger/computations"
-	"github.com/nsaje/dagger/s"
+	"github.com/nsaje/dagger/dagger"
 	"github.com/twinj/uuid"
 )
 
@@ -19,12 +19,12 @@ type SumProcessor struct {
 
 // SumCompState contains state needed for this statistic
 type SumCompState struct {
-	Sums map[s.Timestamp]float64
+	Sums map[dagger.Timestamp]float64
 }
 
 // SumCompStateJSON modified for JSON transport
 type SumCompStateJSON struct {
-	Buckets []s.Timestamp
+	Buckets []dagger.Timestamp
 	Sums    []float64
 }
 
@@ -56,7 +56,7 @@ func (c *SumProcessor) SetState(state []byte) error {
 }
 
 // ProcessBucket updates the bucket with a new record
-func (c *SumProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
+func (c *SumProcessor) ProcessBucket(bucket dagger.Timestamp, t *dagger.Record) error {
 	log.Println("[avg] processing", t)
 	value, _ := t.Data.(float64)
 	c.state.Sums[bucket] += value
@@ -64,9 +64,9 @@ func (c *SumProcessor) ProcessBucket(bucket s.Timestamp, t *s.Record) error {
 }
 
 // FinalizeBucket produces a new record from the bucket and deletes it
-func (c *SumProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
+func (c *SumProcessor) FinalizeBucket(bucket dagger.Timestamp) *dagger.Record {
 	log.Println("[avg] finalizing", bucket)
-	new := &s.Record{
+	new := &dagger.Record{
 		Data:      c.state.Sums[bucket],
 		Timestamp: bucket,
 		ID:        uuid.NewV4().String(),
@@ -79,14 +79,14 @@ func (c *SumProcessor) FinalizeBucket(bucket s.Timestamp) *s.Record {
 // NewSumProcessorState initializes state struct
 func NewSumProcessorState() SumCompState {
 	return SumCompState{
-		Sums: make(map[s.Timestamp]float64),
+		Sums: make(map[dagger.Timestamp]float64),
 	}
 }
 
 // NewSumProcessorStateJSON initializes state struct for transfer via JSON
 func NewSumProcessorStateJSON() SumCompStateJSON {
 	return SumCompStateJSON{
-		Buckets: make([]s.Timestamp, 0),
+		Buckets: make([]dagger.Timestamp, 0),
 		Sums:    make([]float64, 0),
 	}
 }

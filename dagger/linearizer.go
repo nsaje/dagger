@@ -3,37 +3,37 @@ package dagger
 import (
 	"log"
 
-	"github.com/nsaje/dagger/s"
+	
 )
 
 // LinearizerStore represents a sorted persistent buffer of records
 type LinearizerStore interface {
-	Insert(compID s.StreamID, t *s.Record) error
-	ReadBuffer(compID s.StreamID, from s.Timestamp, to s.Timestamp) ([]*s.Record, error)
+	Insert(compID StreamID, t *Record) error
+	ReadBuffer(compID StreamID, from Timestamp, to Timestamp) ([]*Record, error)
 }
 
 // Linearizer buffers records and forwards them to the next RecordProcessor sorted
 // by timestamp, while making sure all the records in a certain time frame have
 // already arrived
 type Linearizer struct {
-	compID     s.StreamID
+	compID     StreamID
 	store      LinearizerStore
 	lwmTracker LWMTracker
-	LWM        s.Timestamp
-	lwmCh      chan s.Timestamp
-	startAtLWM s.Timestamp
+	LWM        Timestamp
+	lwmCh      chan Timestamp
+	startAtLWM Timestamp
 	ltp        LinearizedRecordProcessor
-	tmpT       chan *s.Record
+	tmpT       chan *Record
 }
 
 // NewLinearizer creates a new linearizer for a certain computation
-func NewLinearizer(compID s.StreamID, store LinearizerStore, lwmTracker LWMTracker) *Linearizer {
+func NewLinearizer(compID StreamID, store LinearizerStore, lwmTracker LWMTracker) *Linearizer {
 	return &Linearizer{
 		compID:     compID,
 		store:      store,
 		lwmTracker: lwmTracker,
-		lwmCh:      make(chan s.Timestamp),
-		tmpT:       make(chan *s.Record),
+		lwmCh:      make(chan Timestamp),
+		tmpT:       make(chan *Record),
 	}
 }
 
@@ -43,12 +43,12 @@ func (l *Linearizer) SetProcessor(ltp LinearizedRecordProcessor) {
 }
 
 // SetStartLWM sets the LWM at which we start processing
-func (l *Linearizer) SetStartLWM(time s.Timestamp) {
+func (l *Linearizer) SetStartLWM(time Timestamp) {
 	l.startAtLWM = time
 }
 
 // ProcessRecord inserts the record into the buffer sorted by timestamps
-func (l *Linearizer) ProcessRecord(t *s.Record) error {
+func (l *Linearizer) ProcessRecord(t *Record) error {
 	err := l.store.Insert(l.compID, t)
 	if err != nil {
 		return err
