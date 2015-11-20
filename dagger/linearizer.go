@@ -2,8 +2,6 @@ package dagger
 
 import (
 	"log"
-
-	
 )
 
 // LinearizerStore represents a sorted persistent buffer of records
@@ -74,7 +72,6 @@ func (l *Linearizer) StartForwarding() {
 	fromLWM := l.startAtLWM
 	for toLWM := range l.lwmCh {
 		t := <-l.tmpT
-		// if !toLWM.After(fromLWM) {
 		if toLWM <= fromLWM {
 			log.Println("LWM not increased", t)
 			continue

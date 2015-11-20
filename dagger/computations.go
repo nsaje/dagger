@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/natefinch/pie"
-	
 )
 
 type statelessComputation struct {

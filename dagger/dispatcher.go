@@ -7,8 +7,6 @@ import (
 	"net/rpc/jsonrpc"
 	"sync"
 	"time"
-
-	
 )
 
 // StreamDispatcher dispatches records from a single stream to registered subscribers
@@ -126,38 +124,20 @@ func (si *StreamIterator) Stop() {
 }
 
 func (si *StreamIterator) Dispatch(startAt Timestamp) {
-	from := startAt
-	to := Timestamp(1<<63 - 1)
-	// var newTo, newFrom Timestamp
-	// newTo = to
-	readCompletedCh := make(chan struct{})
+	fromCh := make(chan Timestamp)
+	toCh := make(chan Timestamp)
 	toSend := make(chan *Record)
-	var newDataReady, readCompleted bool
 	sentSuccessfuly := make(chan *Record)
+	errc := make(chan error)
 
 	var lastSent *Record
 	flushAfter := 500 * time.Millisecond
 	lwmFlushTimer := time.NewTimer(flushAfter)
 	lwmFlushTimer.Stop()
 
-	// updatePosCh := si.groupHandler.
-
-	startNewRead := func() {
-		log.Println("[iterator] reading:", from, to)
-		lwmFlushTimer.Stop()
-		newDataReady = false
-		readCompleted = false
-		if si.groupHandler != nil {
-			areWeLeader, _, _ := si.groupHandler.GetStatus()
-			if !areWeLeader {
-				return // don't send if we aren't the leader
-			}
-		}
-		// to + 1 so the 'to' is included
-		si.persister.ReadBuffer1(si.compID, "p", from, to+1, toSend, readCompletedCh)
-	}
-	readCompleted = true
-	// startNewRead()
+	go MovingLimitRead(si.persister, si.compID, "p", fromCh, toCh, toSend, errc)
+	fromCh <- startAt
+	toCh <- Timestamp(1<<63 - 1)
 
 	for {
 		select {
@@ -189,34 +169,14 @@ func (si *StreamIterator) Dispatch(startAt Timestamp) {
 			}
 		case r := <-sentSuccessfuly:
 			// + 1 so the just successfuly sent record isn't sent again
-			from = r.Timestamp + 1
+			fromCh <- r.Timestamp + 1
 			lastSent = r
-			si.lwmTracker.SentSuccessfuly("FIXME", r)
-			log.Println("[iterator] newFrom updated:", r, from)
-		case r := <-si.notify:
-			to = r.Timestamp
-			log.Println("[iterator] newTo updated:", r)
-			newDataReady = true
-			log.Println("[iterator] newDataReadyCh", newDataReady, readCompleted)
-			if newDataReady && readCompleted {
-				log.Println("starting new read...")
-				// startNewRead <- struct{}{}
-				// from = to
-				// to = newTo
-				startNewRead()
-				log.Println("...new read started")
-			}
-		case <-readCompletedCh:
-			log.Println("[iterator] readCompletedCh", newDataReady, readCompleted)
-			readCompleted = true
 			lwmFlushTimer.Reset(flushAfter)
-			if newDataReady && readCompleted {
-				log.Println("starting new read...")
-				// from = to
-				// to = newTo
-				startNewRead()
-				log.Println("...new read started")
-			}
+			si.lwmTracker.SentSuccessfuly("FIXME", r)
+			log.Println("[iterator] newFrom updated:", r, r.Timestamp+1)
+		case r := <-si.notify:
+			toCh <- r.Timestamp
+			log.Println("[iterator] newTo updated:", r)
 		}
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"log"
 	"path"
 
-	
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
@@ -33,7 +32,7 @@ type Persister interface {
 
 type StreamBuffer interface {
 	Insert1(compID StreamID, bufID string, t *Record) error
-	ReadBuffer1(compID StreamID, bufID string, from Timestamp, to Timestamp, recCh chan *Record, readCompleted chan struct{})
+	ReadBuffer1(compID StreamID, bufID string, from Timestamp, to Timestamp, recCh chan<- *Record, errc chan<- error, readCompleted chan struct{})
 }
 
 // SentTracker deletes production entries that have been ACKed from the DB
@@ -328,7 +327,7 @@ func (p *LevelDBPersister) Insert1(compID StreamID, bufID string, t *Record) err
 
 // ReadBuffer returns a piece of the input buffer between specified timestamps
 func (p *LevelDBPersister) ReadBuffer1(compID StreamID, bufID string,
-	from Timestamp, to Timestamp, recCh chan *Record,
+	from Timestamp, to Timestamp, recCh chan<- *Record, errc chan<- error,
 	readCompletedCh chan struct{}) { // FIXME: add errCh
 	start := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, from))
 	limit := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, to))
@@ -338,16 +337,42 @@ func (p *LevelDBPersister) ReadBuffer1(compID StreamID, bufID string,
 		for iter.Next() {
 			var record Record
 			err := json.Unmarshal(iter.Value(), &record)
-			log.Println("read record", record)
 			if err != nil {
-				log.Println("ERRRROR", err)
-				// errCh <- fmt.Errorf("[persister] unmarshalling produced: %s", err)
+				errc <- fmt.Errorf("[persister] unmarshalling err: %s", err)
 			}
 			recCh <- &record
 		}
 		readCompletedCh <- struct{}{}
 	}()
 	return
+}
+
+// MovingLimitRead performs asynchronous reads of the stream buffer. While the read
+// is in progress, the from and to limits can be updated multiple times and the latest
+// values will be used in the next read when the first completes.
+func MovingLimitRead(p StreamBuffer, streamID StreamID, bufName string, from <-chan Timestamp, to <-chan Timestamp, recs chan<- *Record, errc chan error) {
+	var newDataReady, readInProgress bool
+	var newTo, newFrom Timestamp
+	readCompleted := make(chan struct{})
+	startNewRead := func() {
+		log.Println("[persister] reading:", from, to)
+		newDataReady = false
+		readInProgress = true
+		// to + 1 so the 'to' is included
+		p.ReadBuffer1(streamID, bufName, newFrom, newTo+1, recs, errc, readCompleted)
+	}
+	for {
+		select {
+		case newTo = <-to:
+			newDataReady = true
+		case newFrom = <-from:
+		case <-readCompleted:
+			readInProgress = false
+		}
+		if newDataReady && !readInProgress {
+			startNewRead()
+		}
+	}
 }
 
 // type StreamIterator interface {
