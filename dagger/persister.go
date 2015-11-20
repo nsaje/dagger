@@ -24,15 +24,15 @@ type Persister interface {
 	CommitComputation(compID StreamID, in *Record, out []*Record) error
 	GetSnapshot(compID StreamID) (*TaskSnapshot, error)
 	ApplySnapshot(compID StreamID, snapshot *TaskSnapshot) error
-	LinearizerStore
 	StreamBuffer
 	SentTracker
 	ReceivedTracker
 }
 
+// StreamBuffer persistently "buffers" records sorted by timestamp
 type StreamBuffer interface {
-	Insert1(compID StreamID, bufID string, t *Record) error
-	ReadBuffer1(compID StreamID, bufID string, from Timestamp, to Timestamp, recCh chan<- *Record, errc chan<- error, readCompleted chan struct{})
+	Insert(compID StreamID, bufID string, t *Record) error
+	ReadBuffer(compID StreamID, bufID string, from Timestamp, to Timestamp, recCh chan<- *Record, errc chan<- error, readCompleted chan struct{})
 }
 
 // SentTracker deletes production entries that have been ACKed from the DB
@@ -46,6 +46,7 @@ type MultiSentTracker struct {
 	trackers []SentTracker
 }
 
+// SentSuccessfuly notifies multiple senttrackers of successfuly sent record
 func (st MultiSentTracker) SentSuccessfuly(compID StreamID, t *Record) error {
 	for _, tracker := range st.trackers {
 		err := tracker.SentSuccessfuly(compID, t)
@@ -268,12 +269,12 @@ func (p *LevelDBPersister) SentSuccessfuly(compID StreamID, t *Record) error {
 }
 
 // Insert inserts a received record into the ordered queue for a computation
-func (p *LevelDBPersister) Insert(compID StreamID, t *Record) error {
+func (p *LevelDBPersister) Insert(compID StreamID, bufID string, t *Record) error {
 	serialized, err := json.Marshal(t)
 	if err != nil {
 		return fmt.Errorf("[persister] Error marshalling record %v: %s", t, err)
 	}
-	key := []byte(fmt.Sprintf(inKeyFormat, compID, t.Timestamp, t.ID))
+	key := []byte(fmt.Sprintf("%s-%s-%d-%s", compID, bufID, t.Timestamp, t.ID))
 	err = p.db.Put(key, []byte(serialized), &opt.WriteOptions{Sync: false})
 	if err != nil {
 		return fmt.Errorf("[persister] Error persisting record %v: %s", t, err)
@@ -283,52 +284,9 @@ func (p *LevelDBPersister) Insert(compID StreamID, t *Record) error {
 }
 
 // ReadBuffer returns a piece of the input buffer between specified timestamps
-func (p *LevelDBPersister) ReadBuffer(compID StreamID, from Timestamp, to Timestamp) ([]*Record, error) {
-	var recs []*Record
-	start := []byte(fmt.Sprintf("%s-i-%d", compID, from))
-	limit := []byte(fmt.Sprintf("%s-i-%d", compID, to))
-	log.Println("reading0 from, to", string(start), string(limit))
-	iter := p.db.NewIterator(&util.Range{Start: start, Limit: limit}, nil)
-	for iter.Next() {
-		var record Record
-		err := json.Unmarshal(iter.Value(), &record)
-		if err != nil {
-			return nil, fmt.Errorf("[persister] unmarshalling produced: %s", err)
-		}
-		recs = append(recs, &record)
-	}
-	if len(recs) == 0 {
-		log.Println("SOMETHING FUNNY")
-		iter := p.db.NewIterator(util.BytesPrefix(start), nil)
-		iter.Next()
-		log.Println(iter.Value())
-	}
-	return recs, nil
-}
-
-// type StreamIterator interface {
-// 	Upto(Timestamp) chan *Record
-// }
-
-// Insert inserts a received record into the ordered queue for a computation
-func (p *LevelDBPersister) Insert1(compID StreamID, bufID string, t *Record) error {
-	serialized, err := json.Marshal(t)
-	if err != nil {
-		return fmt.Errorf("[persister] Error marshalling record %v: %s", t, err)
-	}
-	key := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, t.Timestamp, t.ID))
-	err = p.db.Put(key, []byte(serialized), &opt.WriteOptions{Sync: false})
-	if err != nil {
-		return fmt.Errorf("[persister] Error persisting record %v: %s", t, err)
-	}
-	log.Println("[persister] persisted record", string(key), t)
-	return nil
-}
-
-// ReadBuffer returns a piece of the input buffer between specified timestamps
-func (p *LevelDBPersister) ReadBuffer1(compID StreamID, bufID string,
+func (p *LevelDBPersister) ReadBuffer(compID StreamID, bufID string,
 	from Timestamp, to Timestamp, recCh chan<- *Record, errc chan<- error,
-	readCompletedCh chan struct{}) { // FIXME: add errCh
+	readCompletedCh chan struct{}) {
 	start := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, from))
 	limit := []byte(fmt.Sprintf("%s-%s-%d", compID, bufID, to))
 	go func() {
@@ -359,7 +317,7 @@ func MovingLimitRead(p StreamBuffer, streamID StreamID, bufName string, from <-c
 		newDataReady = false
 		readInProgress = true
 		// to + 1 so the 'to' is included
-		p.ReadBuffer1(streamID, bufName, newFrom, newTo+1, recs, errc, readCompleted)
+		p.ReadBuffer(streamID, bufName, newFrom, newTo+1, recs, errc, readCompleted)
 	}
 	for {
 		select {

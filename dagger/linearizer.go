@@ -4,18 +4,12 @@ import (
 	"log"
 )
 
-// LinearizerStore represents a sorted persistent buffer of records
-type LinearizerStore interface {
-	Insert(compID StreamID, t *Record) error
-	ReadBuffer(compID StreamID, from Timestamp, to Timestamp) ([]*Record, error)
-}
-
 // Linearizer buffers records and forwards them to the next RecordProcessor sorted
 // by timestamp, while making sure all the records in a certain time frame have
 // already arrived
 type Linearizer struct {
 	compID     StreamID
-	store      LinearizerStore
+	store      StreamBuffer
 	lwmTracker LWMTracker
 	LWM        Timestamp
 	lwmCh      chan Timestamp
@@ -25,7 +19,7 @@ type Linearizer struct {
 }
 
 // NewLinearizer creates a new linearizer for a certain computation
-func NewLinearizer(compID StreamID, store LinearizerStore, lwmTracker LWMTracker) *Linearizer {
+func NewLinearizer(compID StreamID, store StreamBuffer, lwmTracker LWMTracker) *Linearizer {
 	return &Linearizer{
 		compID:     compID,
 		store:      store,
@@ -47,7 +41,7 @@ func (l *Linearizer) SetStartLWM(time Timestamp) {
 
 // ProcessRecord inserts the record into the buffer sorted by timestamps
 func (l *Linearizer) ProcessRecord(t *Record) error {
-	err := l.store.Insert(l.compID, t)
+	err := l.store.Insert(l.compID, "i", t)
 	if err != nil {
 		return err
 	}
@@ -69,21 +63,30 @@ func (l *Linearizer) ProcessRecord(t *Record) error {
 // to the next RecordProcessor when LWM tells us no more records will arrive in
 // the forwarded time frame
 func (l *Linearizer) StartForwarding() {
+	fromCh := make(chan Timestamp)
+	toCh := make(chan Timestamp)
+	recs := make(chan *Record)
+	errc := make(chan error)
+
+	go MovingLimitRead(l.store, l.compID, "i", fromCh, toCh, recs, errc)
 	fromLWM := l.startAtLWM
-	for toLWM := range l.lwmCh {
-		t := <-l.tmpT
-		if toLWM <= fromLWM {
-			log.Println("LWM not increased", t)
-			continue
-		}
-		recs, _ := l.store.ReadBuffer(l.compID, fromLWM, toLWM)
-		log.Printf("PROCESSING as result of %s", t)
-		for _, r := range recs {
-			log.Println(r)
-		}
-		for _, r := range recs {
+	fromCh <- fromLWM
+	for {
+		select {
+		case toLWM := <-l.lwmCh:
+			t := <-l.tmpT // FIXME: remove
+			if toLWM <= fromLWM {
+				log.Println("LWM not increased", t)
+			} else {
+				log.Printf("PROCESSING as result of %s", t)
+				toCh <- toLWM
+			}
+		case r := <-recs:
 			l.ltp.ProcessRecordLinearized(r)
+			fromLWM := r.LWM
+			fromCh <- fromLWM + 1
+		case err := <-errc:
+			log.Println("PERSISTER ERROR", err) // FIXME: propagate
 		}
-		fromLWM = toLWM
 	}
 }

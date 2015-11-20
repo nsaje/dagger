@@ -53,7 +53,7 @@ func Producer(c *cli.Context) {
 		}
 		log.Println("read", line)
 		// bufferedDispatcher.ProcessRecord(record)
-		persister.Insert1(streamID, "p", record)
+		persister.Insert(streamID, "p", record)
 		dispatcher.ProcessRecord(record)
 		// tmpT = record
 	}
