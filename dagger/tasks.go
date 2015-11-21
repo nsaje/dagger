@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"strings"
 
-	
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -15,7 +14,7 @@ import (
 type Task interface {
 	RecordProcessor
 	Run() error
-	GetSnapshot() (*TaskSnapshot, error)
+	GetSnapshot() ([]byte, error)
 	Sync() (Timestamp, error)
 	Stop()
 }
@@ -147,7 +146,7 @@ func (cm *TaskManager) serecTask(streamID StreamID) error {
 }
 
 // GetSnapshot returns a snapshot of the requested task
-func (cm *TaskManager) GetSnapshot(streamID StreamID) (*TaskSnapshot, error) {
+func (cm *TaskManager) GetSnapshot(streamID StreamID) ([]byte, error) {
 	comp, has := cm.tasks[streamID]
 	if !has {
 		return nil, fmt.Errorf("Computation not found!")

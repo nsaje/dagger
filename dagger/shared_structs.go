@@ -59,21 +59,3 @@ type ComputationPluginInfo struct {
 type ComputationPluginState struct {
 	State []byte
 }
-
-// TaskSnapshot is used for synchronizing task state between workers
-type TaskSnapshot struct {
-	Received      []string
-	InputBuffer   []*Record
-	LastTimestamp Timestamp `json:",string"`
-	Produced      []*Record
-	PluginState   *ComputationPluginState
-}
-
-func (s *TaskSnapshot) String() string {
-	return fmt.Sprintf("LastTimestamp: %v, InputBuffer: %v, Received: %v, Produced: %v, PluginState: %s",
-		s.LastTimestamp,
-		len(s.Received),
-		len(s.InputBuffer),
-		s.Produced,
-		string(s.PluginState.State))
-}

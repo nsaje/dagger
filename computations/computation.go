@@ -56,21 +56,20 @@ func (p *ComputationPlugin) SubmitRecord(t *dagger.Record,
 
 // GetState returns the dump of computation's state to dagger
 func (p *ComputationPlugin) GetState(_ struct{},
-	response *dagger.ComputationPluginState) error {
+	response *[]byte) error {
 	p.mx.RLock()
 	defer p.mx.RUnlock()
-	*response = dagger.ComputationPluginState{}
 	state, err := p.impl.GetState()
-	response.State = state
+	*response = state
 	return err
 }
 
 // SetState seeds the state of the computation
-func (p *ComputationPlugin) SetState(state *dagger.ComputationPluginState,
+func (p *ComputationPlugin) SetState(state []byte,
 	response *string) error {
 	p.mx.Lock()
 	defer p.mx.Unlock()
 	*response = "ok"
-	err := p.impl.SetState(state.State)
+	err := p.impl.SetState(state)
 	return err
 }

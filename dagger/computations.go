@@ -1,6 +1,8 @@
 package dagger
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -38,7 +40,7 @@ func (comp *statelessComputation) ProcessRecord(t *Record) error {
 	return ProcessMultipleRecords(comp.dispatcher, response.Records)
 }
 
-func (comp *statelessComputation) GetSnapshot() (*TaskSnapshot, error) {
+func (comp *statelessComputation) GetSnapshot() ([]byte, error) {
 	return nil, nil
 }
 
@@ -120,17 +122,26 @@ func (comp *statefulComputation) Sync() (Timestamp, error) {
 			if err != nil {
 				return from, fmt.Errorf("[computations] Error syncing computation with master: %s", err)
 			}
-			err = comp.plugin.SetState(snapshot.PluginState)
+
+			snapshotMap := make(map[string][]byte)
+			err = json.Unmarshal(snapshot, &snapshotMap)
+			if err != nil {
+				return from, fmt.Errorf("cannot unmarshal snapshot: %s:", err.Error())
+			}
+
+			err = comp.plugin.ApplySnapshot(snapshotMap["plugin"])
 			if err != nil {
 				return from, fmt.Errorf("[computations] Error setting computation plugin state: %s", err)
 			}
-			err = comp.persister.ApplySnapshot(comp.streamID, snapshot)
+			err = comp.persister.ApplySnapshot(comp.streamID, snapshotMap["persister"])
 			if err != nil {
 				return from, fmt.Errorf("[computations] Error applying computation snapshot: %s", err)
 			}
+
+			from, err := comp.persister.GetLastTimestamp(comp.streamID)
 			// add one nanosecond so we don't take the last processed record again
-			comp.linearizer.SetStartLWM(snapshot.LastTimestamp + 1)
-			from = snapshot.LastTimestamp + 1
+			from++
+			comp.linearizer.SetStartLWM(from)
 			// // recreate deduplicator from newest received info
 			// deduplicator, err := NewDeduplicator(comp.streamID, comp.persister)
 			// if err != nil {
@@ -200,21 +211,23 @@ func (comp *statefulComputation) ProcessRecordLinearized(t *Record) error {
 	return nil
 }
 
-func (comp *statefulComputation) GetSnapshot() (*TaskSnapshot, error) {
+func (comp *statefulComputation) GetSnapshot() ([]byte, error) {
 	log.Println("[computations] trying to acquire sync lock...")
 	comp.Lock()
 	log.Println("[computations] ... sync lock acquired!")
 	defer comp.Unlock()
-	snapshot, err := comp.persister.GetSnapshot(comp.streamID)
+	snapshot := make(map[string][]byte)
+	persisterSnapshot, err := comp.persister.GetSnapshot(comp.streamID)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("stateful computation: " + err.Error())
 	}
-	pluginState, err := comp.plugin.GetState()
+	pluginSnapshot, err := comp.plugin.GetSnapshot()
 	if err != nil {
-		return nil, err
+		return nil, errors.New("stateful computation: " + err.Error())
 	}
-	snapshot.PluginState = pluginState
-	return snapshot, nil
+	snapshot["persister"] = persisterSnapshot
+	snapshot["plugin"] = pluginSnapshot
+	return json.Marshal(snapshot)
 }
 
 // StartComputationPlugin starts the plugin process
@@ -241,8 +254,8 @@ func StartComputationPlugin(name string, compID StreamID) (ComputationPlugin, er
 type ComputationPlugin interface {
 	GetInfo(definition string) (*ComputationPluginInfo, error)
 	SubmitRecord(t *Record) (*ComputationPluginResponse, error)
-	GetState() (*ComputationPluginState, error)
-	SetState(*ComputationPluginState) error
+	GetSnapshot() ([]byte, error)
+	ApplySnapshot([]byte) error
 }
 
 type computationPlugin struct {
@@ -257,13 +270,16 @@ func (p *computationPlugin) GetInfo(definition string) (*ComputationPluginInfo, 
 	return &result, err
 }
 
-func (p *computationPlugin) GetState() (*ComputationPluginState, error) {
-	var result ComputationPluginState
+func (p *computationPlugin) GetSnapshot() ([]byte, error) {
+	var result []byte
 	err := p.client.Call("Computation.GetState", struct{}{}, &result)
-	return &result, err
+	if err != nil {
+		return nil, errors.New("plugin snapshot: " + err.Error())
+	}
+	return result, err
 }
 
-func (p *computationPlugin) SetState(state *ComputationPluginState) error {
+func (p *computationPlugin) ApplySnapshot(state []byte) error {
 	var result string
 	err := p.client.Call("Computation.SetState", state, &result)
 	return err
@@ -296,9 +312,9 @@ func newMasterHandler(addr string) (*masterHandler, error) {
 	return &masterHandler{client}, nil
 }
 
-func (mh *masterHandler) Sync(compID StreamID) (*TaskSnapshot, error) {
-	var reply TaskSnapshot
+func (mh *masterHandler) Sync(compID StreamID) ([]byte, error) {
+	var reply []byte
 	log.Println("[computations] issuing a sync request for computation", compID)
 	err := mh.client.Call("Receiver.Sync", compID, &reply)
-	return &reply, err
+	return reply, err
 }

@@ -22,8 +22,9 @@ const (
 type Persister interface {
 	Close()
 	CommitComputation(compID StreamID, in *Record, out []*Record) error
-	GetSnapshot(compID StreamID) (*TaskSnapshot, error)
-	ApplySnapshot(compID StreamID, snapshot *TaskSnapshot) error
+	GetLastTimestamp(compID StreamID) (Timestamp, error)
+	GetSnapshot(compID StreamID) ([]byte, error)
+	ApplySnapshot(compID StreamID, snapshot []byte) error
 	StreamBuffer
 	SentTracker
 	ReceivedTracker
@@ -111,124 +112,56 @@ func (p *LevelDBPersister) CommitComputation(compID StreamID, in *Record, out []
 	return p.db.Write(batch, nil)
 }
 
+func (p *LevelDBPersister) GetLastTimestamp(compID StreamID) (Timestamp, error) {
+	val, err := p.db.Get([]byte(fmt.Sprintf("%s-last", compID)), nil)
+	var ts Timestamp
+	err = json.Unmarshal(val, &ts)
+	return ts, err
+}
+
 // GetSnapshot returns the snapshot of the computation's persisted state
-func (p *LevelDBPersister) GetSnapshot(compID StreamID) (*TaskSnapshot, error) {
+func (p *LevelDBPersister) GetSnapshot(compID StreamID) ([]byte, error) {
 	dbSnapshot, err := p.db.GetSnapshot()
 	defer dbSnapshot.Release()
 	if err != nil {
 		return nil, fmt.Errorf("[persister] Error getting snapshot: %s", err)
 	}
-	var snapshot TaskSnapshot
-	// get received records
-	snapshot.Received = make([]string, 0)
-	keyPrefix := fmt.Sprintf(receivedKeyFormat, compID, "")
+
+	keyPrefix := compID
+	batch := new(leveldb.Batch)
 	iter := dbSnapshot.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
 	defer iter.Release()
 	for iter.Next() {
-		receivedID := iter.Key()[len(keyPrefix):]
-		snapshot.Received = append(snapshot.Received, string(receivedID))
+		batch.Put(iter.Key(), iter.Value())
 	}
 	err = iter.Error()
 	if err != nil {
 		return nil, fmt.Errorf("[persister] error iterating: %s", err)
 	}
-
-	// get produced records
-	snapshot.Produced = make([]*Record, 0)
-	// keyPrefix = fmt.Sprintf(productionsKeyFormat, compID, "")
-	keyPrefix = fmt.Sprintf("%s-p-", compID)
-	iter2 := dbSnapshot.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
-	defer iter2.Release()
-	for iter2.Next() {
-		var record Record
-		err := json.Unmarshal(iter2.Value(), &record)
-		if err != nil {
-			return nil, fmt.Errorf("[persister] unmarshalling produced: %s", err)
-		}
-		snapshot.Produced = append(snapshot.Produced, &record)
-	}
-	err = iter2.Error()
-	if err != nil {
-		return nil, fmt.Errorf("[persister] iterating produced: %s", err)
-	}
-
-	// get input buffer records
-	snapshot.InputBuffer = make([]*Record, 0)
-	keyPrefix = fmt.Sprintf("%s-i-", compID)
-	iter3 := dbSnapshot.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
-	defer iter3.Release()
-	for iter3.Next() {
-		var record Record
-		err := json.Unmarshal(iter3.Value(), &record)
-		if err != nil {
-			return nil, fmt.Errorf("[persister] unmarshalling produced: %s", err)
-		}
-		snapshot.InputBuffer = append(snapshot.InputBuffer, &record)
-	}
-	err = iter3.Error()
-	if err != nil {
-		return nil, fmt.Errorf("[persister] iterating input buffer: %s", err)
-	}
-
-	var lastTimestampUnmarshalled Timestamp
-	lastTimestamp, err := dbSnapshot.Get([]byte(fmt.Sprintf("%s-last", compID)), nil)
-	if err != nil {
-		// return nil, fmt.Errorf("[persister] reading last timestamp: %s", err)
-		err = nil // FIXME sigh...
-	} else {
-		err = json.Unmarshal(lastTimestamp, &lastTimestampUnmarshalled)
-		if err != nil {
-			return nil, fmt.Errorf("[persister] reading last timestamp: %s", err)
-		}
-	}
-	snapshot.LastTimestamp = lastTimestampUnmarshalled
-	return &snapshot, err
+	return batch.Dump(), nil
 }
 
 // ApplySnapshot applies the snapshot of the computation's persisted state
-func (p *LevelDBPersister) ApplySnapshot(compID StreamID, snapshot *TaskSnapshot) error {
+func (p *LevelDBPersister) ApplySnapshot(compID StreamID, snapshot []byte) error {
 	batch := new(leveldb.Batch)
 	log.Println("[persister] Applying snapshot", snapshot)
 
 	// clear data for this computation
-	keyPrefix := fmt.Sprintf("%s-", compID)
+	keyPrefix := compID
 	iter := p.db.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
 	defer iter.Release()
 	for iter.Next() {
 		batch.Delete(iter.Key())
 	}
-
-	for _, r := range snapshot.Received {
-		batch.Put([]byte(fmt.Sprintf(receivedKeyFormat, compID, r)), nil)
-	}
-
-	// save productions
-	for _, r := range snapshot.Produced {
-		serialized, err := json.Marshal(r)
-		if err != nil {
-			return fmt.Errorf("[persister] Error marshalling record %v: %s", r, err)
-		}
-		key := []byte(fmt.Sprintf(productionsKeyFormat, compID, r.Timestamp, r.ID))
-		batch.Put(key, []byte(serialized))
-	}
-
-	// save input buffer
-	for _, r := range snapshot.InputBuffer {
-		serialized, err := json.Marshal(r)
-		if err != nil {
-			return fmt.Errorf("[persister] Error marshalling record %v: %s", r, err)
-		}
-		key := []byte(fmt.Sprintf(inKeyFormat, compID, r.Timestamp, r.ID))
-		batch.Put(key, []byte(serialized))
-	}
-
-	// save last timestamp
-	serialized, err := json.Marshal(snapshot.LastTimestamp)
+	err := p.db.Write(batch, nil)
 	if err != nil {
-		return fmt.Errorf("[persister] Error marshalling time %s", err)
+		return err
 	}
-	batch.Put([]byte(fmt.Sprintf("%s-last", compID)), serialized)
-
+	batch.Reset()
+	err = batch.Load(snapshot)
+	if err != nil {
+		return err
+	}
 	return p.db.Write(batch, nil)
 }
 
@@ -332,7 +265,3 @@ func MovingLimitRead(p StreamBuffer, streamID StreamID, bufName string, from <-c
 		}
 	}
 }
-
-// type StreamIterator interface {
-// 	Upto(Timestamp) chan *Record
-// }

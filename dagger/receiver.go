@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	
 )
 
 // Receiver receives new records via incoming RPC calls
@@ -120,7 +118,7 @@ func (r *Receiver) SubmitRecord(t *Record, reply *string) error {
 }
 
 // Sync is the RPC method called by slave workers wanting to sync a computation
-func (r *Receiver) Sync(compID StreamID, reply *TaskSnapshot) error {
+func (r *Receiver) Sync(compID StreamID, reply *[]byte) error {
 	log.Printf("[receiver] Sync request for %s", compID)
 	if r.taskManager == nil {
 		return fmt.Errorf("[receiver] Task manager doesn't exist")
@@ -129,7 +127,7 @@ func (r *Receiver) Sync(compID StreamID, reply *TaskSnapshot) error {
 	if err != nil {
 		return err
 	}
-	*reply = *snapshot
+	*reply = snapshot
 	return err
 }
 
