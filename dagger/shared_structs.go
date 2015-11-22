@@ -6,11 +6,18 @@ import (
 	"time"
 )
 
+var _timestampDiff = time.Now().UnixNano()
+
 // StreamID identifies a stream of records
 type StreamID string
 
 // Timestamp represents the timestamp of a dagger record
 type Timestamp int64
+
+func (t Timestamp) String() string {
+	// return fmt.Sprint(int64(t) - _timestampDiff)
+	return fmt.Sprintf("%d", int64(t))
+}
 
 // ToTime converts a timestamp into a Go's time object
 func (t Timestamp) ToTime() time.Time {
@@ -41,7 +48,7 @@ type Record struct {
 }
 
 func (t *Record) String() string {
-	return fmt.Sprintln(t.StreamID, t.Timestamp, t.LWM, t.Data)
+	return fmt.Sprintf("%s %s %s %d: %s", t.StreamID, t.Timestamp, t.LWM, int64(t.Timestamp-t.LWM), t.Data)
 }
 
 // ComputationPluginResponse  is returned from a computation plugin to the main app

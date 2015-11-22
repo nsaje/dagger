@@ -168,8 +168,6 @@ func (si *StreamIterator) Dispatch(startAt Timestamp) {
 				}
 			}
 		case r := <-sentSuccessfuly:
-			// + 1 so the just successfuly sent record isn't sent again
-			fromCh <- r.Timestamp + 1
 			lastSent = r
 			lwmFlushTimer.Reset(flushAfter)
 			si.lwmTracker.SentSuccessfuly("FIXME", r)

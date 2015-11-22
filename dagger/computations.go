@@ -163,8 +163,9 @@ func (comp *statefulComputation) Run() error {
 func (comp *statefulComputation) Stop() {
 }
 
-func (comp *statefulComputation) ProcessRecord(t *Record) error {
-	err := comp.linearizer.ProcessRecord(t)
+func (comp *statefulComputation) ProcessRecord(r *Record) error {
+	log.Println("[linearizer] processing", r)
+	err := comp.linearizer.ProcessRecord(r)
 	if err != nil {
 		return err
 	}
@@ -285,14 +286,14 @@ func (p *computationPlugin) ApplySnapshot(state []byte) error {
 	return err
 }
 
-func (p *computationPlugin) SubmitRecord(t *Record) (*ComputationPluginResponse, error) {
+func (p *computationPlugin) SubmitRecord(r *Record) (*ComputationPluginResponse, error) {
+	log.Println("[plugin] processing", r)
 	var result ComputationPluginResponse
-	err := p.client.Call("Computation.SubmitRecord", t, &result)
+	err := p.client.Call("Computation.SubmitRecord", r, &result)
 	if err != nil {
 		return nil, fmt.Errorf("Error submitting record to plugin %s: %s",
 			p.name, err)
 	}
-	log.Println("[computations] got reply from plugin")
 	for _, r := range result.Records {
 		r.StreamID = p.compID
 	}

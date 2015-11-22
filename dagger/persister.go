@@ -92,7 +92,7 @@ func (p *LevelDBPersister) Close() {
 func (p *LevelDBPersister) CommitComputation(compID StreamID, in *Record, out []*Record) error {
 	batch := new(leveldb.Batch)
 	// mark incoming record as received
-	log.Println("[persister] Committing record", *in, ", productions:", out)
+	log.Println("[persister] Committing record", in, ", productions:", out)
 	// batch.Put([]byte(fmt.Sprintf(receivedKeyFormat, compID, in.ID)), nil)
 	lastTimestamp, err := json.Marshal(in.Timestamp)
 	if err != nil {
@@ -245,13 +245,7 @@ func MovingLimitRead(p StreamBuffer, streamID StreamID, bufName string, from <-c
 	var newDataReady, readInProgress bool
 	var newTo, newFrom Timestamp
 	readCompleted := make(chan struct{})
-	startNewRead := func() {
-		log.Println("[persister] reading:", from, to)
-		newDataReady = false
-		readInProgress = true
-		// to + 1 so the 'to' is included
-		p.ReadBuffer(streamID, bufName, newFrom, newTo+1, recs, errc, readCompleted)
-	}
+
 	for {
 		select {
 		case newTo = <-to:
@@ -261,7 +255,12 @@ func MovingLimitRead(p StreamBuffer, streamID StreamID, bufName string, from <-c
 			readInProgress = false
 		}
 		if newDataReady && !readInProgress {
-			startNewRead()
+			log.Println("[persister] reading:", newFrom, newTo+1)
+			newDataReady = false
+			readInProgress = true
+			// to + 1 so the 'to' is included
+			p.ReadBuffer(streamID, bufName, newFrom, newTo+1, recs, errc, readCompleted)
+			newFrom = newTo + 1
 		}
 	}
 }

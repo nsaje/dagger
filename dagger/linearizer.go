@@ -69,22 +69,22 @@ func (l *Linearizer) StartForwarding() {
 	errc := make(chan error)
 
 	go MovingLimitRead(l.store, l.compID, "i", fromCh, toCh, recs, errc)
-	fromLWM := l.startAtLWM
-	fromCh <- fromLWM
+	var toLWM Timestamp
+	fromCh <- l.startAtLWM
 	for {
 		select {
-		case toLWM := <-l.lwmCh:
+		case recLWM := <-l.lwmCh:
 			t := <-l.tmpT // FIXME: remove
-			if toLWM <= fromLWM {
+			if recLWM <= toLWM {
 				log.Println("LWM not increased", t)
 			} else {
+				toLWM = recLWM
 				log.Printf("PROCESSING as result of %s", t)
 				toCh <- toLWM
 			}
 		case r := <-recs:
+			log.Println("linearizer forwarding", r)
 			l.ltp.ProcessRecordLinearized(r)
-			fromLWM := r.LWM
-			fromCh <- fromLWM + 1
 		case err := <-errc:
 			log.Println("PERSISTER ERROR", err) // FIXME: propagate
 		}
