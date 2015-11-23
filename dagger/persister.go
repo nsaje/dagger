@@ -144,7 +144,7 @@ func (p *LevelDBPersister) GetSnapshot(compID StreamID) ([]byte, error) {
 // ApplySnapshot applies the snapshot of the computation's persisted state
 func (p *LevelDBPersister) ApplySnapshot(compID StreamID, snapshot []byte) error {
 	batch := new(leveldb.Batch)
-	log.Println("[persister] Applying snapshot", snapshot)
+	log.Println("[persister] Applying snapshot") //, snapshot)
 
 	// clear data for this computation
 	keyPrefix := compID

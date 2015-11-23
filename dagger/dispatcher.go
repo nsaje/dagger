@@ -64,10 +64,12 @@ func (sd *StreamDispatcher) Run() {
 			log.Println("[streamDispatcher] adding subscriber", subscriber)
 			from, err := sd.coordinator.GetSubscriberPosition(sd.streamID, subscriber)
 			if err != nil {
+				log.Println("ERROR", err)
 				// FIXME
 			}
 			subscriberHandler, err := newSubscriberHandler(subscriber)
 			if err != nil {
+				log.Println("ERROR", err)
 				// FIXME
 			}
 			stopCh := make(chan struct{})
@@ -137,7 +139,7 @@ func (si *StreamIterator) Dispatch(startAt Timestamp) {
 
 	go MovingLimitRead(si.persister, si.compID, "p", fromCh, toCh, toSend, errc)
 	fromCh <- startAt
-	toCh <- Timestamp(1<<63 - 1)
+	// toCh <- Timestamp(1<<62 - 1)
 
 	for {
 		select {

@@ -138,7 +138,10 @@ func (comp *statefulComputation) Sync() (Timestamp, error) {
 				return from, fmt.Errorf("[computations] Error applying computation snapshot: %s", err)
 			}
 
-			from, err := comp.persister.GetLastTimestamp(comp.streamID)
+			from, err = comp.persister.GetLastTimestamp(comp.streamID)
+			if err != nil {
+				return from, fmt.Errorf("[computations] error getting last timestamp")
+			}
 			// add one nanosecond so we don't take the last processed record again
 			from++
 			comp.linearizer.SetStartLWM(from)
