@@ -147,7 +147,12 @@ func (si *StreamIterator) Dispatch(startAt Timestamp) {
 			return
 		case updatedPos := <-si.posUpdates:
 			log.Println("[iterator] updating position to:", updatedPos)
-			// from = updatedPos
+			if si.groupHandler != nil {
+				areWeLeader, _, _ := si.groupHandler.GetStatus()
+				if !areWeLeader {
+					fromCh <- updatedPos
+				}
+			}
 		case <-si.posErr:
 			log.Println("[ERROR] position watcher error")
 			// close(si.stopCh) // FIXME: do this or not?
