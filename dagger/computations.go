@@ -170,10 +170,14 @@ func (comp *statefulComputation) ProcessRecordLinearized(t *Record) error {
 	// the plugin receives the records in order
 	response, err := comp.plugin.SubmitRecord(t)
 	if err != nil {
-		// return err
+		log.Println("ERROR:", err)
+		return err
 	}
 
 	// persist info about received and produced records
+	log.Println("X", comp.persister)
+	log.Println("X", t)
+	log.Println("X", response)
 	err = comp.persister.CommitComputation(comp.streamID, t, response.Records)
 	if err != nil {
 		// return err

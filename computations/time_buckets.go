@@ -18,7 +18,7 @@ type TimeBucketsProcessor interface {
 }
 
 type TimeBucketsState struct {
-	LastLWM        dagger.Timestamp      `json:"last_lwm"`
+	LastLWM        dagger.Timestamp `json:"last_lwm"`
 	ProcessorState *json.RawMessage `json:"processor_state"`
 }
 
@@ -92,10 +92,10 @@ func (c *TimeBucketsComputation) SetState(state []byte) error {
 func (c *TimeBucketsComputation) SubmitRecord(t *dagger.Record) ([]*dagger.Record, error) {
 	log.Println("[time_buckets] processing record", t)
 	bucket := dagger.TSFromTime(t.Timestamp.ToTime().Round(c.period))
-	_, ok := t.Data.(float64)
-	if !ok {
-		return nil, fmt.Errorf("Wrong data format, expected float!")
-	}
+	// _, ok := t.Data.(float64)
+	// if !ok {
+	// 	return nil, fmt.Errorf("Wrong data format, expected float!")
+	// }
 	if t.Timestamp < c.lastLWM {
 		return nil, fmt.Errorf("LWM semantics violated! Record ts: %v, lastLWM: %v", t.Timestamp, c.lastLWM)
 	}

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/dagger"
@@ -62,7 +63,7 @@ func (c *AvgProcessor) SetState(state []byte) error {
 // ProcessBucket updates the bucket with a new record
 func (c *AvgProcessor) ProcessBucket(bucket dagger.Timestamp, t *dagger.Record) error {
 	log.Println("[avg] processing", t)
-	value, _ := t.Data.(float64)
+	value, _ := strconv.ParseFloat(t.Data.(string), 64)
 	c.state.Counts[bucket]++
 	c.state.Sums[bucket] += value
 	return nil

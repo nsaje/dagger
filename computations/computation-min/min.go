@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"strconv"
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/dagger"
@@ -59,7 +60,7 @@ func (c *MinProcessor) SetState(state []byte) error {
 // ProcessBucket updates the bucket with a new record
 func (c *MinProcessor) ProcessBucket(bucket dagger.Timestamp, t *dagger.Record) error {
 	log.Println("[Min] processing", t)
-	value, _ := t.Data.(float64)
+	value, _ := strconv.ParseFloat(t.Data.(string), 64)
 	c.state.Values[bucket] = append(c.state.Values[bucket], value)
 	return nil
 }
