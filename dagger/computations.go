@@ -190,17 +190,14 @@ func (comp *statefulComputation) ProcessRecordLinearized(t *Record) error {
 	}
 
 	// persist info about received and produced records
-	log.Println("X", comp.persister)
-	log.Println("X", t)
-	log.Println("X", response)
 	err = comp.persister.CommitComputation(comp.streamID, t, response.Records)
 	if err != nil {
-		// return err
+		return err
 	}
 
 	areWeLeader, _, err := comp.groupHandler.GetStatus()
 	if err != nil {
-		// return err
+		return err
 	}
 
 	if areWeLeader {

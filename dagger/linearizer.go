@@ -84,7 +84,10 @@ func (l *Linearizer) StartForwarding() {
 			}
 		case r := <-recs:
 			log.Println("linearizer forwarding", r)
-			l.ltp.ProcessRecordLinearized(r)
+			err := l.ltp.ProcessRecordLinearized(r)
+			if err != nil {
+				fromCh <- r.Timestamp
+			}
 		case err := <-errc:
 			log.Println("PERSISTER ERROR", err) // FIXME: propagate
 		}
