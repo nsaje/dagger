@@ -16,34 +16,6 @@ import (
 	"github.com/natefinch/pie"
 )
 
-type statelessComputation struct {
-	plugin     ComputationPlugin
-	dispatcher RecordProcessor
-}
-
-func (comp *statelessComputation) Sync() (Timestamp, error) {
-	return Timestamp(0), nil
-}
-
-func (comp *statelessComputation) Run(chan error) {
-	return
-}
-
-func (comp *statelessComputation) Stop() {
-}
-
-func (comp *statelessComputation) ProcessRecord(t *Record) error {
-	response, err := comp.plugin.SubmitRecord(t)
-	if err != nil {
-		return err
-	}
-	return ProcessMultipleRecords(comp.dispatcher, response.Records)
-}
-
-func (comp *statelessComputation) GetSnapshot() ([]byte, error) {
-	return nil, nil
-}
-
 type statefulComputation struct {
 	streamID     StreamID
 	plugin       ComputationPlugin
@@ -90,6 +62,25 @@ func newStatefulComputation(streamID StreamID, coordinator Coordinator,
 	linearizer.SetProcessor(computation)
 
 	return computation, nil
+}
+
+func (comp *statefulComputation) GetSnapshot() ([]byte, error) {
+	log.Println("[computations] trying to acquire sync lock...")
+	comp.Lock()
+	log.Println("[computations] ... sync lock acquired!")
+	defer comp.Unlock()
+	snapshot := make(map[string][]byte)
+	persisterSnapshot, err := comp.persister.GetSnapshot(comp.streamID)
+	if err != nil {
+		return nil, errors.New("stateful computation: " + err.Error())
+	}
+	pluginSnapshot, err := comp.plugin.GetSnapshot()
+	if err != nil {
+		return nil, errors.New("stateful computation: " + err.Error())
+	}
+	snapshot["persister"] = persisterSnapshot
+	snapshot["plugin"] = pluginSnapshot
+	return json.Marshal(snapshot)
 }
 
 func (comp *statefulComputation) Sync() (Timestamp, error) {
@@ -212,25 +203,6 @@ func (comp *statefulComputation) ProcessRecordLinearized(t *Record) error {
 	}
 	// don't send downstream if we're not the leader of our group
 	return nil
-}
-
-func (comp *statefulComputation) GetSnapshot() ([]byte, error) {
-	log.Println("[computations] trying to acquire sync lock...")
-	comp.Lock()
-	log.Println("[computations] ... sync lock acquired!")
-	defer comp.Unlock()
-	snapshot := make(map[string][]byte)
-	persisterSnapshot, err := comp.persister.GetSnapshot(comp.streamID)
-	if err != nil {
-		return nil, errors.New("stateful computation: " + err.Error())
-	}
-	pluginSnapshot, err := comp.plugin.GetSnapshot()
-	if err != nil {
-		return nil, errors.New("stateful computation: " + err.Error())
-	}
-	snapshot["persister"] = persisterSnapshot
-	snapshot["plugin"] = pluginSnapshot
-	return json.Marshal(snapshot)
 }
 
 // StartComputationPlugin starts the plugin process

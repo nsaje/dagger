@@ -13,9 +13,9 @@ import (
 // and can be replicated and synced across workers
 type Task interface {
 	RecordProcessor
-	Run(chan error)
 	GetSnapshot() ([]byte, error)
 	Sync() (Timestamp, error)
+	Run(chan error)
 	Stop()
 }
 
@@ -150,7 +150,9 @@ func (cm *TaskManager) setupTask(streamID StreamID) (Task, error) {
 			return nil, err
 		}
 	} else {
-		task = &statelessComputation{plugin, cm.dispatcher}
+		// in the future different types of tasks will be set up here
+		plugin.Stop()
+		return nil, fmt.Errorf("Unsupported task type!")
 	}
 
 	from, err := task.Sync()
