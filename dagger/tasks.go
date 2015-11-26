@@ -21,12 +21,13 @@ type Task interface {
 
 // TaskManager manages tasks
 type TaskManager struct {
-	tasks       map[StreamID]Task
-	coordinator Coordinator
-	receiver    *Receiver
-	persister   Persister
-	dispatcher  *Dispatcher
-	done        chan struct{}
+	tasks        map[StreamID]Task
+	coordinator  Coordinator
+	receiver     *Receiver
+	persister    Persister
+	dispatcher   *Dispatcher
+	done         chan struct{}
+	taskFailedCh chan Task
 
 	counter metrics.Counter
 }
@@ -60,16 +61,18 @@ func ParseComputationID(s StreamID) (string, string, error) {
 }
 
 // ManageTasks watches for new tasks and tries to acquire and run them
-func (cm *TaskManager) ManageTasks() {
+func (cm *TaskManager) ManageTasks() error {
 	unapplicableSet := make(map[StreamID]struct{})
 	new, errc := cm.coordinator.WatchTasks(cm.done)
 	for {
 		select {
 		case <-cm.done:
-			return
+			return nil
 		case err := <-errc:
 			log.Println("[error] managetasks", err)
-			return
+			return err
+		case task := <-cm.taskFailedCh:
+			task.Stop()
 		case candidateTasks := <-new:
 			log.Println("got new tasks", candidateTasks)
 			randomOrder := rand.Perm(len(candidateTasks))
@@ -98,8 +101,14 @@ func (cm *TaskManager) ManageTasks() {
 					}
 					// job set up successfuly, register as publisher and delete the job
 					log.Println("[coordinator] Deleting job: ", streamID)
-					cm.coordinator.TaskAcquired(streamID)
-					cm.coordinator.RegisterAsPublisher(streamID)
+					err = cm.coordinator.TaskAcquired(streamID)
+					if err != nil {
+						return err
+					}
+					err = cm.coordinator.RegisterAsPublisher(streamID)
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -143,7 +152,14 @@ func (cm *TaskManager) setupTask(streamID StreamID) error {
 		cm.receiver.SubscribeTo(input, from, computation)
 	}
 	cm.tasks[streamID] = computation
-	return computation.Run()
+	go func() {
+		err := computation.Run()
+		if err != nil {
+			log.Println("[taskManager] task failed:", err)
+			cm.taskFailedCh <- computation
+		}
+	}()
+	return nil
 }
 
 // GetSnapshot returns a snapshot of the requested task

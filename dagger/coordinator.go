@@ -3,8 +3,6 @@ package dagger
 import (
 	"net"
 	"strings"
-
-	
 )
 
 // Tags are key-value metadata attached to a stream
@@ -37,7 +35,7 @@ type TaskCoordinator interface {
 	// manages to take the task, the call returns false.
 	AcquireTask(StreamID) (bool, error)
 	// TaskAcquired marks the task as successfuly acquired
-	TaskAcquired(StreamID)
+	TaskAcquired(StreamID) error
 	// ReleaseTask releases the lock on the task so others can try to acquire it
 	ReleaseTask(StreamID) (bool, error)
 }
@@ -56,7 +54,8 @@ type PublishCoordinator interface {
 	WatchSubscribers(StreamID, chan struct{}) (chan string, chan string, chan error)
 	GetSubscriberPosition(StreamID, string) (Timestamp, error)
 	WatchSubscriberPosition(StreamID, string, chan struct{}) (chan Timestamp, chan error)
-	RegisterAsPublisher(streamID StreamID)
+	RegisterAsPublisher(streamID StreamID) error
+	DeregisterAsPublisher(streamID StreamID) error
 }
 
 // GroupHandler handles leadership status of a group

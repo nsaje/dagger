@@ -27,7 +27,6 @@ type StreamDispatcher struct {
 func NewStreamDispatcher(streamID StreamID, coordinator Coordinator,
 	persister Persister, lwmTracker LWMTracker, groupHandler GroupHandler) *StreamDispatcher {
 	stopCh := make(chan struct{})
-	new, dropped, _ := coordinator.WatchSubscribers(streamID, stopCh) // FIXME: handle errc
 	return &StreamDispatcher{
 		streamID:     streamID,
 		persister:    persister,
@@ -37,8 +36,6 @@ func NewStreamDispatcher(streamID StreamID, coordinator Coordinator,
 		iterators:    make(map[string]*StreamIterator),
 		notifyCh:     make(chan *Record),
 		stopCh:       stopCh,
-		new:          new,
-		dropped:      dropped,
 	}
 }
 
@@ -48,19 +45,22 @@ func (sd *StreamDispatcher) ProcessRecord(t *Record) error {
 	return nil
 }
 
-func (sd *StreamDispatcher) Run() {
+func (sd *StreamDispatcher) Run() error {
 	log.Println("RUNNING DISPATCHER")
+	new, dropped, errc := sd.coordinator.WatchSubscribers(sd.streamID, sd.stopCh)
 	for {
 		select {
 		case <-sd.stopCh:
-			return
+			return nil
+		case err := <-errc:
+			return err
 		case r := <-sd.notifyCh:
 			log.Println("[streamDispatcher] notifying iterators")
 			sd.last = r
 			for _, iter := range sd.iterators {
 				iter.ProcessRecord(r)
 			}
-		case subscriber := <-sd.new:
+		case subscriber := <-new:
 			log.Println("[streamDispatcher] adding subscriber", subscriber)
 			from, err := sd.coordinator.GetSubscriberPosition(sd.streamID, subscriber)
 			if err != nil {
@@ -92,7 +92,7 @@ func (sd *StreamDispatcher) Run() {
 			if sd.last != nil {
 				iter.ProcessRecord(sd.last)
 			}
-		case subscriber := <-sd.dropped:
+		case subscriber := <-dropped:
 			log.Println("[streamDispatcher] removing subscriber", subscriber)
 			subIterator := sd.iterators[subscriber]
 			if subIterator != nil {

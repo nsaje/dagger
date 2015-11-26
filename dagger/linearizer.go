@@ -15,6 +15,7 @@ type Linearizer struct {
 	lwmCh      chan Timestamp
 	startAtLWM Timestamp
 	ltp        LinearizedRecordProcessor
+	stopCh     chan struct{}
 	tmpT       chan *Record
 }
 
@@ -26,6 +27,7 @@ func NewLinearizer(compID StreamID, store StreamBuffer, lwmTracker LWMTracker) *
 		lwmTracker: lwmTracker,
 		lwmCh:      make(chan Timestamp),
 		tmpT:       make(chan *Record),
+		stopCh:     make(chan struct{}),
 	}
 }
 
@@ -59,10 +61,15 @@ func (l *Linearizer) ProcessRecord(t *Record) error {
 	return nil
 }
 
-// StartForwarding starts a goroutine that forwards the records from the buffer
+// Stop stops the linearizer
+func (l *Linearizer) Stop() {
+	close(l.stopCh)
+}
+
+// Run forwards the records from the buffer
 // to the next RecordProcessor when LWM tells us no more records will arrive in
 // the forwarded time frame
-func (l *Linearizer) StartForwarding() {
+func (l *Linearizer) Run() error {
 	fromCh := make(chan Timestamp)
 	toCh := make(chan Timestamp)
 	recs := make(chan *Record)
@@ -73,6 +80,11 @@ func (l *Linearizer) StartForwarding() {
 	fromCh <- l.startAtLWM
 	for {
 		select {
+		case <-l.stopCh:
+			return nil
+		case err := <-errc:
+			log.Println("PERSISTER ERROR", err)
+			return err
 		case recLWM := <-l.lwmCh:
 			t := <-l.tmpT // FIXME: remove
 			if recLWM <= toLWM {
@@ -86,10 +98,9 @@ func (l *Linearizer) StartForwarding() {
 			log.Println("linearizer forwarding", r)
 			err := l.ltp.ProcessRecordLinearized(r)
 			if err != nil {
-				fromCh <- r.Timestamp
+				// fromCh <- r.Timestamp
+				return err
 			}
-		case err := <-errc:
-			log.Println("PERSISTER ERROR", err) // FIXME: propagate
 		}
 	}
 }

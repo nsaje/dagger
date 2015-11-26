@@ -51,7 +51,7 @@ type statefulComputation struct {
 	linearizer   *Linearizer
 	persister    Persister
 	lwmTracker   LWMTracker
-	dispatcher   RecordProcessor
+	dispatcher   *StreamDispatcher
 	stopCh       chan struct{}
 
 	sync.RWMutex // a reader/writer lock for blocking new records on sync request
@@ -73,7 +73,6 @@ func newStatefulComputation(streamID StreamID, coordinator Coordinator,
 	linearizer := NewLinearizer(streamID, persister, lwmTracker)
 	// bufferedDispatcher := StartBufferedDispatcher(streamID, dispatcher, multiSentTracker, lwmTracker, stopCh)
 	dispatcher := NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, groupHandler)
-	go dispatcher.Run()
 
 	computation := &statefulComputation{
 		streamID:     streamID,
@@ -159,11 +158,12 @@ func (comp *statefulComputation) Sync() (Timestamp, error) {
 }
 
 func (comp *statefulComputation) Run() error {
-	go comp.linearizer.StartForwarding()
-	return nil
+	go comp.dispatcher.Run()
+	return comp.linearizer.Run()
 }
 
 func (comp *statefulComputation) Stop() {
+	comp.linearizer.Stop()
 }
 
 func (comp *statefulComputation) ProcessRecord(r *Record) error {

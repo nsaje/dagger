@@ -106,10 +106,11 @@ func (c *consulCoordinator) AcquireTask(task dagger.StreamID) (bool, error) {
 	return acquired, err
 }
 
-func (c *consulCoordinator) TaskAcquired(task dagger.StreamID) {
-	log.Println("[coordinator] Releasing task: ", task)
+func (c *consulCoordinator) TaskAcquired(task dagger.StreamID) error {
+	log.Println("[coordinator] Task acquired, deleting: ", task)
 	kv := c.client.KV()
-	kv.Delete(string(task), nil)
+	_, err := kv.Delete(string(task), nil)
+	return err
 }
 
 func (c *consulCoordinator) ReleaseTask(task dagger.StreamID) (bool, error) {
@@ -253,7 +254,7 @@ func (c *consulCoordinator) WatchSubscriberPosition(topic dagger.StreamID, subsc
 }
 
 // RegisterAsPublisher registers us as publishers of this stream and
-func (c *consulCoordinator) RegisterAsPublisher(compID dagger.StreamID) {
+func (c *consulCoordinator) RegisterAsPublisher(compID dagger.StreamID) error {
 	log.Println("[coordinator] Registering as publisher for: ", compID)
 	kv := c.client.KV()
 	pair := &api.KVPair{
@@ -263,7 +264,21 @@ func (c *consulCoordinator) RegisterAsPublisher(compID dagger.StreamID) {
 	_, _, err := kv.Acquire(pair, nil)
 	if err != nil {
 		log.Println("[coordinator] Error registering as publisher: ", err)
+		return err
 	}
+	return nil
+}
+
+// DeregisterAsPublisher deregisters us as publishers of this stream and
+func (c *consulCoordinator) DeregisterAsPublisher(compID dagger.StreamID) error {
+	log.Println("[coordinator] Deregistering as publisher for: ", compID)
+	kv := c.client.KV()
+	key := fmt.Sprintf("dagger/publishers/%s/%s", compID, c.addr.String())
+	_, err := kv.Delete(key, nil)
+	if err != nil {
+		log.Println("[coordinator] Error registering as publisher: ", err)
+	}
+	return nil
 }
 
 // ------------- OLD --------------
