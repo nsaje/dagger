@@ -142,18 +142,18 @@ func (cm *TaskManager) setupTask(streamID StreamID) (Task, error) {
 		return nil, err
 	}
 
-	var computation Task
+	var task Task
 	if info.Stateful {
-		computation, err = newStatefulComputation(streamID, cm.coordinator, cm.persister, plugin)
+		task, err = newStatefulComputation(streamID, cm.coordinator, cm.persister, plugin)
 		if err != nil {
 			plugin.Stop()
 			return nil, err
 		}
 	} else {
-		computation = &statelessComputation{plugin, cm.dispatcher}
+		task = &statelessComputation{plugin, cm.dispatcher}
 	}
 
-	from, err := computation.Sync()
+	from, err := task.Sync()
 	if err != nil {
 		plugin.Stop()
 		return nil, err
@@ -161,9 +161,9 @@ func (cm *TaskManager) setupTask(streamID StreamID) (Task, error) {
 
 	for _, input := range info.Inputs {
 		log.Println("subscribing to stream", input, "from", from)
-		cm.receiver.SubscribeTo(input, from, computation)
+		cm.receiver.SubscribeTo(input, from, task)
 	}
-	return computation, nil
+	return task, nil
 }
 
 // GetSnapshot returns a snapshot of the requested task

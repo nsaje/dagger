@@ -63,7 +63,8 @@ func (l *Linearizer) ProcessRecord(t *Record) error {
 
 // Stop stops the linearizer
 func (l *Linearizer) Stop() {
-	close(l.stopCh)
+	l.stopCh <- struct{}{}
+	<-l.stopCh
 }
 
 // Run forwards the records from the buffer
@@ -80,6 +81,7 @@ func (l *Linearizer) Run(errc chan error) {
 	for {
 		select {
 		case <-l.stopCh:
+			l.stopCh <- struct{}{}
 			return
 		case recLWM := <-l.lwmCh:
 			t := <-l.tmpT // FIXME: remove
