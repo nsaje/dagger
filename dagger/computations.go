@@ -25,8 +25,8 @@ func (comp *statelessComputation) Sync() (Timestamp, error) {
 	return Timestamp(0), nil
 }
 
-func (comp *statelessComputation) Run() error {
-	return nil
+func (comp *statelessComputation) Run(chan error) {
+	return
 }
 
 func (comp *statelessComputation) Stop() {
@@ -157,13 +157,15 @@ func (comp *statefulComputation) Sync() (Timestamp, error) {
 	return from, nil
 }
 
-func (comp *statefulComputation) Run() error {
-	go comp.dispatcher.Run()
-	return comp.linearizer.Run()
+func (comp *statefulComputation) Run(errc chan error) {
+	go comp.dispatcher.Run(errc)
+	go comp.linearizer.Run(errc)
 }
 
 func (comp *statefulComputation) Stop() {
 	comp.linearizer.Stop()
+	comp.plugin.Stop()
+	comp.dispatcher.Stop()
 }
 
 func (comp *statefulComputation) ProcessRecord(r *Record) error {
@@ -257,6 +259,7 @@ type ComputationPlugin interface {
 	SubmitRecord(t *Record) (*ComputationPluginResponse, error)
 	GetSnapshot() ([]byte, error)
 	ApplySnapshot([]byte) error
+	Stop() error
 }
 
 type computationPlugin struct {
@@ -298,6 +301,11 @@ func (p *computationPlugin) SubmitRecord(r *Record) (*ComputationPluginResponse,
 		r.StreamID = p.compID
 	}
 	return &result, err
+}
+
+func (p *computationPlugin) Stop() error {
+	log.Println("[plugin] stopping", p.name)
+	return p.client.Close()
 }
 
 type masterHandler struct {

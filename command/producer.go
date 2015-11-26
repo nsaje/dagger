@@ -15,6 +15,7 @@ import (
 // Producer reads records from stdin and submits them
 // to registered subscribers via RPC
 func Producer(c *cli.Context) {
+	errc := make(chan error)
 	conf := dagger.DefaultConfig(c)
 	consulConf := consul.DefaultConfig()
 	consulConf.Address = conf.ConsulAddr
@@ -35,7 +36,7 @@ func Producer(c *cli.Context) {
 	}
 	defer persister.Close()
 	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, nil)
-	go dispatcher.Run()
+	go dispatcher.Run(errc)
 
 	reader := bufio.NewReader(os.Stdin)
 	// var tmpT *dagger.Record

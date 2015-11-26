@@ -69,11 +69,10 @@ func (l *Linearizer) Stop() {
 // Run forwards the records from the buffer
 // to the next RecordProcessor when LWM tells us no more records will arrive in
 // the forwarded time frame
-func (l *Linearizer) Run() error {
+func (l *Linearizer) Run(errc chan error) {
 	fromCh := make(chan Timestamp)
 	toCh := make(chan Timestamp)
 	recs := make(chan *Record)
-	errc := make(chan error)
 
 	go MovingLimitRead(l.store, l.compID, "i", fromCh, toCh, recs, errc)
 	var toLWM Timestamp
@@ -81,10 +80,7 @@ func (l *Linearizer) Run() error {
 	for {
 		select {
 		case <-l.stopCh:
-			return nil
-		case err := <-errc:
-			log.Println("PERSISTER ERROR", err)
-			return err
+			return
 		case recLWM := <-l.lwmCh:
 			t := <-l.tmpT // FIXME: remove
 			if recLWM <= toLWM {
@@ -99,7 +95,8 @@ func (l *Linearizer) Run() error {
 			err := l.ltp.ProcessRecordLinearized(r)
 			if err != nil {
 				// fromCh <- r.Timestamp
-				return err
+				errc <- err
+				return
 			}
 		}
 	}

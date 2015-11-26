@@ -45,15 +45,16 @@ func (sd *StreamDispatcher) ProcessRecord(t *Record) error {
 	return nil
 }
 
-func (sd *StreamDispatcher) Run() error {
+func (sd *StreamDispatcher) Run(errc chan error) {
 	log.Println("RUNNING DISPATCHER")
-	new, dropped, errc := sd.coordinator.WatchSubscribers(sd.streamID, sd.stopCh)
+	new, dropped, persisterErrc := sd.coordinator.WatchSubscribers(sd.streamID, sd.stopCh)
 	for {
 		select {
 		case <-sd.stopCh:
-			return nil
-		case err := <-errc:
-			return err
+			return
+		case err := <-persisterErrc:
+			errc <- err
+			return
 		case r := <-sd.notifyCh:
 			log.Println("[streamDispatcher] notifying iterators")
 			sd.last = r
@@ -101,6 +102,10 @@ func (sd *StreamDispatcher) Run() error {
 			delete(sd.iterators, subscriber)
 		}
 	}
+}
+
+func (sd *StreamDispatcher) Stop() {
+	close(sd.stopCh)
 }
 
 type StreamIterator struct {

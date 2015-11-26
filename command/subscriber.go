@@ -43,7 +43,8 @@ func Subscriber(c *cli.Context) {
 	lwmTracker := dagger.NewLWMTracker()
 	linearizer := dagger.NewLinearizer("test", persister, lwmTracker)
 	linearizer.SetProcessor(prnter)
-	go linearizer.Run()
+	errc := make(chan error)
+	go linearizer.Run(errc)
 	from, err := strconv.ParseInt(c.String("from"), 10, 64)
 	if err != nil {
 		panic(err)

@@ -13,7 +13,7 @@ import (
 // and can be replicated and synced across workers
 type Task interface {
 	RecordProcessor
-	Run() error
+	Run(chan error)
 	GetSnapshot() ([]byte, error)
 	Sync() (Timestamp, error)
 	Stop()
@@ -92,13 +92,22 @@ func (cm *TaskManager) ManageTasks() error {
 				}
 				if gotTask {
 					log.Println("[coordinator] Got task:", streamID)
-					err = cm.setupTask(streamID)
+					task, err := cm.setupTask(streamID)
 					if err != nil {
 						log.Println("Error setting up computation:", err) // FIXME
 						cm.coordinator.ReleaseTask(streamID)              // FIXME ensure someone else tries to acquire
 						unapplicableSet[streamID] = struct{}{}
 						continue
 					}
+					cm.tasks[streamID] = task
+					go func() {
+						errc := make(chan error)
+						task.Run(errc)
+						if err := <-errc; err != nil {
+							log.Println("[taskManager] task failed:", err)
+							cm.taskFailedCh <- task
+						}
+					}()
 					// job set up successfuly, register as publisher and delete the job
 					log.Println("[coordinator] Deleting job: ", streamID)
 					err = cm.coordinator.TaskAcquired(streamID)
@@ -115,28 +124,30 @@ func (cm *TaskManager) ManageTasks() error {
 	}
 }
 
-func (cm *TaskManager) setupTask(streamID StreamID) error {
+func (cm *TaskManager) setupTask(streamID StreamID) (Task, error) {
 	name, definition, err := ParseComputationID(streamID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	plugin, err := StartComputationPlugin(name, streamID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// get information about the plugin, such as which input streams it needs
 	info, err := plugin.GetInfo(definition)
 	if err != nil {
-		return err
+		plugin.Stop()
+		return nil, err
 	}
 
 	var computation Task
 	if info.Stateful {
 		computation, err = newStatefulComputation(streamID, cm.coordinator, cm.persister, plugin)
 		if err != nil {
-			return err
+			plugin.Stop()
+			return nil, err
 		}
 	} else {
 		computation = &statelessComputation{plugin, cm.dispatcher}
@@ -144,22 +155,15 @@ func (cm *TaskManager) setupTask(streamID StreamID) error {
 
 	from, err := computation.Sync()
 	if err != nil {
-		return err
+		plugin.Stop()
+		return nil, err
 	}
 
 	for _, input := range info.Inputs {
 		log.Println("subscribing to stream", input, "from", from)
 		cm.receiver.SubscribeTo(input, from, computation)
 	}
-	cm.tasks[streamID] = computation
-	go func() {
-		err := computation.Run()
-		if err != nil {
-			log.Println("[taskManager] task failed:", err)
-			cm.taskFailedCh <- computation
-		}
-	}()
-	return nil
+	return computation, nil
 }
 
 // GetSnapshot returns a snapshot of the requested task
