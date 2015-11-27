@@ -12,12 +12,21 @@ import (
 )
 
 // Receiver receives new records via incoming RPC calls
-type Receiver struct {
+// and manages subscriptions to streams
+type Receiver interface {
+	ListenAddr() net.Addr
+	SubscribeTo(StreamID, Timestamp, RecordProcessor)
+	UnsubscribeFrom(StreamID, RecordProcessor)
+	SetTaskManager(TaskManager)
+	Listen()
+}
+
+type receiver struct {
 	conf                       *Config
 	coordinator                Coordinator
 	server                     *rpc.Server
 	listener                   net.Listener
-	taskManager                *TaskManager
+	taskManager                TaskManager
 	subscribedRecordProcessors map[StreamID]map[RecordProcessor]struct{}
 	publisherMonitors          map[StreamID]chan struct{}
 	checkpointTimers           map[StreamID]*time.Timer
@@ -25,8 +34,8 @@ type Receiver struct {
 }
 
 // NewReceiver initializes a new receiver
-func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
-	r := &Receiver{
+func NewReceiver(conf *Config, coordinator Coordinator) Receiver {
+	r := &receiver{
 		conf:                       conf,
 		coordinator:                coordinator,
 		subscribedRecordProcessors: make(map[StreamID]map[RecordProcessor]struct{}),
@@ -46,11 +55,11 @@ func NewReceiver(conf *Config, coordinator Coordinator) *Receiver {
 }
 
 // ListenAddr is the network address on which the receiver listens
-func (r *Receiver) ListenAddr() net.Addr {
+func (r *receiver) ListenAddr() net.Addr {
 	return r.listener.Addr()
 }
 
-func (r *Receiver) SubscribeTo(streamID StreamID, from Timestamp, tp RecordProcessor) {
+func (r *receiver) SubscribeTo(streamID StreamID, from Timestamp, tp RecordProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	subscribersSet := r.subscribedRecordProcessors[streamID]
@@ -69,7 +78,7 @@ func (r *Receiver) SubscribeTo(streamID StreamID, from Timestamp, tp RecordProce
 	r.subscribedRecordProcessors[streamID] = subscribersSet
 }
 
-func (r *Receiver) UnsubscribeFrom(streamID StreamID, rp RecordProcessor) {
+func (r *receiver) UnsubscribeFrom(streamID StreamID, rp RecordProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
 	r.coordinator.UnsubscribeFrom(streamID)
@@ -85,7 +94,7 @@ func (r *Receiver) UnsubscribeFrom(streamID StreamID, rp RecordProcessor) {
 }
 
 // SubmitRecord submits a new record into the worker process
-func (r *Receiver) SubmitRecord(t *Record, reply *string) error {
+func (r *receiver) SubmitRecord(t *Record, reply *string) error {
 	r.subscribersLock.RLock()
 	defer r.subscribersLock.RUnlock()
 	log.Printf("[receiver] Received: %s", t)
@@ -118,12 +127,12 @@ func (r *Receiver) SubmitRecord(t *Record, reply *string) error {
 }
 
 // Sync is the RPC method called by slave workers wanting to sync a computation
-func (r *Receiver) Sync(compID StreamID, reply *[]byte) error {
+func (r *receiver) Sync(compID StreamID, reply *[]byte) error {
 	log.Printf("[receiver] Sync request for %s", compID)
 	if r.taskManager == nil {
 		return fmt.Errorf("[receiver] Task manager doesn't exist")
 	}
-	snapshot, err := r.taskManager.GetSnapshot(compID)
+	snapshot, err := r.taskManager.GetTaskSnapshot(compID)
 	if err != nil {
 		return err
 	}
@@ -132,12 +141,12 @@ func (r *Receiver) Sync(compID StreamID, reply *[]byte) error {
 }
 
 // SetTaskManager sets the task manager that is forwarded task sync requests
-func (r *Receiver) SetTaskManager(tm *TaskManager) {
+func (r *receiver) SetTaskManager(tm TaskManager) {
 	r.taskManager = tm
 }
 
 // Listen starts receiving incoming records over RPC
-func (r *Receiver) Listen() {
+func (r *receiver) Listen() {
 	for {
 		if conn, err := r.listener.Accept(); err != nil {
 			log.Fatal("[receiver] Accept error: " + err.Error())

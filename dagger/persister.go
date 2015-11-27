@@ -21,13 +21,18 @@ const (
 // Persister takes care of persisting in-flight records and computation state
 type Persister interface {
 	Close()
+	TaskPersister
+	StreamBuffer
+	SentTracker
+	ReceivedTracker
+}
+
+// TaskPersister enables tasks to commit and restore their state
+type TaskPersister interface {
 	CommitComputation(compID StreamID, in *Record, out []*Record) error
 	GetLastTimestamp(compID StreamID) (Timestamp, error)
 	GetSnapshot(compID StreamID) ([]byte, error)
 	ApplySnapshot(compID StreamID, snapshot []byte) error
-	StreamBuffer
-	SentTracker
-	ReceivedTracker
 }
 
 // StreamBuffer persistently "buffers" records sorted by timestamp

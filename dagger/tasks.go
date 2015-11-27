@@ -20,12 +20,16 @@ type Task interface {
 }
 
 // TaskManager manages tasks
-type TaskManager struct {
+type TaskManager interface {
+	ManageTasks(TaskStarter) error
+	GetTaskSnapshot(StreamID) ([]byte, error)
+}
+
+type taskManager struct {
 	tasks        map[StreamID]Task
 	coordinator  Coordinator
-	receiver     *Receiver
+	receiver     Receiver
 	persister    Persister
-	dispatcher   *Dispatcher
 	done         chan struct{}
 	taskFailedCh chan Task
 
@@ -33,12 +37,10 @@ type TaskManager struct {
 }
 
 // NewTaskManager creates a new task manager
-func NewTaskManager(coordinator Coordinator,
-	receiver *Receiver,
-	persister Persister) *TaskManager {
+func NewTaskManager(coordinator Coordinator, receiver Receiver, persister Persister) TaskManager {
 	c := metrics.NewCounter()
 	metrics.Register("processing", c)
-	tm := &TaskManager{
+	tm := &taskManager{
 		tasks:       make(map[StreamID]Task),
 		coordinator: coordinator,
 		receiver:    receiver,
@@ -61,7 +63,10 @@ func ParseComputationID(s StreamID) (string, string, error) {
 }
 
 // ManageTasks watches for new tasks and tries to acquire and run them
-func (cm *TaskManager) ManageTasks() error {
+func (cm *taskManager) ManageTasks(taskStarter TaskStarter) error {
+	if taskStarter == nil {
+		taskStarter = &defaultStarter{cm.coordinator, cm.persister}
+	}
 	unapplicableSet := make(map[StreamID]struct{})
 	new, errc := cm.coordinator.WatchTasks(cm.done)
 	for {
@@ -75,29 +80,37 @@ func (cm *TaskManager) ManageTasks() error {
 			task.Stop()
 		case candidateTasks := <-new:
 			log.Println("got new tasks", candidateTasks)
+
+			// try to acquire available tasks in random order, so the tasks are
+			// spread evenly among workers
 			randomOrder := rand.Perm(len(candidateTasks))
 			for _, i := range randomOrder {
 				streamID := StreamID(candidateTasks[i])
 				if _, alreadyTaken := cm.tasks[streamID]; alreadyTaken {
 					continue
 				}
+				// have we already tried and failed to start this task?
 				if _, found := unapplicableSet[streamID]; found {
 					continue
 				}
 				gotTask, err := cm.coordinator.AcquireTask(streamID)
 				if err != nil {
-					// FIXME
 					log.Println("[ERROR][coordinator]:", err)
-					panic(err)
+					continue
 				}
 				if gotTask {
 					log.Println("[coordinator] Got task:", streamID)
-					task, err := cm.setupTask(streamID)
+					taskInfo, err := taskStarter.StartTask(streamID)
 					if err != nil {
 						log.Println("Error setting up computation:", err) // FIXME
 						cm.coordinator.ReleaseTask(streamID)              // FIXME ensure someone else tries to acquire
 						unapplicableSet[streamID] = struct{}{}
 						continue
+					}
+					task := taskInfo.Task
+					for _, input := range taskInfo.Inputs {
+						log.Println("subscribing to stream", input, "from", taskInfo.From)
+						cm.receiver.SubscribeTo(input, taskInfo.From, task)
 					}
 					cm.tasks[streamID] = task
 					go func() {
@@ -124,7 +137,25 @@ func (cm *TaskManager) ManageTasks() error {
 	}
 }
 
-func (cm *TaskManager) setupTask(streamID StreamID) (Task, error) {
+// TaskInfo summarizes the newly created task with info about its input
+// and position up to which it has already processed data
+type TaskInfo struct {
+	Task   Task
+	Inputs []StreamID
+	From   Timestamp
+}
+
+// TaskStarter sets up a task from a given stream ID
+type TaskStarter interface {
+	StartTask(StreamID) (*TaskInfo, error)
+}
+
+type defaultStarter struct {
+	coordinator Coordinator
+	persister   Persister
+}
+
+func (cm *defaultStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
 	name, definition, err := ParseComputationID(streamID)
 	if err != nil {
 		return nil, err
@@ -161,15 +192,11 @@ func (cm *TaskManager) setupTask(streamID StreamID) (Task, error) {
 		return nil, err
 	}
 
-	for _, input := range info.Inputs {
-		log.Println("subscribing to stream", input, "from", from)
-		cm.receiver.SubscribeTo(input, from, task)
-	}
-	return task, nil
+	return &TaskInfo{task, info.Inputs, from}, nil
 }
 
-// GetSnapshot returns a snapshot of the requested task
-func (cm *TaskManager) GetSnapshot(streamID StreamID) ([]byte, error) {
+// GetTaskSnapshot returns a snapshot of the requested task
+func (cm *taskManager) GetTaskSnapshot(streamID StreamID) ([]byte, error) {
 	comp, has := cm.tasks[streamID]
 	if !has {
 		return nil, fmt.Errorf("Computation not found!")

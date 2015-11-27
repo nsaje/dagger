@@ -21,7 +21,7 @@ type statefulComputation struct {
 	plugin       ComputationPlugin
 	groupHandler GroupHandler
 	linearizer   *Linearizer
-	persister    Persister
+	persister    TaskPersister
 	lwmTracker   LWMTracker
 	dispatcher   *StreamDispatcher
 	stopCh       chan struct{}

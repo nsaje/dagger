@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	
 	"github.com/twinj/uuid"
 )
 
@@ -20,7 +19,7 @@ type HttpAPI struct {
 	subscribers *httpSubscribers
 }
 
-func NewHttpAPI(receiver *Receiver, dispatcher *Dispatcher) HttpAPI {
+func NewHttpAPI(receiver Receiver, dispatcher *Dispatcher) HttpAPI {
 	return HttpAPI{
 		dispatcher,
 		&httpSubscribers{
@@ -147,7 +146,7 @@ func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 }
 
 type httpSubscribers struct {
-	receiver *Receiver
+	receiver Receiver
 	subs     map[StreamID]map[chan *Record]struct{}
 	lock     *sync.RWMutex
 }
