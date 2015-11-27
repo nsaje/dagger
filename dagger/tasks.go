@@ -174,12 +174,16 @@ type TaskStarter interface {
 	StartTask(StreamID) (*TaskInfo, error)
 }
 
-type DefaultTaskStarter struct {
+func NewTaskStarter(c Coordinator, p Persister) TaskStarter {
+	return &defaultTaskStarter{c, p}
+}
+
+type defaultTaskStarter struct {
 	coordinator Coordinator
 	persister   Persister
 }
 
-func (cm *DefaultTaskStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
+func (cm *defaultTaskStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
 	name, definition, err := ParseComputationID(streamID)
 	if err != nil {
 		return nil, err

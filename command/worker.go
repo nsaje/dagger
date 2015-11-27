@@ -48,7 +48,8 @@ func Worker(c *cli.Context) {
 	// compManager := dagger.NewComputationManager(
 	// 	coordinator, receiver, persister, dispatcher)
 	// httpAPI := dagger.NewHttpAPI(receiver, dispatcher)
-	taskManager := dagger.NewTaskManager(coordinator, receiver, persister)
+	taskStarter := dagger.NewTaskStarter(coordinator, persister)
+	taskManager := dagger.NewTaskManager(coordinator, receiver, taskStarter)
 
 	err = coordinator.Start(receiver.ListenAddr())
 	defer coordinator.Stop()
@@ -58,7 +59,7 @@ func Worker(c *cli.Context) {
 	log.Println("Coordinator started")
 
 	go receiver.Listen()
-	go taskManager.ManageTasks(nil)
+	go taskManager.ManageTasks()
 
 	// go httpAPI.Serve()
 
