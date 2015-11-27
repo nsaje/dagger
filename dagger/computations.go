@@ -296,6 +296,6 @@ func newMasterHandler(addr string) (*masterHandler, error) {
 func (mh *masterHandler) Sync(compID StreamID) ([]byte, error) {
 	var reply []byte
 	log.Println("[computations] issuing a sync request for computation", compID)
-	err := mh.client.Call("Receiver.Sync", compID, &reply)
+	err := mh.client.Call("RPCHandler.Sync", compID, &reply)
 	return reply, err
 }

@@ -34,7 +34,6 @@ func Subscriber(c *cli.Context) {
 	if err != nil {
 		log.Fatalf("Error starting coordinator %s", err)
 	}
-	log.Println("Coordinator started")
 
 	topicGlob := dagger.StreamID(c.Args().First())
 	// linearizer := dagger.NewLinearizer(prnter, []string{topicGlob})

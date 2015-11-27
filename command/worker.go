@@ -1,7 +1,6 @@
 package command
 
 import (
-	"fmt"
 	"log"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 func Worker(c *cli.Context) {
 
 	appmetrics := c.String("appmetrics")
-	log.Println("Appmetrics: ", appmetrics)
 	if len(appmetrics) > 0 {
 		// set up monitoring
 		go influxdb.InfluxDB(
@@ -31,7 +29,6 @@ func Worker(c *cli.Context) {
 	}
 
 	conf := dagger.DefaultConfig(c)
-	fmt.Println("ARGS:", c.GlobalFlagNames())
 
 	persister, err := dagger.NewPersister("/tmp/dagger")
 	if err != nil {
@@ -56,7 +53,6 @@ func Worker(c *cli.Context) {
 	if err != nil {
 		log.Fatalf("Error starting coordinator %s", err)
 	}
-	log.Println("Coordinator started")
 
 	go receiver.Listen()
 	go taskManager.ManageTasks()

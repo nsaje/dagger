@@ -46,7 +46,7 @@ func (sd *StreamDispatcher) ProcessRecord(t *Record) error {
 }
 
 func (sd *StreamDispatcher) Run(errc chan error) {
-	log.Println("RUNNING DISPATCHER")
+	log.Println("[dispatcher] running dispatcher for stream", sd.streamID)
 	new, dropped, persisterErrc := sd.coordinator.WatchSubscribers(sd.streamID, sd.stopCh)
 	for {
 		select {
@@ -87,7 +87,6 @@ func (sd *StreamDispatcher) Run(errc chan error) {
 				subscriberHandler,
 			}
 			sd.iterators[subscriber] = iter
-			log.Println("STARTING DISPATCH FROM", from)
 			go iter.Dispatch(from)
 			// notify the new iterator of how far we've gotten
 			if sd.last != nil {
@@ -131,6 +130,7 @@ func (si *StreamIterator) Stop() {
 }
 
 func (si *StreamIterator) Dispatch(startAt Timestamp) {
+	log.Println("[iterator] starting dispatch from", startAt)
 	fromCh := make(chan Timestamp)
 	toCh := make(chan Timestamp)
 	toSend := make(chan *Record)
@@ -360,7 +360,7 @@ func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
 
 func (s *subscriberHandler) ProcessRecord(t *Record) error {
 	var reply string
-	err := s.client.Call("Receiver.SubmitRecord", t, &reply)
+	err := s.client.Call("RPCHandler.SubmitRecord", t, &reply)
 	if err != nil {
 		log.Printf("[dispatcher][WARNING] record %v failed delivery: %v", t, err)
 		return err

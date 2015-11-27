@@ -79,21 +79,20 @@ func (cm *taskManager) ManageTasks() error {
 			cm.done <- struct{}{}
 			return nil
 		case err := <-errc:
-			log.Println("[error] managetasks", err)
+			log.Println("[error][taskManager] managetasks", err)
 			return err
 		case taskInfo := <-cm.taskFailedCh:
-			log.Println("stopping failed task", taskInfo.StreamID)
+			log.Println("[taskManager] stopping failed task", taskInfo.StreamID)
 			taskInfo.Task.Stop()
 			delete(cm.tasks, taskInfo.StreamID)
 			for _, input := range taskInfo.Inputs {
-				log.Println("unsubscribing from stream", input)
 				cm.receiver.UnsubscribeFrom(input, taskInfo.Task)
 			}
 		case candidateTasks, ok := <-new:
 			if !ok {
 				return nil
 			}
-			log.Println("got new tasks", candidateTasks)
+			log.Println("[taskManager] got new tasks", candidateTasks)
 
 			// try to acquire available tasks in random order, so the tasks are
 			// spread evenly among workers
@@ -123,7 +122,6 @@ func (cm *taskManager) ManageTasks() error {
 					}
 					task := taskInfo.Task
 					for _, input := range taskInfo.Inputs {
-						log.Println("subscribing to stream", input, "from", taskInfo.From)
 						cm.receiver.SubscribeTo(input, taskInfo.From, task)
 					}
 					cm.tasks[streamID] = task
