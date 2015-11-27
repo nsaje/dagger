@@ -48,7 +48,8 @@ func NewReceiver(conf *Config, coordinator Coordinator) Receiver {
 		subscribersLock:            &sync.RWMutex{},
 	}
 	r.server = rpc.NewServer()
-	r.server.Register(r)
+	rpcHandler := &RPCHandler{r}
+	r.server.Register(rpcHandler)
 	r.server.HandleHTTP(rpc.DefaultRPCPath, rpc.DefaultDebugPath)
 	var err error
 	r.listener, err = net.Listen("tcp", r.conf.RPCAdvertise.String())
@@ -61,6 +62,23 @@ func NewReceiver(conf *Config, coordinator Coordinator) Receiver {
 // ListenAddr is the network address on which the receiver listens
 func (r *receiver) ListenAddr() net.Addr {
 	return r.listener.Addr()
+}
+
+// SetTaskManager sets the task manager that is forwarded task sync requests
+func (r *receiver) SetTaskManager(tm TaskManager) {
+	r.taskManager = tm
+}
+
+// Listen starts receiving incoming records over RPC
+func (r *receiver) Listen() {
+	for {
+		if conn, err := r.listener.Accept(); err != nil {
+			log.Fatal("[receiver] Accept error: " + err.Error())
+		} else {
+			log.Printf("[receiver] New connection to the receiver established\n")
+			go r.server.ServeCodec(jsonrpc.NewServerCodec(conn))
+		}
+	}
 }
 
 func (r *receiver) SubscribeTo(streamID StreamID, from Timestamp, tp RecordProcessor) {
@@ -97,21 +115,20 @@ func (r *receiver) UnsubscribeFrom(streamID StreamID, rp RecordProcessor) {
 	}
 }
 
+// RPCHandler handles incoming RPC calls
+type RPCHandler struct {
+	r *receiver
+}
+
 // SubmitRecord submits a new record into the worker process
-func (r *receiver) SubmitRecord(t *Record, reply *string) error {
-	r.subscribersLock.RLock()
-	defer r.subscribersLock.RUnlock()
+func (rpci *RPCHandler) SubmitRecord(t *Record, reply *string) error {
+	rpci.r.subscribersLock.RLock()
+	defer rpci.r.subscribersLock.RUnlock()
 	log.Printf("[receiver] Received: %s", t)
-	// if rand.Float64() < 0.1 {
-	// 	fmt.Println("rejecting for test")
-	// 	time.Sleep(time.Second)
-	// 	return errors.New("rejected for test")
-	// }
-	subscribers := make([]RecordProcessor, 0, len(r.subscribedRecordProcessors[t.StreamID]))
-	for k := range r.subscribedRecordProcessors[t.StreamID] {
+	subscribers := make([]RecordProcessor, 0, len(rpci.r.subscribedRecordProcessors[t.StreamID]))
+	for k := range rpci.r.subscribedRecordProcessors[t.StreamID] {
 		subscribers = append(subscribers, k)
 	}
-	// log.Printf("[receiver] processing %s with %+v", t, subscribers)
 	err := ProcessMultipleProcessors(subscribers, t)
 	if err != nil {
 		log.Printf("[ERROR] Processing %s failed: %s", t, err)
@@ -119,10 +136,10 @@ func (r *receiver) SubmitRecord(t *Record, reply *string) error {
 	}
 	// if enough time has passed, create a checkpoint in coordination system
 	select {
-	case <-r.checkpointTimers[t.StreamID].C:
+	case <-rpci.r.checkpointTimers[t.StreamID].C:
 		log.Printf("[receiver] checkpointing position of stream %s at %s", t.StreamID, t.Timestamp)
-		r.coordinator.CheckpointPosition(t.StreamID, t.Timestamp)
-		r.checkpointTimers[t.StreamID].Reset(time.Second)
+		rpci.r.coordinator.CheckpointPosition(t.StreamID, t.Timestamp)
+		rpci.r.checkpointTimers[t.StreamID].Reset(time.Second)
 	default:
 	}
 	*reply = "ok"
@@ -131,32 +148,15 @@ func (r *receiver) SubmitRecord(t *Record, reply *string) error {
 }
 
 // Sync is the RPC method called by slave workers wanting to sync a computation
-func (r *receiver) Sync(compID StreamID, reply *[]byte) error {
+func (rpci *RPCHandler) Sync(compID StreamID, reply *[]byte) error {
 	log.Printf("[receiver] Sync request for %s", compID)
-	if r.taskManager == nil {
+	if rpci.r.taskManager == nil {
 		return fmt.Errorf("[receiver] Task manager doesn't exist")
 	}
-	snapshot, err := r.taskManager.GetTaskSnapshot(compID)
+	snapshot, err := rpci.r.taskManager.GetTaskSnapshot(compID)
 	if err != nil {
 		return err
 	}
 	*reply = snapshot
 	return err
-}
-
-// SetTaskManager sets the task manager that is forwarded task sync requests
-func (r *receiver) SetTaskManager(tm TaskManager) {
-	r.taskManager = tm
-}
-
-// Listen starts receiving incoming records over RPC
-func (r *receiver) Listen() {
-	for {
-		if conn, err := r.listener.Accept(); err != nil {
-			log.Fatal("[receiver] Accept error: " + err.Error())
-		} else {
-			log.Printf("[receiver] New connection to the receiver established\n")
-			go r.server.ServeCodec(jsonrpc.NewServerCodec(conn))
-		}
-	}
 }
