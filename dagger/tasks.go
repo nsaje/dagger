@@ -32,7 +32,7 @@ type taskManager struct {
 	receiver     InputManager
 	taskStarter  TaskStarter
 	done         chan struct{}
-	taskFailedCh chan Task
+	taskFailedCh chan *TaskInfo
 
 	counter metrics.Counter
 }
@@ -42,12 +42,13 @@ func NewTaskManager(coordinator Coordinator, receiver InputManager, taskStarter 
 	c := metrics.NewCounter()
 	metrics.Register("processing", c)
 	tm := &taskManager{
-		tasks:       make(map[StreamID]Task),
-		coordinator: coordinator,
-		receiver:    receiver,
-		taskStarter: taskStarter,
-		counter:     c,
-		done:        make(chan struct{}),
+		tasks:        make(map[StreamID]Task),
+		coordinator:  coordinator,
+		receiver:     receiver,
+		taskStarter:  taskStarter,
+		counter:      c,
+		done:         make(chan struct{}),
+		taskFailedCh: make(chan *TaskInfo),
 	}
 	receiver.SetTaskManager(tm)
 	return tm
@@ -80,8 +81,14 @@ func (cm *taskManager) ManageTasks() error {
 		case err := <-errc:
 			log.Println("[error] managetasks", err)
 			return err
-		case task := <-cm.taskFailedCh:
-			task.Stop()
+		case taskInfo := <-cm.taskFailedCh:
+			log.Println("stopping failed task", taskInfo.StreamID)
+			taskInfo.Task.Stop()
+			delete(cm.tasks, taskInfo.StreamID)
+			for _, input := range taskInfo.Inputs {
+				log.Println("unsubscribing from stream", input)
+				cm.receiver.UnsubscribeFrom(input, taskInfo.Task)
+			}
 		case candidateTasks, ok := <-new:
 			if !ok {
 				return nil
@@ -125,7 +132,7 @@ func (cm *taskManager) ManageTasks() error {
 						task.Run(errc)
 						if err := <-errc; err != nil {
 							log.Println("[taskManager] task failed:", err)
-							cm.taskFailedCh <- task
+							cm.taskFailedCh <- taskInfo
 						}
 					}()
 					// job set up successfuly, register as publisher and delete the job
@@ -156,9 +163,10 @@ func (cm *taskManager) GetTaskSnapshot(streamID StreamID) ([]byte, error) {
 // TaskInfo summarizes the newly created task with info about its input
 // and position up to which it has already processed data
 type TaskInfo struct {
-	Task   Task
-	Inputs []StreamID
-	From   Timestamp
+	StreamID StreamID
+	Task     Task
+	Inputs   []StreamID
+	From     Timestamp
 }
 
 // TaskStarter sets up a task from a given stream ID
@@ -208,5 +216,5 @@ func (cm *DefaultTaskStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
 		return nil, err
 	}
 
-	return &TaskInfo{task, info.Inputs, from}, nil
+	return &TaskInfo{streamID, task, info.Inputs, from}, nil
 }
