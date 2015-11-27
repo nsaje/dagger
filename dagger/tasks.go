@@ -21,14 +21,16 @@ type Task interface {
 
 // TaskManager manages tasks
 type TaskManager interface {
-	ManageTasks(TaskStarter) error
+	ManageTasks() error
 	GetTaskSnapshot(StreamID) ([]byte, error)
+	Stop()
 }
 
 type taskManager struct {
 	tasks        map[StreamID]Task
 	coordinator  Coordinator
 	receiver     InputManager
+	taskStarter  TaskStarter
 	done         chan struct{}
 	taskFailedCh chan Task
 
@@ -36,13 +38,14 @@ type taskManager struct {
 }
 
 // NewTaskManager creates a new task manager
-func NewTaskManager(coordinator Coordinator, receiver InputManager, persister Persister) TaskManager {
+func NewTaskManager(coordinator Coordinator, receiver InputManager, taskStarter TaskStarter) TaskManager {
 	c := metrics.NewCounter()
 	metrics.Register("processing", c)
 	tm := &taskManager{
 		tasks:       make(map[StreamID]Task),
 		coordinator: coordinator,
 		receiver:    receiver,
+		taskStarter: taskStarter,
 		counter:     c,
 		done:        make(chan struct{}),
 	}
@@ -60,20 +63,29 @@ func ParseComputationID(s StreamID) (string, string, error) {
 	return c[:firstParen], c[firstParen+1 : len(c)-1], nil
 }
 
+func (cm *taskManager) Stop() {
+	cm.done <- struct{}{}
+	<-cm.done
+}
+
 // ManageTasks watches for new tasks and tries to acquire and run them
-func (cm *taskManager) ManageTasks(taskStarter TaskStarter) error {
+func (cm *taskManager) ManageTasks() error {
 	unapplicableSet := make(map[StreamID]struct{})
 	new, errc := cm.coordinator.WatchTasks(cm.done)
 	for {
 		select {
 		case <-cm.done:
+			cm.done <- struct{}{}
 			return nil
 		case err := <-errc:
 			log.Println("[error] managetasks", err)
 			return err
 		case task := <-cm.taskFailedCh:
 			task.Stop()
-		case candidateTasks := <-new:
+		case candidateTasks, ok := <-new:
+			if !ok {
+				return nil
+			}
 			log.Println("got new tasks", candidateTasks)
 
 			// try to acquire available tasks in random order, so the tasks are
@@ -95,7 +107,7 @@ func (cm *taskManager) ManageTasks(taskStarter TaskStarter) error {
 				}
 				if gotTask {
 					log.Println("[coordinator] Got task:", streamID)
-					taskInfo, err := taskStarter.StartTask(streamID)
+					taskInfo, err := cm.taskStarter.StartTask(streamID)
 					if err != nil {
 						log.Println("Error setting up computation:", err) // FIXME
 						cm.coordinator.ReleaseTask(streamID)              // FIXME ensure someone else tries to acquire
@@ -154,12 +166,12 @@ type TaskStarter interface {
 	StartTask(StreamID) (*TaskInfo, error)
 }
 
-type DefaultStarter struct {
+type DefaultTaskStarter struct {
 	coordinator Coordinator
 	persister   Persister
 }
 
-func (cm *DefaultStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
+func (cm *DefaultTaskStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
 	name, definition, err := ParseComputationID(streamID)
 	if err != nil {
 		return nil, err
