@@ -12,13 +12,17 @@ import (
 )
 
 // Receiver receives new records via incoming RPC calls
-// and manages subscriptions to streams
 type Receiver interface {
+	InputManager
 	ListenAddr() net.Addr
+	Listen()
+}
+
+// InputManager manages tasks' subscriptions to streams
+type InputManager interface {
 	SubscribeTo(StreamID, Timestamp, RecordProcessor)
 	UnsubscribeFrom(StreamID, RecordProcessor)
 	SetTaskManager(TaskManager)
-	Listen()
 }
 
 type receiver struct {

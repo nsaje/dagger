@@ -1,60 +1,21 @@
-package consul
+package dagger
 
 import (
 	"testing"
 	"time"
 
 	"github.com/hashicorp/consul/api"
-	"github.com/hashicorp/consul/testutil"
-	"github.com/nsaje/dagger/dagger"
+	"github.com/nsaje/dagger/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
-type simpleKV struct {
-	KV *api.KV
-	t  *testing.T
-}
-
-func (kv *simpleKV) Put(key string, value []byte) {
-	pair := &api.KVPair{Key: key, Value: value}
-	_, err := kv.KV.Put(pair, nil)
-	if err != nil {
-		kv.t.Fatalf(err.Error())
-	}
-}
-
-func (kv *simpleKV) Delete(key string) {
-	_, err := kv.KV.Delete(key, nil)
-	if err != nil {
-		kv.t.Fatalf(err.Error())
-	}
-}
-
-func newSimpleKV(t *testing.T, conf *api.Config) *simpleKV {
-	client, err := api.NewClient(conf)
-	if err != nil {
-		panic(err)
-	}
-	return &simpleKV{client.KV(), t}
-}
-
-func newTestServer(t *testing.T) *testutil.TestServer {
-	// Create a server
-	srv := testutil.NewTestServerConfig(t, func(c *testutil.TestServerConfig) {
-		if !testing.Verbose() {
-			c.LogLevel = "err"
-		}
-	})
-	return srv
-}
-
 func TestSetWatcher(t *testing.T) {
 	prefix := "prefix/"
-	srv := newTestServer(t)
+	srv := testutil.NewTestServer(t)
 	defer srv.Stop()
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
-	kv := newSimpleKV(t, conf)
+	kv := testutil.NewSimpleKV(t, conf)
 	coord := NewCoordinator(conf).(*consulCoordinator)
 	newc, errc := coord.watchSet(prefix, nil)
 	add := []string{
@@ -103,13 +64,13 @@ LOOP:
 
 func TestSetDiffWatcher(t *testing.T) {
 	// Create a server
-	srv := newTestServer(t)
+	srv := testutil.NewTestServer(t)
 	defer srv.Stop()
 
 	prefix := "prefix/"
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
-	kv := newSimpleKV(t, conf)
+	kv := testutil.NewSimpleKV(t, conf)
 	coord := NewCoordinator(conf).(*consulCoordinator)
 	addc, droppedc, errc := coord.watchSetDiff(prefix, nil)
 	add := []string{
@@ -153,24 +114,24 @@ func TestSetDiffWatcher(t *testing.T) {
 
 func TestTaskWatcher(t *testing.T) {
 	// Create a server
-	srv := newTestServer(t)
+	srv := testutil.NewTestServer(t)
 	defer srv.Stop()
 
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
-	kv := newSimpleKV(t, conf)
+	kv := testutil.NewSimpleKV(t, conf)
 	coord := NewCoordinator(conf)
 	newc, errc := coord.WatchTasks(nil)
-	add := []dagger.StreamID{
+	add := []StreamID{
 		"task1",
 		"task2",
 		"task3",
 	}
-	remove := []dagger.StreamID{
+	remove := []StreamID{
 		"task1",
 		"task2",
 	}
-	expected := [][]dagger.StreamID{
+	expected := [][]StreamID{
 		{},
 		add[:1],
 		add[:2],
@@ -186,7 +147,7 @@ func TestTaskWatcher(t *testing.T) {
 			kv.Delete(taskPrefix + string(k))
 		}
 	}()
-	var actual [][]dagger.StreamID
+	var actual [][]StreamID
 	timeout := time.NewTimer(2 * time.Second)
 
 	for {
@@ -195,9 +156,9 @@ func TestTaskWatcher(t *testing.T) {
 			t.Fatalf("Timeout!")
 		case k := <-newc:
 			t.Log("new set:", k)
-			ks := make([]dagger.StreamID, len(k), len(k))
+			ks := make([]StreamID, len(k), len(k))
 			for i := range k {
-				ks[i] = dagger.StreamID(k[i])
+				ks[i] = StreamID(k[i])
 			}
 			actual = append(actual, ks)
 			if len(actual) == len(expected) {
@@ -212,13 +173,13 @@ func TestTaskWatcher(t *testing.T) {
 
 func TestWatchSubscribers(t *testing.T) {
 	// Create a server
-	srv := newTestServer(t)
+	srv := testutil.NewTestServer(t)
 	defer srv.Stop()
 
 	prefix := subscribersPrefix
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
-	kv := newSimpleKV(t, conf)
+	kv := testutil.NewSimpleKV(t, conf)
 	coord := NewCoordinator(conf).(*consulCoordinator)
 	add := []string{
 		"test/a",
@@ -227,7 +188,7 @@ func TestWatchSubscribers(t *testing.T) {
 		"test{t1=v1}/d",
 	}
 	remove := []string{}
-	addc, droppedc, errc := coord.WatchSubscribers(dagger.StreamID("test{t1=v1}"), nil)
+	addc, droppedc, errc := coord.WatchSubscribers(StreamID("test{t1=v1}"), nil)
 	go func() {
 		for _, k := range add {
 			kv.Put(prefix+k, nil)

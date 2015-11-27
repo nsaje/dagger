@@ -28,8 +28,7 @@ type TaskManager interface {
 type taskManager struct {
 	tasks        map[StreamID]Task
 	coordinator  Coordinator
-	receiver     Receiver
-	persister    Persister
+	receiver     InputManager
 	done         chan struct{}
 	taskFailedCh chan Task
 
@@ -37,14 +36,13 @@ type taskManager struct {
 }
 
 // NewTaskManager creates a new task manager
-func NewTaskManager(coordinator Coordinator, receiver Receiver, persister Persister) TaskManager {
+func NewTaskManager(coordinator Coordinator, receiver InputManager, persister Persister) TaskManager {
 	c := metrics.NewCounter()
 	metrics.Register("processing", c)
 	tm := &taskManager{
 		tasks:       make(map[StreamID]Task),
 		coordinator: coordinator,
 		receiver:    receiver,
-		persister:   persister,
 		counter:     c,
 		done:        make(chan struct{}),
 	}
@@ -64,9 +62,6 @@ func ParseComputationID(s StreamID) (string, string, error) {
 
 // ManageTasks watches for new tasks and tries to acquire and run them
 func (cm *taskManager) ManageTasks(taskStarter TaskStarter) error {
-	if taskStarter == nil {
-		taskStarter = &defaultStarter{cm.coordinator, cm.persister}
-	}
 	unapplicableSet := make(map[StreamID]struct{})
 	new, errc := cm.coordinator.WatchTasks(cm.done)
 	for {
@@ -137,6 +132,15 @@ func (cm *taskManager) ManageTasks(taskStarter TaskStarter) error {
 	}
 }
 
+// GetTaskSnapshot returns a snapshot of the requested task
+func (cm *taskManager) GetTaskSnapshot(streamID StreamID) ([]byte, error) {
+	comp, has := cm.tasks[streamID]
+	if !has {
+		return nil, fmt.Errorf("Computation not found!")
+	}
+	return comp.GetSnapshot()
+}
+
 // TaskInfo summarizes the newly created task with info about its input
 // and position up to which it has already processed data
 type TaskInfo struct {
@@ -150,12 +154,12 @@ type TaskStarter interface {
 	StartTask(StreamID) (*TaskInfo, error)
 }
 
-type defaultStarter struct {
+type DefaultStarter struct {
 	coordinator Coordinator
 	persister   Persister
 }
 
-func (cm *defaultStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
+func (cm *DefaultStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
 	name, definition, err := ParseComputationID(streamID)
 	if err != nil {
 		return nil, err
@@ -193,13 +197,4 @@ func (cm *defaultStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
 	}
 
 	return &TaskInfo{task, info.Inputs, from}, nil
-}
-
-// GetTaskSnapshot returns a snapshot of the requested task
-func (cm *taskManager) GetTaskSnapshot(streamID StreamID) ([]byte, error) {
-	comp, has := cm.tasks[streamID]
-	if !has {
-		return nil, fmt.Errorf("Computation not found!")
-	}
-	return comp.GetSnapshot()
 }

@@ -3,8 +3,6 @@ package dagger
 import (
 	"sync"
 	"testing"
-
-	
 )
 
 type inmemRecordTracker struct {

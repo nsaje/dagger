@@ -5,7 +5,6 @@ import (
 	"log"
 	"strconv"
 
-	"github.com/nsaje/dagger/consul"
 	"github.com/nsaje/dagger/dagger"
 
 	"github.com/codegangsta/cli"
@@ -24,9 +23,9 @@ func Subscriber(c *cli.Context) {
 
 	prnter := &printer{dataonly: c.Bool("dataonly")}
 
-	consulConf := consul.DefaultConfig()
+	consulConf := dagger.DefaultConsulConfig()
 	consulConf.Address = conf.ConsulAddr
-	coordinator := consul.NewCoordinator(consulConf)
+	coordinator := dagger.NewCoordinator(consulConf)
 	receiver := dagger.NewReceiver(conf, coordinator)
 	go receiver.Listen()
 
