@@ -18,6 +18,17 @@ const (
 	inKeyFormat          = "%s-i-%d-%s" // <streamID>-i-<timestamp>-<recordID>
 )
 
+// PersisterConfig configures the persistent storage
+type PersisterConfig struct {
+	Dir string
+}
+
+func defaultPersisterConfig() *PersisterConfig {
+	return &PersisterConfig{
+		Dir: "/tmp/dagger",
+	}
+}
+
 // Persister takes care of persisting in-flight records and computation state
 type Persister interface {
 	Close()
@@ -72,8 +83,12 @@ type ReceivedTracker interface {
 }
 
 // NewPersister initializes and returns a new Persister instance
-func NewPersister(dir string) (Persister, error) {
-	filename := path.Join(dir, "daggerDB-"+uuid.NewV4().String())
+func NewPersister(customizeConfig func(*PersisterConfig)) (Persister, error) {
+	conf := defaultPersisterConfig()
+	if customizeConfig != nil {
+		customizeConfig(conf)
+	}
+	filename := path.Join(conf.Dir, "daggerDB-"+uuid.NewV4().String())
 	db, err := leveldb.OpenFile(filename, nil)
 	if err != nil {
 		return nil, err
@@ -117,6 +132,7 @@ func (p *LevelDBPersister) CommitComputation(compID StreamID, in *Record, out []
 	return p.db.Write(batch, nil)
 }
 
+// GetLastTimestamp returns the timestamp of the latest record processed by this task
 func (p *LevelDBPersister) GetLastTimestamp(compID StreamID) (Timestamp, error) {
 	val, err := p.db.Get([]byte(fmt.Sprintf("%s-last", compID)), nil)
 	var ts Timestamp

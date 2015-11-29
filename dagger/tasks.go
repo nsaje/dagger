@@ -172,13 +172,14 @@ type TaskStarter interface {
 	StartTask(StreamID) (*TaskInfo, error)
 }
 
-func NewTaskStarter(c Coordinator, p Persister) TaskStarter {
-	return &defaultTaskStarter{c, p}
+func NewTaskStarter(c Coordinator, p Persister, dispatcherConfig func(*DispatcherConfig)) TaskStarter {
+	return &defaultTaskStarter{c, p, dispatcherConfig}
 }
 
 type defaultTaskStarter struct {
-	coordinator Coordinator
-	persister   Persister
+	coordinator      Coordinator
+	persister        Persister
+	dispatcherConfig func(*DispatcherConfig)
 }
 
 func (cm *defaultTaskStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
@@ -201,7 +202,7 @@ func (cm *defaultTaskStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
 
 	var task Task
 	if info.Stateful {
-		task, err = newStatefulComputation(streamID, cm.coordinator, cm.persister, plugin)
+		task, err = newStatefulComputation(streamID, cm.coordinator, cm.persister, plugin, cm.dispatcherConfig)
 		if err != nil {
 			plugin.Stop()
 			return nil, err

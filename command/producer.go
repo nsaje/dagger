@@ -12,11 +12,23 @@ import (
 
 // Producer reads records from stdin and submits them
 // to registered subscribers via RPC
-func Producer(c *cli.Context) {
+var Producer = cli.Command{
+	Name:    "producer",
+	Aliases: []string{"p"},
+	Usage:   "start a dedicated dagger producer node, which reads data from stdin and publishes it on the given stream",
+	Flags: mergeFlags(consulFlags, persisterFlags, dispatcherFlags,
+		[]cli.Flag{
+			cli.StringFlag{
+				Name:  "streamID, s",
+				Usage: "Stream ID to publish records on",
+			},
+		}),
+	Action: producerAction,
+}
+
+func producerAction(c *cli.Context) {
 	errc := make(chan error)
-	coordinator := dagger.NewConsulCoordinator(func(conf *dagger.ConsulConfig) {
-		conf.Address = c.GlobalString("consul")
-	})
+	coordinator := dagger.NewConsulCoordinator(consulConfFromFlags(c))
 	err := coordinator.Start(nil)
 	defer coordinator.Stop()
 	if err != nil {
@@ -25,12 +37,16 @@ func Producer(c *cli.Context) {
 
 	lwmTracker := dagger.NewLWMTracker()
 	streamID := dagger.StreamID(c.String("streamID"))
-	persister, err := dagger.NewPersister("/tmp/dagger")
+	persister, err := dagger.NewPersister(func(conf *dagger.PersisterConfig) {
+		if c.IsSet("data-dir") {
+			conf.Dir = c.String("data-dir")
+		}
+	})
 	if err != nil {
 		log.Fatalf("error opening database")
 	}
 	defer persister.Close()
-	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, nil, nil)
+	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, nil, dispatcherConfFromFlags(c))
 	go dispatcher.Run(errc)
 
 	reader := bufio.NewReader(os.Stdin)

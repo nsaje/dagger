@@ -9,8 +9,15 @@ import (
 	"time"
 )
 
+// DispatcherConfig configures the dispatcher
 type DispatcherConfig struct {
 	PipeliningLimit int
+}
+
+func defaultDispatcherConfig() *DispatcherConfig {
+	return &DispatcherConfig{
+		PipeliningLimit: 10,
+	}
 }
 
 // StreamDispatcher dispatches records from a single stream to registered subscribers
@@ -32,8 +39,12 @@ type StreamDispatcher struct {
 
 func NewStreamDispatcher(streamID StreamID, coordinator Coordinator,
 	persister Persister, lwmTracker LWMTracker, groupHandler GroupHandler,
-	config *DispatcherConfig) *StreamDispatcher {
+	customizeConfig func(*DispatcherConfig)) *StreamDispatcher {
 	stopCh := make(chan struct{})
+	config := defaultDispatcherConfig()
+	if customizeConfig != nil {
+		customizeConfig(config)
+	}
 	return &StreamDispatcher{
 		streamID:     streamID,
 		persister:    persister,

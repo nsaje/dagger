@@ -2,7 +2,6 @@ package command
 
 import (
 	"log"
-	"net"
 	"time"
 
 	"github.com/nsaje/dagger/dagger"
@@ -14,8 +13,21 @@ import (
 
 // Worker takes on computations. It registers as a subscriber for necessary
 // topics and publishes the results of the computations
-func Worker(c *cli.Context) {
+var Worker = cli.Command{
+	Name:    "worker",
+	Aliases: []string{"w"},
+	Usage:   "start dagger node as a worker",
+	Action:  workerAction,
+	Flags: mergeFlags(consulFlags, receiverFlags, persisterFlags, dispatcherFlags,
+		[]cli.Flag{
+			cli.StringFlag{
+				Name:  "appmetrics",
+				Usage: "InfluxDB URL for app metrics (how many records are being processed etc.)",
+			},
+		}),
+}
 
+func workerAction(c *cli.Context) {
 	appmetrics := c.String("appmetrics")
 	if len(appmetrics) > 0 {
 		// set up monitoring
@@ -29,35 +41,19 @@ func Worker(c *cli.Context) {
 		)
 	}
 
-	persister, err := dagger.NewPersister("/tmp/dagger")
+	persister, err := dagger.NewPersister(persisterConfFromFlags(c))
 	if err != nil {
 		log.Fatalf("Error opening database")
 	}
 	defer persister.Close()
 
-	coordinator := dagger.NewConsulCoordinator(func(conf *dagger.ConsulConfig) {
-		conf.Address = c.GlobalString("consul")
-	})
+	coordinator := dagger.NewConsulCoordinator(consulConfFromFlags(c))
+	receiver := dagger.NewReceiver(coordinator, receiverConfFromFlags(c))
 
-	receiver := dagger.NewReceiver(coordinator, func(conf *dagger.ReceiverConfig) {
-		if c.IsSet("bind") {
-			conf.Addr = c.String("bind")
-		}
-		if c.IsSet("port") {
-			conf.Port = c.String("port")
-		}
-	})
-
-	taskStarter := dagger.NewTaskStarter(coordinator, persister)
+	taskStarter := dagger.NewTaskStarter(coordinator, persister, dispatcherConfFromFlags(c))
 	taskManager := dagger.NewTaskManager(coordinator, receiver, taskStarter)
 
-	advertiseAddr, ok := receiver.ListenAddr().(*net.TCPAddr)
-	if !ok {
-		log.Fatalf("not listening on TCP")
-	}
-	if c.IsSet("advertise") {
-		advertiseAddr.IP = net.ParseIP(c.String("advertise"))
-	}
+	advertiseAddr := getAdvertiseAddr(c, receiver)
 	err = coordinator.Start(advertiseAddr)
 	defer coordinator.Stop()
 	if err != nil {

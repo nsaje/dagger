@@ -31,7 +31,7 @@ type statefulComputation struct {
 }
 
 func newStatefulComputation(streamID StreamID, coordinator Coordinator,
-	persister Persister, plugin ComputationPlugin) (*statefulComputation, error) {
+	persister Persister, plugin ComputationPlugin, dispatcherConfig func(*DispatcherConfig)) (*statefulComputation, error) {
 	groupHandler, err := coordinator.JoinGroup(streamID)
 	if err != nil {
 		return nil, err
@@ -44,7 +44,7 @@ func newStatefulComputation(streamID StreamID, coordinator Coordinator,
 
 	linearizer := NewLinearizer(streamID, persister, lwmTracker)
 	// bufferedDispatcher := StartBufferedDispatcher(streamID, dispatcher, multiSentTracker, lwmTracker, stopCh)
-	dispatcher := NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, groupHandler, nil)
+	dispatcher := NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, groupHandler, dispatcherConfig)
 
 	computation := &statefulComputation{
 		streamID:     streamID,

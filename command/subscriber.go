@@ -12,8 +12,27 @@ import (
 
 // Subscriber registers as a subscriber for a certain topic(s). Useful for
 // debugging.
-func Subscriber(c *cli.Context) {
-	persister, err := dagger.NewPersister("/tmp/dagger")
+var Subscriber = cli.Command{
+	Name:    "subscriber",
+	Aliases: []string{"s"},
+	Usage:   "start dagger node as a topic subscriber",
+	Action:  subscriberAction,
+	Flags: mergeFlags(consulFlags, receiverFlags, persisterFlags,
+		[]cli.Flag{
+			cli.BoolFlag{
+				Name:  "dataonly",
+				Usage: "print only the 'Data' field of the record if true",
+			},
+			cli.StringFlag{
+				Name:  "from",
+				Value: "0",
+				Usage: "subscribe to records from specified Unix nanosecond timestamp onward",
+			},
+		}),
+}
+
+func subscriberAction(c *cli.Context) {
+	persister, err := dagger.NewPersister(persisterConfFromFlags(c))
 	if err != nil {
 		log.Fatalf("error opening database")
 	}
@@ -21,15 +40,12 @@ func Subscriber(c *cli.Context) {
 
 	prnter := &printer{dataonly: c.Bool("dataonly")}
 
-	coordinator := dagger.NewConsulCoordinator(func(conf *dagger.ConsulConfig) {
-		conf.Address = c.GlobalString("consul")
-	})
-
-	receiver := dagger.NewReceiver(coordinator, func(conf *dagger.ReceiverConfig) {
-	})
+	coordinator := dagger.NewConsulCoordinator(consulConfFromFlags(c))
+	receiver := dagger.NewReceiver(coordinator, receiverConfFromFlags(c))
 	go receiver.Listen()
 
-	err = coordinator.Start(receiver.ListenAddr())
+	advertiseAddr := getAdvertiseAddr(c, receiver)
+	err = coordinator.Start(advertiseAddr)
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatalf("Error starting coordinator %s", err)
