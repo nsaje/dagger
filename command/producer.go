@@ -3,10 +3,8 @@ package command
 import (
 	"bufio"
 	"log"
-	"net"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/codegangsta/cli"
 	"github.com/nsaje/dagger/dagger"
@@ -19,15 +17,13 @@ func Producer(c *cli.Context) {
 	coordinator := dagger.NewConsulCoordinator(func(conf *dagger.ConsulConfig) {
 		conf.Address = c.GlobalString("consul")
 	})
-	err := coordinator.Start(&net.TCPAddr{})
+	err := coordinator.Start(nil)
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatal("Error setting up coordinator")
 	}
 
 	lwmTracker := dagger.NewLWMTracker()
-	// dispatcher := dagger.NewDispatcher(conf, coordinator)
-	// bufferedDispatcher := dagger.StartBufferedDispatcher("test", dispatcher, lwmTracker, lwmTracker, make(chan struct{}))
 	streamID := dagger.StreamID(c.String("streamID"))
 	persister, err := dagger.NewPersister("/tmp/dagger")
 	if err != nil {
@@ -38,7 +34,6 @@ func Producer(c *cli.Context) {
 	go dispatcher.Run(errc)
 
 	reader := bufio.NewReader(os.Stdin)
-	// var tmpT *dagger.Record
 	for {
 		var line string
 		line, err := reader.ReadString('\n')
@@ -52,14 +47,8 @@ func Producer(c *cli.Context) {
 			break
 		}
 		log.Println("read", line)
-		// bufferedDispatcher.ProcessRecord(record)
 		persister.Insert(streamID, "p", record)
 		dispatcher.ProcessRecord(record)
-		// tmpT = record
 	}
-	// bufferedDispatcher.Stop()
-	// tmpT.LWM = dagger.Timestamp(time.Now().UnixNano()).Add(time.Hour)
-	// dispatcher.ProcessRecord(tmpT)
-	time.Sleep(10000 * time.Second)
-	log.Println("EXITING")
+	handleSignals()
 }

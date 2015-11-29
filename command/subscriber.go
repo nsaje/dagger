@@ -36,8 +36,6 @@ func Subscriber(c *cli.Context) {
 	}
 
 	topicGlob := dagger.StreamID(c.Args().First())
-	// linearizer := dagger.NewLinearizer(prnter, []string{topicGlob})
-	// go linearizer.Linearize()
 	lwmTracker := dagger.NewLWMTracker()
 	linearizer := dagger.NewLinearizer("test", persister, lwmTracker)
 	linearizer.SetProcessor(prnter)
@@ -48,16 +46,11 @@ func Subscriber(c *cli.Context) {
 		panic(err)
 	}
 	receiver.SubscribeTo(topicGlob, dagger.Timestamp(from), linearizer)
-	// receiver.SubscribeTo(topicGlob, linearizer)
 	log.Printf("Subscribed to %s", topicGlob)
 
-	// FIXME: bring deduplicator back into subscriber
-	// deduplicator := dagger.NewDeduplicator(persister)
-	// deduped := deduplicator.Deduplicate(incoming)
 	handleSignals()
 }
 
-//
 type printer struct {
 	dataonly bool
 }

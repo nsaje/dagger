@@ -65,6 +65,9 @@ func NewConsulCoordinator(customizeConfig func(*ConsulConfig)) Coordinator {
 }
 
 func (c *consulCoordinator) Start(addr net.Addr) error {
+	if addr == nil {
+		addr = &net.TCPAddr{}
+	}
 	c.addr = addr
 	session := c.client.Session()
 	// set session to delete our keys on invalidation
