@@ -130,7 +130,8 @@ func (comp *statefulComputation) Sync() (Timestamp, error) {
 
 			from, err = comp.persister.GetLastTimestamp(comp.streamID)
 			if err != nil {
-				return from, fmt.Errorf("[computations] error getting last timestamp")
+				from = Timestamp(0)
+				// return from, fmt.Errorf("[computations] error getting last timestamp")
 			}
 			// add one nanosecond so we don't take the last processed record again
 			from++
