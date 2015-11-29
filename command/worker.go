@@ -2,6 +2,7 @@ package command
 
 import (
 	"log"
+	"net"
 	"time"
 
 	"github.com/nsaje/dagger/dagger"
@@ -28,8 +29,6 @@ func Worker(c *cli.Context) {
 		)
 	}
 
-	conf := dagger.DefaultConfig(c)
-
 	persister, err := dagger.NewPersister("/tmp/dagger")
 	if err != nil {
 		log.Fatalf("Error opening database")
@@ -40,15 +39,26 @@ func Worker(c *cli.Context) {
 		conf.Address = c.GlobalString("consul")
 	})
 
-	receiver := dagger.NewReceiver(conf, coordinator)
-	// dispatcher := dagger.NewDispatcher(conf, coordinator)
-	// compManager := dagger.NewComputationManager(
-	// 	coordinator, receiver, persister, dispatcher)
-	// httpAPI := dagger.NewHttpAPI(receiver, dispatcher)
+	receiver := dagger.NewReceiver(coordinator, func(conf *dagger.ReceiverConfig) {
+		if c.IsSet("bind") {
+			conf.Addr = c.String("bind")
+		}
+		if c.IsSet("port") {
+			conf.Port = c.String("port")
+		}
+	})
+
 	taskStarter := dagger.NewTaskStarter(coordinator, persister)
 	taskManager := dagger.NewTaskManager(coordinator, receiver, taskStarter)
 
-	err = coordinator.Start(receiver.ListenAddr())
+	advertiseAddr, ok := receiver.ListenAddr().(*net.TCPAddr)
+	if !ok {
+		log.Fatalf("not listening on TCP")
+	}
+	if c.IsSet("advertise") {
+		advertiseAddr.IP = net.ParseIP(c.String("advertise"))
+	}
+	err = coordinator.Start(advertiseAddr)
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatalf("Error starting coordinator %s", err)
@@ -56,11 +66,6 @@ func Worker(c *cli.Context) {
 
 	go receiver.Listen()
 	go taskManager.ManageTasks()
-
-	// go httpAPI.Serve()
-
-	// deduplicator := dagger.NewDeduplicator(persister)
-	// deduped := deduplicator.Deduplicate(incoming)
 
 	handleSignals()
 }

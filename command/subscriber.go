@@ -13,8 +13,6 @@ import (
 // Subscriber registers as a subscriber for a certain topic(s). Useful for
 // debugging.
 func Subscriber(c *cli.Context) {
-	conf := dagger.DefaultConfig(c)
-
 	persister, err := dagger.NewPersister("/tmp/dagger")
 	if err != nil {
 		log.Fatalf("error opening database")
@@ -26,7 +24,9 @@ func Subscriber(c *cli.Context) {
 	coordinator := dagger.NewConsulCoordinator(func(conf *dagger.ConsulConfig) {
 		conf.Address = c.GlobalString("consul")
 	})
-	receiver := dagger.NewReceiver(conf, coordinator)
+
+	receiver := dagger.NewReceiver(coordinator, func(conf *dagger.ReceiverConfig) {
+	})
 	go receiver.Listen()
 
 	err = coordinator.Start(receiver.ListenAddr())

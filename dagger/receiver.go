@@ -11,6 +11,19 @@ import (
 	"time"
 )
 
+// ReceiverConfig configures the RPC receiver
+type ReceiverConfig struct {
+	Addr string
+	Port string
+}
+
+func defaultReceiverConfig() *ReceiverConfig {
+	return &ReceiverConfig{
+		Addr: "0.0.0.0",
+		Port: "46632",
+	}
+}
+
 // Receiver receives new records via incoming RPC calls
 type Receiver interface {
 	InputManager
@@ -26,7 +39,7 @@ type InputManager interface {
 }
 
 type receiver struct {
-	conf                       *Config
+	conf                       *ReceiverConfig
 	coordinator                Coordinator
 	server                     *rpc.Server
 	listener                   net.Listener
@@ -38,7 +51,11 @@ type receiver struct {
 }
 
 // NewReceiver initializes a new receiver
-func NewReceiver(conf *Config, coordinator Coordinator) Receiver {
+func NewReceiver(coordinator Coordinator, customizeConfig func(*ReceiverConfig)) Receiver {
+	conf := defaultReceiverConfig()
+	if customizeConfig != nil {
+		customizeConfig(conf)
+	}
 	r := &receiver{
 		conf:                       conf,
 		coordinator:                coordinator,
@@ -52,7 +69,7 @@ func NewReceiver(conf *Config, coordinator Coordinator) Receiver {
 	r.server.Register(rpcHandler)
 	r.server.HandleHTTP(rpc.DefaultRPCPath, rpc.DefaultDebugPath)
 	var err error
-	r.listener, err = net.Listen("tcp", r.conf.RPCAdvertise.String())
+	r.listener, err = net.Listen("tcp", net.JoinHostPort(conf.Addr, conf.Port))
 	if err != nil {
 		log.Fatal("[receiver] Listen error:", err)
 	}

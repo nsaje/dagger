@@ -3,6 +3,7 @@ package command
 import (
 	"bufio"
 	"log"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -15,11 +16,10 @@ import (
 // to registered subscribers via RPC
 func Producer(c *cli.Context) {
 	errc := make(chan error)
-	conf := dagger.DefaultConfig(c)
 	coordinator := dagger.NewConsulCoordinator(func(conf *dagger.ConsulConfig) {
 		conf.Address = c.GlobalString("consul")
 	})
-	err := coordinator.Start(conf.RPCAdvertise)
+	err := coordinator.Start(&net.TCPAddr{})
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatal("Error setting up coordinator")
