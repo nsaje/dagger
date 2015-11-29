@@ -372,7 +372,7 @@ func (s *subscriberHandler) ProcessRecord(t *Record) error {
 func (s *subscriberHandler) ProcessRecordAsync(t *Record, sentSuccessfuly chan *Record) {
 	var reply string
 	s.semaphore <- struct{}{}
-	call := s.client.Go("Receiver.SubmitRecord", t, &reply, nil)
+	call := s.client.Go("RPCHandler.SubmitRecord", t, &reply, nil)
 	go func() {
 		<-call.Done
 		<-s.semaphore
