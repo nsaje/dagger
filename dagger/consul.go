@@ -18,11 +18,6 @@ const (
 	subscribersPrefix = "dagger/subscribers/"
 )
 
-// DefaultConsulConfig returns the default config for Consul
-func DefaultConsulConfig() *api.Config {
-	return api.DefaultConfig()
-}
-
 // Coordinator implementation based on Consul.io
 type consulCoordinator struct {
 	client *api.Client
@@ -36,8 +31,12 @@ type consulCoordinator struct {
 	subscribersLock sync.RWMutex
 }
 
-// NewCoordinator creates a new instance of Consul coordinator
-func NewCoordinator(conf *api.Config) Coordinator {
+// NewConsulCoordinator creates a new instance of Consul coordinator
+func NewConsulCoordinator(customizeConfig func(*api.Config)) Coordinator {
+	conf := api.DefaultConfig()
+	if customizeConfig != nil {
+		customizeConfig(conf)
+	}
 	client, _ := api.NewClient(conf)
 	c := &consulCoordinator{
 		client:          client,

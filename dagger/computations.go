@@ -44,7 +44,7 @@ func newStatefulComputation(streamID StreamID, coordinator Coordinator,
 
 	linearizer := NewLinearizer(streamID, persister, lwmTracker)
 	// bufferedDispatcher := StartBufferedDispatcher(streamID, dispatcher, multiSentTracker, lwmTracker, stopCh)
-	dispatcher := NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, groupHandler)
+	dispatcher := NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, groupHandler, nil)
 
 	computation := &statefulComputation{
 		streamID:     streamID,

@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+type DispatcherConfig struct {
+	PipeliningLimit int
+}
+
 // StreamDispatcher dispatches records from a single stream to registered subscribers
 type StreamDispatcher struct {
 	streamID     StreamID
@@ -16,16 +20,19 @@ type StreamDispatcher struct {
 	lwmTracker   LWMTracker
 	coordinator  Coordinator
 	groupHandler GroupHandler
-	iterators    map[string]*StreamIterator
-	notifyCh     chan *Record
-	stopCh       chan struct{}
-	new          chan string
-	dropped      chan string
-	last         *Record
+	config       *DispatcherConfig
+
+	iterators map[string]*StreamIterator
+	notifyCh  chan *Record
+	stopCh    chan struct{}
+	new       chan string
+	dropped   chan string
+	last      *Record
 }
 
 func NewStreamDispatcher(streamID StreamID, coordinator Coordinator,
-	persister Persister, lwmTracker LWMTracker, groupHandler GroupHandler) *StreamDispatcher {
+	persister Persister, lwmTracker LWMTracker, groupHandler GroupHandler,
+	config *DispatcherConfig) *StreamDispatcher {
 	stopCh := make(chan struct{})
 	return &StreamDispatcher{
 		streamID:     streamID,
@@ -33,6 +40,7 @@ func NewStreamDispatcher(streamID StreamID, coordinator Coordinator,
 		lwmTracker:   lwmTracker,
 		coordinator:  coordinator,
 		groupHandler: groupHandler,
+		config:       config,
 		iterators:    make(map[string]*StreamIterator),
 		notifyCh:     make(chan *Record),
 		stopCh:       stopCh,
@@ -68,7 +76,7 @@ func (sd *StreamDispatcher) Run(errc chan error) {
 				log.Println("ERROR", err)
 				// FIXME
 			}
-			subscriberHandler, err := newSubscriberHandler(subscriber)
+			subscriberHandler, err := newSubscriberHandler(subscriber, sd.config.PipeliningLimit)
 			if err != nil {
 				log.Println("ERROR", err)
 				// FIXME
@@ -222,7 +230,7 @@ func (d *Dispatcher) ProcessRecord(t *Record) error {
 			d.Lock()
 			_, exists := d.connections[s]
 			if !exists {
-				subHandler, err = newSubscriberHandler(s)
+				subHandler, err = newSubscriberHandler(s, 0)
 				if err != nil {
 					return err
 				}
@@ -349,13 +357,13 @@ type subscriberHandler struct {
 	semaphore chan struct{}
 }
 
-func newSubscriberHandler(subscriber string) (*subscriberHandler, error) {
+func newSubscriberHandler(subscriber string, pipeliningLimit int) (*subscriberHandler, error) {
 	conn, err := net.Dial("tcp", subscriber)
 	if err != nil {
 		return nil, err
 	}
 	client := jsonrpc.NewClient(conn)
-	return &subscriberHandler{client, make(chan struct{}, 10)}, nil // FIXME: make configurable
+	return &subscriberHandler{client, make(chan struct{}, pipeliningLimit)}, nil
 }
 
 func (s *subscriberHandler) ProcessRecord(t *Record) error {

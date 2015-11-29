@@ -14,7 +14,6 @@ type Config struct {
 	RPCAdvertise   *net.TCPAddr
 	SubscribersTTL time.Duration
 	LevelDBFile    string
-	ConsulAddr     string
 }
 
 // DefaultConfig provides default config values
@@ -29,9 +28,6 @@ func DefaultConfig(c *cli.Context) *Config {
 		LevelDBFile:    "dagger.db",
 	}
 
-	if len(c.GlobalString("consul")) > 0 {
-		conf.ConsulAddr = c.GlobalString("consul")
-	}
 	return conf
 }
 

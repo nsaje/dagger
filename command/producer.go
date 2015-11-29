@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/codegangsta/cli"
+	consulapi "github.com/hashicorp/consul/api"
 	"github.com/nsaje/dagger/dagger"
 )
 
@@ -16,9 +17,9 @@ import (
 func Producer(c *cli.Context) {
 	errc := make(chan error)
 	conf := dagger.DefaultConfig(c)
-	consulConf := dagger.DefaultConsulConfig()
-	consulConf.Address = conf.ConsulAddr
-	coordinator := dagger.NewCoordinator(consulConf)
+	coordinator := dagger.NewConsulCoordinator(func(conf *consulapi.Config) {
+		conf.Address = c.GlobalString("consul")
+	})
 	err := coordinator.Start(conf.RPCAdvertise)
 	defer coordinator.Stop()
 	if err != nil {
@@ -34,7 +35,7 @@ func Producer(c *cli.Context) {
 		log.Fatalf("error opening database")
 	}
 	defer persister.Close()
-	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, nil)
+	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, nil, nil)
 	go dispatcher.Run(errc)
 
 	reader := bufio.NewReader(os.Stdin)

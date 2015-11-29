@@ -53,7 +53,9 @@ func TestSetWatcher(t *testing.T) {
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
 	kv := NewSimpleKV(t, conf)
-	coord := NewCoordinator(conf).(*consulCoordinator)
+	coord := NewConsulCoordinator(func(conf *api.Config) {
+		conf.Address = srv.HTTPAddr
+	}).(*consulCoordinator)
 	newc, errc := coord.watchSet(prefix, nil)
 	add := []string{
 		"test/1",
@@ -108,7 +110,9 @@ func TestSetDiffWatcher(t *testing.T) {
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
 	kv := NewSimpleKV(t, conf)
-	coord := NewCoordinator(conf).(*consulCoordinator)
+	coord := NewConsulCoordinator(func(conf *api.Config) {
+		conf.Address = srv.HTTPAddr
+	}).(*consulCoordinator)
 	addc, droppedc, errc := coord.watchSetDiff(prefix, nil)
 	add := []string{
 		"test/1",
@@ -157,7 +161,9 @@ func TestTaskWatcher(t *testing.T) {
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
 	kv := NewSimpleKV(t, conf)
-	coord := NewCoordinator(conf)
+	coord := NewConsulCoordinator(func(conf *api.Config) {
+		conf.Address = srv.HTTPAddr
+	}).(*consulCoordinator)
 	newc, errc := coord.WatchTasks(nil)
 	add := []StreamID{
 		"task1",
@@ -217,7 +223,9 @@ func TestWatchSubscribers(t *testing.T) {
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
 	kv := NewSimpleKV(t, conf)
-	coord := NewCoordinator(conf).(*consulCoordinator)
+	coord := NewConsulCoordinator(func(conf *api.Config) {
+		conf.Address = srv.HTTPAddr
+	}).(*consulCoordinator)
 	add := []string{
 		"test/a",
 		"test/b",

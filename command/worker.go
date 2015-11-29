@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	consulapi "github.com/hashicorp/consul/api"
 	"github.com/nsaje/dagger/dagger"
 	"github.com/rcrowley/go-metrics"
 	"github.com/vrischmann/go-metrics-influxdb"
@@ -36,9 +37,9 @@ func Worker(c *cli.Context) {
 	}
 	defer persister.Close()
 
-	consulConf := dagger.DefaultConsulConfig()
-	consulConf.Address = conf.ConsulAddr
-	coordinator := dagger.NewCoordinator(consulConf)
+	coordinator := dagger.NewConsulCoordinator(func(conf *consulapi.Config) {
+		conf.Address = c.GlobalString("consul")
+	})
 
 	receiver := dagger.NewReceiver(conf, coordinator)
 	// dispatcher := dagger.NewDispatcher(conf, coordinator)
