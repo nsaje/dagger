@@ -18,9 +18,25 @@ const (
 	subscribersPrefix = "dagger/subscribers/"
 )
 
+// ConsulConfig is used to configure the Consul coordinator
+type ConsulConfig struct {
+	Address   string
+	TTL       string
+	LockDelay time.Duration
+}
+
+func defaultConfig() *ConsulConfig {
+	return &ConsulConfig{
+		Address:   "localhost",
+		TTL:       "10s",
+		LockDelay: 100 * time.Millisecond,
+	}
+}
+
 // Coordinator implementation based on Consul.io
 type consulCoordinator struct {
 	client *api.Client
+	config *ConsulConfig
 	addr   net.Addr
 
 	sessionID    string
@@ -32,12 +48,13 @@ type consulCoordinator struct {
 }
 
 // NewConsulCoordinator creates a new instance of Consul coordinator
-func NewConsulCoordinator(customizeConfig func(*api.Config)) Coordinator {
-	conf := api.DefaultConfig()
+func NewConsulCoordinator(customizeConfig func(*ConsulConfig)) Coordinator {
+	apiconf := api.DefaultConfig()
+	conf := defaultConfig()
 	if customizeConfig != nil {
 		customizeConfig(conf)
 	}
-	client, _ := api.NewClient(conf)
+	client, _ := api.NewClient(apiconf)
 	c := &consulCoordinator{
 		client:          client,
 		stopCh:          make(chan struct{}),
@@ -53,8 +70,8 @@ func (c *consulCoordinator) Start(addr net.Addr) error {
 	// set session to delete our keys on invalidation
 	sessionOptions := &api.SessionEntry{
 		Behavior:  api.SessionBehaviorDelete,
-		LockDelay: 100 * time.Millisecond,
-		TTL:       "10s",
+		LockDelay: c.config.LockDelay,
+		TTL:       c.config.TTL,
 	}
 	var sessionID string
 	var err error

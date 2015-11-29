@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/codegangsta/cli"
-	consulapi "github.com/hashicorp/consul/api"
 	"github.com/nsaje/dagger/dagger"
 )
 
@@ -17,7 +16,7 @@ import (
 func Producer(c *cli.Context) {
 	errc := make(chan error)
 	conf := dagger.DefaultConfig(c)
-	coordinator := dagger.NewConsulCoordinator(func(conf *consulapi.Config) {
+	coordinator := dagger.NewConsulCoordinator(func(conf *dagger.ConsulConfig) {
 		conf.Address = c.GlobalString("consul")
 	})
 	err := coordinator.Start(conf.RPCAdvertise)
