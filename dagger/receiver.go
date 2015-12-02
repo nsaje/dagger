@@ -28,7 +28,7 @@ func defaultReceiverConfig() *ReceiverConfig {
 type Receiver interface {
 	InputManager
 	ListenAddr() net.Addr
-	Listen()
+	Listen(chan error)
 }
 
 // InputManager manages tasks' subscriptions to streams
@@ -87,10 +87,11 @@ func (r *receiver) SetTaskManager(tm TaskManager) {
 }
 
 // Listen starts receiving incoming records over RPC
-func (r *receiver) Listen() {
+func (r *receiver) Listen(errc chan error) {
 	for {
 		if conn, err := r.listener.Accept(); err != nil {
-			log.Fatal("[receiver] Accept error: " + err.Error())
+			log.Printf("[receiver] Accept error: " + err.Error())
+			errc <- err
 		} else {
 			log.Printf("[receiver] New connection to the receiver established\n")
 			go r.server.ServeCodec(jsonrpc.NewServerCodec(conn))

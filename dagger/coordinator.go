@@ -22,7 +22,7 @@ type Coordinator interface {
 	PublishCoordinator
 	TaskCoordinator
 	ReplicationCoordinator
-	Start(net.Addr) error
+	Start(net.Addr, chan error) error
 	Stop()
 }
 

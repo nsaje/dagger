@@ -29,7 +29,7 @@ var Producer = cli.Command{
 func producerAction(c *cli.Context) {
 	errc := make(chan error)
 	coordinator := dagger.NewConsulCoordinator(consulConfFromFlags(c))
-	err := coordinator.Start(nil)
+	err := coordinator.Start(nil, errc)
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatal("Error setting up coordinator")
@@ -66,5 +66,5 @@ func producerAction(c *cli.Context) {
 		persister.Insert(streamID, "p", record)
 		dispatcher.ProcessRecord(record)
 	}
-	handleSignals()
+	handleSignals(errc)
 }

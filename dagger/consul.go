@@ -65,7 +65,7 @@ func NewConsulCoordinator(customizeConfig func(*ConsulConfig)) Coordinator {
 	return c
 }
 
-func (c *consulCoordinator) Start(addr net.Addr) error {
+func (c *consulCoordinator) Start(addr net.Addr, errCh chan error) error {
 	if addr == nil {
 		addr = &net.TCPAddr{}
 	}
@@ -92,10 +92,11 @@ func (c *consulCoordinator) Start(addr net.Addr) error {
 	// set up a long-running goroutine for renewing the session
 	c.sessionRenew = make(chan struct{})
 	c.sessionID = sessionID
-	go session.RenewPeriodic("5s", sessionID, nil, c.sessionRenew)
-
 	log.Println("[coordinator] Coordinator ready")
 
+	go func() {
+		errCh <- session.RenewPeriodic("5s", sessionID, nil, c.sessionRenew)
+	}()
 	return nil
 }
 

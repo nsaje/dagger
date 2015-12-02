@@ -40,6 +40,7 @@ func workerAction(c *cli.Context) {
 			"root",                  // your InfluxDB password
 		)
 	}
+	errc := make(chan error)
 
 	persister, err := dagger.NewPersister(persisterConfFromFlags(c))
 	if err != nil {
@@ -54,14 +55,14 @@ func workerAction(c *cli.Context) {
 	taskManager := dagger.NewTaskManager(coordinator, receiver, taskStarter)
 
 	advertiseAddr := getAdvertiseAddr(c, receiver)
-	err = coordinator.Start(advertiseAddr)
+	err = coordinator.Start(advertiseAddr, errc)
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatalf("Error starting coordinator %s", err)
 	}
 
-	go receiver.Listen()
+	go receiver.Listen(errc)
 	go taskManager.ManageTasks()
 
-	handleSignals()
+	handleSignals(errc)
 }

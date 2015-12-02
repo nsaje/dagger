@@ -32,6 +32,7 @@ var Subscriber = cli.Command{
 }
 
 func subscriberAction(c *cli.Context) {
+	errc := make(chan error)
 	persister, err := dagger.NewPersister(persisterConfFromFlags(c))
 	if err != nil {
 		log.Fatalf("error opening database")
@@ -42,10 +43,10 @@ func subscriberAction(c *cli.Context) {
 
 	coordinator := dagger.NewConsulCoordinator(consulConfFromFlags(c))
 	receiver := dagger.NewReceiver(coordinator, receiverConfFromFlags(c))
-	go receiver.Listen()
+	go receiver.Listen(errc)
 
 	advertiseAddr := getAdvertiseAddr(c, receiver)
-	err = coordinator.Start(advertiseAddr)
+	err = coordinator.Start(advertiseAddr, errc)
 	defer coordinator.Stop()
 	if err != nil {
 		log.Fatalf("Error starting coordinator %s", err)
@@ -55,7 +56,6 @@ func subscriberAction(c *cli.Context) {
 	lwmTracker := dagger.NewLWMTracker()
 	linearizer := dagger.NewLinearizer("test", persister, lwmTracker)
 	linearizer.SetProcessor(prnter)
-	errc := make(chan error)
 	go linearizer.Run(errc)
 	from, err := strconv.ParseInt(c.String("from"), 10, 64)
 	if err != nil {
@@ -64,7 +64,7 @@ func subscriberAction(c *cli.Context) {
 	receiver.SubscribeTo(topicGlob, dagger.Timestamp(from), linearizer)
 	log.Printf("Subscribed to %s", topicGlob)
 
-	handleSignals()
+	handleSignals(errc)
 }
 
 type printer struct {
