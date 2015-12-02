@@ -57,6 +57,7 @@ func NewConsulCoordinator(customizeConfig func(*ConsulConfig)) Coordinator {
 	client, _ := api.NewClient(apiconf)
 	c := &consulCoordinator{
 		client:          client,
+		config:          conf,
 		stopCh:          make(chan struct{}),
 		subscribers:     make(map[string]*subscribersList),
 		subscribersLock: sync.RWMutex{},
@@ -163,6 +164,8 @@ func (c *consulCoordinator) EnsurePublisherNum(topic StreamID, n int, stop chan 
 	go func() {
 		for {
 			select {
+			case <-stop:
+				return
 			case keys := <-new:
 				// if there are no publishers registered, post a new job
 				if len(keys) != lastNumPublishers && len(keys) < 2 {

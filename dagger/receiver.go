@@ -126,7 +126,10 @@ func (r *receiver) UnsubscribeFrom(streamID StreamID, rp RecordProcessor) {
 		delete(subProcs, rp)
 		if len(subProcs) == 0 {
 			delete(r.subscribedRecordProcessors, streamID)
-			close(r.publisherMonitors[streamID])
+			stopCh := r.publisherMonitors[streamID]
+			if stopCh != nil {
+				close(stopCh)
+			}
 			delete(r.publisherMonitors, streamID)
 		}
 	}
