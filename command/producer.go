@@ -37,11 +37,7 @@ func producerAction(c *cli.Context) {
 
 	lwmTracker := dagger.NewLWMTracker()
 	streamID := dagger.StreamID(c.String("streamID"))
-	persister, err := dagger.NewPersister(func(conf *dagger.PersisterConfig) {
-		if c.IsSet("data-dir") {
-			conf.Dir = c.String("data-dir")
-		}
-	})
+	persister, err := dagger.NewPersister(persisterConfFromFlags(c))
 	if err != nil {
 		log.Fatalf("error opening database")
 	}
