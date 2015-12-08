@@ -54,6 +54,7 @@ func NewConsulCoordinator(customizeConfig func(*ConsulConfig)) Coordinator {
 	if customizeConfig != nil {
 		customizeConfig(conf)
 	}
+	apiconf.Address = conf.Address
 	client, _ := api.NewClient(apiconf)
 	c := &consulCoordinator{
 		client:          client,

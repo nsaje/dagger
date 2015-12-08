@@ -83,28 +83,28 @@ func subscriberAction(c *cli.Context) {
 			log.Printf("Group by parameter has too few or too many values")
 			return
 		}
-		go match(topicGlob, matchers, errc)
+		// go match(topicGlob, matchers, errc)
 	}
 
 	handleSignals(errc)
 }
 
-func match(topicGlob dagger.StreamID, matchers []string, errc chan error) {
-	var matcherTags []string
-	added := make(chan string)
-	dropped := make(chan string)
-	for _, matcher := range matchers {
-		tags := dagger.ParseTags(dagger.StreamID(matcher))
-		topic := string(dagger.StripTags(dagger.StreamID(matcher)))
-		for k, v := range tags {
-			if v == "@" {
-				matcherTags = append(matcherTags, k)
-				delete(tags, k)
-			}
-		}
-		go watchTag(topic, tags, matcherTags, added, dropped, errc)
-	}
-}
+// func match(topicGlob dagger.StreamID, matchers []string, errc chan error) {
+// 	var matcherTags []string
+// 	added := make(chan string)
+// 	dropped := make(chan string)
+// 	for _, matcher := range matchers {
+// 		tags := dagger.ParseTags(dagger.StreamID(matcher))
+// 		topic := string(dagger.StripTags(dagger.StreamID(matcher)))
+// 		for k, v := range tags {
+// 			if v == "@" {
+// 				matcherTags = append(matcherTags, k)
+// 				delete(tags, k)
+// 			}
+// 		}
+// 		// go watchTag(topic, tags, matcherTags, added, dropped, errc)
+// 	}
+// }
 
 type printer struct {
 	dataonly bool

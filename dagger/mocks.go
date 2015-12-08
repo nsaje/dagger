@@ -125,14 +125,14 @@ func (_mr *_MockCoordinatorRecorder) ReleaseTask(arg0 interface{}) *gomock.Call 
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReleaseTask", arg0)
 }
 
-func (_m *MockCoordinator) Start(_param0 net.Addr) error {
-	ret := _m.ctrl.Call(_m, "Start", _param0)
+func (_m *MockCoordinator) Start(_param0 net.Addr, _param1 chan error) error {
+	ret := _m.ctrl.Call(_m, "Start", _param0, _param1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-func (_mr *_MockCoordinatorRecorder) Start(arg0 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "Start", arg0)
+func (_mr *_MockCoordinatorRecorder) Start(arg0, arg1 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "Start", arg0, arg1)
 }
 
 func (_m *MockCoordinator) Stop() {
@@ -194,6 +194,14 @@ func (_m *MockCoordinator) WatchSubscribers(_param0 StreamID, _param1 chan struc
 
 func (_mr *_MockCoordinatorRecorder) WatchSubscribers(arg0, arg1 interface{}) *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "WatchSubscribers", arg0, arg1)
+}
+
+func (_m *MockCoordinator) WatchTagMatch(_param0 string, _param1 Tags, _param2 []string, _param3 chan string, _param4 chan string, _param5 chan error) {
+	_m.ctrl.Call(_m, "WatchTagMatch", _param0, _param1, _param2, _param3, _param4, _param5)
+}
+
+func (_mr *_MockCoordinatorRecorder) WatchTagMatch(arg0, arg1, arg2, arg3, arg4, arg5 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "WatchTagMatch", arg0, arg1, arg2, arg3, arg4, arg5)
 }
 
 func (_m *MockCoordinator) WatchTasks(_param0 chan struct{}) (chan []string, chan error) {
@@ -273,15 +281,15 @@ func (_m *MockTaskStarter) EXPECT() *_MockTaskStarterRecorder {
 	return _m.recorder
 }
 
-func (_m *MockTaskStarter) StartTask(_param0 StreamID) (*TaskInfo, error) {
-	ret := _m.ctrl.Call(_m, "StartTask", _param0)
+func (_m *MockTaskStarter) StartTask(_param0 StreamID, _param1 string, _param2 string) (*TaskInfo, error) {
+	ret := _m.ctrl.Call(_m, "StartTask", _param0, _param1, _param2)
 	ret0, _ := ret[0].(*TaskInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockTaskStarterRecorder) StartTask(arg0 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "StartTask", arg0)
+func (_mr *_MockTaskStarterRecorder) StartTask(arg0, arg1, arg2 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "StartTask", arg0, arg1, arg2)
 }
 
 // Mock of Task interface
