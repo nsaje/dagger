@@ -212,15 +212,14 @@ func (si *StreamIterator) Dispatch(startAt Timestamp) {
 
 // Dispatcher dispatches records to registered subscribers
 type Dispatcher struct {
-	conf        *Config
 	coordinator Coordinator
 	connections map[string]*subscriberHandler
 	sync.RWMutex
 }
 
 // NewDispatcher creates a new dispatcher
-func NewDispatcher(conf *Config, coordinator Coordinator) *Dispatcher {
-	return &Dispatcher{conf, coordinator, make(map[string]*subscriberHandler),
+func NewDispatcher(coordinator Coordinator) *Dispatcher {
+	return &Dispatcher{coordinator, make(map[string]*subscriberHandler),
 		sync.RWMutex{}}
 }
 

@@ -46,6 +46,7 @@ type SubscribeCoordinator interface {
 	EnsurePublisherNum(StreamID, int, chan struct{}) chan error
 	CheckpointPosition(streamID StreamID, from Timestamp) error
 	UnsubscribeFrom(streamID StreamID) error
+	WatchTagMatch(topic string, tags Tags, matcherTags []string, addedRet chan string, droppedRet chan string, errc chan error)
 }
 
 // PublishCoordinator handles the coordination of publishing a stream

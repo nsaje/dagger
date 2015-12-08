@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/nsaje/dagger/dagger"
 
@@ -28,10 +29,15 @@ var Subscriber = cli.Command{
 				Value: "0",
 				Usage: "subscribe to records from specified Unix nanosecond timestamp onward",
 			},
+			cli.StringFlag{
+				Name:  "groupby",
+				Usage: "match specified streams by specified tags (with @ sign)",
+			},
 		}),
 }
 
 func subscriberAction(c *cli.Context) {
+	fmt.Println(c.Args())
 	errc := make(chan error)
 	persister, err := dagger.NewPersister(persisterConfFromFlags(c))
 	if err != nil {
@@ -61,10 +67,43 @@ func subscriberAction(c *cli.Context) {
 	if err != nil {
 		panic(err)
 	}
-	receiver.SubscribeTo(topicGlob, dagger.Timestamp(from), linearizer)
-	log.Printf("Subscribed to %s", topicGlob)
+
+	if !c.IsSet("groupby") {
+		receiver.SubscribeTo(topicGlob, dagger.Timestamp(from), linearizer)
+		log.Printf("Subscribed to %s", topicGlob)
+	} else {
+		matchers := strings.Split(c.String("groupby"), ",")
+		varargs := make([]interface{}, len(matchers))
+		for i := range matchers {
+			matchers[i] = strings.TrimSpace(matchers[i])
+			varargs[i] = matchers[i]
+		}
+		testString := fmt.Sprintf(string(topicGlob), varargs...)
+		if strings.Contains(testString, "%!") {
+			log.Printf("Group by parameter has too few or too many values")
+			return
+		}
+		go match(topicGlob, matchers, errc)
+	}
 
 	handleSignals(errc)
+}
+
+func match(topicGlob dagger.StreamID, matchers []string, errc chan error) {
+	var matcherTags []string
+	added := make(chan string)
+	dropped := make(chan string)
+	for _, matcher := range matchers {
+		tags := dagger.ParseTags(dagger.StreamID(matcher))
+		topic := string(dagger.StripTags(dagger.StreamID(matcher)))
+		for k, v := range tags {
+			if v == "@" {
+				matcherTags = append(matcherTags, k)
+				delete(tags, k)
+			}
+		}
+		go watchTag(topic, tags, matcherTags, added, dropped, errc)
+	}
 }
 
 type printer struct {

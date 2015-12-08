@@ -113,21 +113,31 @@ func (cm *taskManager) ManageTasks() error {
 				}
 				if gotTask {
 					log.Println("[coordinator] Got task:", streamID)
-					taskInfo, err := cm.taskStarter.StartTask(streamID)
+					name, definition, err := ParseComputationID(streamID)
+					if err != nil {
+						unapplicableSet[streamID] = struct{}{}
+						continue
+					}
+					var taskInfo *TaskInfo
+					if name == "match" {
+						// internal task
+						taskInfo, err = NewMatchTask(cm.coordinator, streamID, definition)
+					} else {
+						taskInfo, err = cm.taskStarter.StartTask(streamID, name, definition)
+					}
 					if err != nil {
 						log.Println("Error setting up computation:", err) // FIXME
 						cm.coordinator.ReleaseTask(streamID)              // FIXME ensure someone else tries to acquire
 						unapplicableSet[streamID] = struct{}{}
 						continue
 					}
-					task := taskInfo.Task
 					for _, input := range taskInfo.Inputs {
-						cm.receiver.SubscribeTo(input, taskInfo.From, task)
+						cm.receiver.SubscribeTo(input, taskInfo.From, taskInfo.Task)
 					}
-					cm.tasks[streamID] = task
+					cm.tasks[streamID] = taskInfo.Task
 					go func() {
 						errc := make(chan error)
-						task.Run(errc)
+						taskInfo.Task.Run(errc)
 						if err := <-errc; err != nil {
 							log.Println("[taskManager] task failed:", err)
 							cm.taskFailedCh <- taskInfo
@@ -169,7 +179,7 @@ type TaskInfo struct {
 
 // TaskStarter sets up a task from a given stream ID
 type TaskStarter interface {
-	StartTask(StreamID) (*TaskInfo, error)
+	StartTask(StreamID, string, string) (*TaskInfo, error)
 }
 
 func NewTaskStarter(c Coordinator, p Persister, dispatcherConfig func(*DispatcherConfig)) TaskStarter {
@@ -182,12 +192,7 @@ type defaultTaskStarter struct {
 	dispatcherConfig func(*DispatcherConfig)
 }
 
-func (cm *defaultTaskStarter) StartTask(streamID StreamID) (*TaskInfo, error) {
-	name, definition, err := ParseComputationID(streamID)
-	if err != nil {
-		return nil, err
-	}
-
+func (cm *defaultTaskStarter) StartTask(streamID StreamID, name string, definition string) (*TaskInfo, error) {
 	plugin, err := StartComputationPlugin(name, streamID)
 	if err != nil {
 		return nil, err

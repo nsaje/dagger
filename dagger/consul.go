@@ -275,6 +275,30 @@ func (c *consulCoordinator) WatchSubscriberPosition(topic StreamID, subscriber s
 	return posc, errc
 }
 
+func (c *consulCoordinator) WatchTagMatch(topic string, tags Tags, matcherTags []string, addedRet chan string, droppedRet chan string, errc chan error) {
+	added, dropped, errc := c.watchSetDiff(subscribersPrefix+string(topic), make(chan struct{}))
+	// alreadyMatchedSet := make(map[string]struct{})
+	go func() {
+		for {
+			// SELECT:
+			select {
+			case pub := <-added:
+				pubTags := ParseTags(StreamID(pub))
+				for k, v := range tags {
+					if pubTags[k] != v {
+						// continue SELECT
+					}
+				}
+				// for _, mt := range matcherTags {
+
+				// }
+			case <-dropped:
+			case <-errc:
+			}
+		}
+	}()
+}
+
 // RegisterAsPublisher registers us as publishers of this stream and
 func (c *consulCoordinator) RegisterAsPublisher(compID StreamID) error {
 	log.Println("[coordinator] Registering as publisher for: ", compID)

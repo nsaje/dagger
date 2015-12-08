@@ -40,7 +40,8 @@ func TSFromString(ts string) Timestamp {
 
 // Record is the atomic unit of data flowing through Dagger
 type Record struct {
-	ID        string      `json:"id"`
+	ID string `json:"id"`
+
 	StreamID  StreamID    `json:"stream_id"`
 	LWM       Timestamp   `json:"lwm"`
 	Timestamp Timestamp   `json:"timestamp"`

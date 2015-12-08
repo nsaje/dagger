@@ -3,8 +3,6 @@ package dagger
 import (
 	"log"
 	"sync"
-
-	
 )
 
 var maxTime = Timestamp(1<<63 - 1)
