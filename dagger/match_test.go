@@ -20,6 +20,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
+	t.Log("here we are")
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	srv := NewTestServer(t)
@@ -38,8 +39,11 @@ func TestRun(t *testing.T) {
 	assert.Nil(t, err)
 	taskInfo, _ := NewMatchTask(coord, receiver, sid, definition)
 
-	receiver.EXPECT().SubscribeTo("", Timestamp(0), taskInfo.Task)
+	receiver.EXPECT().SubscribeTo(StreamID("s1{t1=v1,t2=a,t3=1}"), Timestamp(0), gomock.Any())
+	receiver.EXPECT().SubscribeTo(StreamID("s2{t1=v1,t2=a,t3=1}"), Timestamp(0), gomock.Any())
 
-	coord.RegisterAsPublisher(StreamID("s1{t1=v1,t2=a,t3=1}"))
+	go taskInfo.Task.Run(make(chan error))
+
+	coord.RegisterAsPublisher(StreamID("s1{t1=v1,t2=a,t3=1,t4=x}"))
 	time.Sleep(2 * time.Second)
 }

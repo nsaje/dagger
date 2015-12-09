@@ -60,16 +60,18 @@ func (mt *matchTask) Run(chan error) {
 		case <-mt.stopCh:
 			return
 		case pub := <-added:
-			log.Println("ADDED")
+			log.Println("ADDED", pub)
 			pubTags := ParseTags(StreamID(pub))
 			// pubTopic := StripTags(StreamID(pub))
-			values := make([]string, len(pubTags))
+			values := make([]string, len(mt.matchBy))
 			for i, matchBy := range mt.matchBy {
 				values[i] = pubTags[matchBy]
 			}
 			combination := strings.Join(values, "-")
+			log.Println("combination", combination)
 			_, existing := mt.existing[combination]
 			if !existing {
+				log.Println("not existing")
 				mt.existing[combination] = struct{}{}
 				for _, topic := range mt.topics {
 					subTags := ParseTags(topic)
@@ -77,6 +79,7 @@ func (mt *matchTask) Run(chan error) {
 					for i, matchBy := range mt.matchBy {
 						subTags[matchBy] = values[i]
 					}
+					log.Println("subTags", subTags)
 					sub := UnparseTags(subTopic, subTags)
 					mt.receiver.SubscribeTo(sub, Timestamp(0), mt)
 				}

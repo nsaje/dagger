@@ -3,6 +3,7 @@ package dagger
 import (
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 )
 
@@ -102,8 +103,10 @@ func UnparseTags(topic StreamID, tags Tags) StreamID {
 	i := 0
 	for k, v := range tags {
 		taglist[i] = fmt.Sprintf("%s=%s", k, v)
+		i++
 	}
-	return StreamID(string(topic) + "{" + strings.Join(taglist, ", ") + "}")
+	sort.Strings(taglist)
+	return StreamID(string(topic) + "{" + strings.Join(taglist, ",") + "}")
 }
 
 // StripTags removes the kv pairs encoded in StreamID
