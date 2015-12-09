@@ -45,6 +45,7 @@ func producerAction(c *cli.Context) {
 	dispatcher := dagger.NewStreamDispatcher(streamID, coordinator, persister, lwmTracker, nil, dispatcherConfFromFlags(c))
 	go dispatcher.Run(errc)
 
+	coordinator.RegisterAsPublisher(streamID)
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		var line string

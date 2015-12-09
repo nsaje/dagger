@@ -28,7 +28,7 @@ type ConsulConfig struct {
 
 func defaultConfig() *ConsulConfig {
 	return &ConsulConfig{
-		Address:   "localhost",
+		Address:   "localhost:8500",
 		TTL:       "10s",
 		LockDelay: 100 * time.Millisecond,
 	}

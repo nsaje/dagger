@@ -19,7 +19,7 @@ func TestParse(t *testing.T) {
 	assert.Equal(t, StreamID("avg($1, $2)"), streamID)
 }
 
-func TestRun(t *testing.T) {
+func TestMatchTaskRun(t *testing.T) {
 	t.Log("here we are")
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -34,16 +34,20 @@ func TestRun(t *testing.T) {
 	receiver := NewMockInputManager(mockCtrl)
 
 	// NewMatchTask(coord, receiver, StreamID("match(cpu_util{service=monitoring}, user_perc{service=monitoring} by hostname, device in alarm(avg($1, 5min) )")
-	sid := StreamID("match(s1{t1=v1}, s2{t1=v1} by t2, t3 in alarm(avg($1)<2 and avg($2)>3))")
+	sid := StreamID("match(s1{t1=v1}, s2{t1=v1} by t2, t3 in alarm(avg(%s)<2 and avg(%s)>3))")
 	_, definition, err := ParseComputationID(sid)
 	assert.Nil(t, err)
 	taskInfo, _ := NewMatchTask(coord, receiver, sid, definition)
 
-	receiver.EXPECT().SubscribeTo(StreamID("s1{t1=v1,t2=a,t3=1}"), Timestamp(0), gomock.Any())
-	receiver.EXPECT().SubscribeTo(StreamID("s2{t1=v1,t2=a,t3=1}"), Timestamp(0), gomock.Any())
+	receiver.EXPECT().SubscribeTo(StreamID("alarm(avg(s1{t1=v1,t2=a,t3=1})<2 and avg(s2{t1=v1,t2=a,t3=1})>3)"), Timestamp(0), gomock.Any())
+	receiver.EXPECT().SubscribeTo(StreamID("alarm(avg(s1{t1=v1,t2=b,t3=1})<2 and avg(s2{t1=v1,t2=b,t3=1})>3)"), Timestamp(0), gomock.Any())
+	receiver.EXPECT().SubscribeTo(StreamID("alarm(avg(s1{t1=v1,t2=a,t3=2})<2 and avg(s2{t1=v1,t2=a,t3=2})>3)"), Timestamp(0), gomock.Any())
 
 	go taskInfo.Task.Run(make(chan error))
 
 	coord.RegisterAsPublisher(StreamID("s1{t1=v1,t2=a,t3=1,t4=x}"))
+	coord.RegisterAsPublisher(StreamID("s2{t1=v1,t2=a,t3=1,t4=x}"))
+	coord.RegisterAsPublisher(StreamID("s1{t1=v1,t2=b,t3=1,t4=y}"))
+	coord.RegisterAsPublisher(StreamID("s2{t1=v1,t2=a,t3=2,t4=x}"))
 	time.Sleep(2 * time.Second)
 }

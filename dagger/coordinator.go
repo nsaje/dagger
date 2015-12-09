@@ -79,7 +79,7 @@ func ParseTags(s StreamID) Tags {
 	idx0 := strings.Index(topic, "{")
 	idx1 := strings.Index(topic, "}")
 	if idx0 == -1 || idx1 == -1 {
-		return nil
+		return tags
 	}
 	taglist := topic[idx0+1 : idx1]
 	pairs := strings.Split(taglist, ",")
@@ -89,9 +89,6 @@ func ParseTags(s StreamID) Tags {
 			continue
 		}
 		tags[kv[0]] = kv[1]
-	}
-	if len(tags) == 0 {
-		return nil
 	}
 	return tags
 }

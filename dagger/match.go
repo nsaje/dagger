@@ -2,6 +2,7 @@ package dagger
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 )
@@ -9,7 +10,7 @@ import (
 var errFormatIncorrect = errors.New("match format incorrect")
 
 // NewMatchTask creates a new internal matching task that automatically
-// subscribes to new matching strings
+// subscribes to new matching streams
 func NewMatchTask(c Coordinator, r InputManager, sid StreamID, definition string) (*TaskInfo, error) {
 	topics, matchBy, streamID, err := parseMatchDefinition(definition)
 	if err != nil {
@@ -17,14 +18,15 @@ func NewMatchTask(c Coordinator, r InputManager, sid StreamID, definition string
 	}
 	dispatcher := NewDispatcher(c)
 	task := &matchTask{
-		coordinator: c,
-		receiver:    r,
-		topics:      topics,
-		matchBy:     matchBy,
-		streamID:    streamID,
-		dispatcher:  dispatcher,
-		stopCh:      make(chan struct{}),
-		existing:    make(map[string]struct{}),
+		coordinator:  c,
+		receiver:     r,
+		taskStreamID: sid,
+		topics:       topics,
+		matchBy:      matchBy,
+		streamID:     streamID,
+		dispatcher:   dispatcher,
+		stopCh:       make(chan struct{}),
+		existing:     make(map[string]struct{}),
 	}
 	taskInfo := &TaskInfo{
 		StreamID: sid,
@@ -34,12 +36,13 @@ func NewMatchTask(c Coordinator, r InputManager, sid StreamID, definition string
 }
 
 type matchTask struct {
-	coordinator Coordinator
-	receiver    InputManager
-	topics      []StreamID
-	matchBy     []string
-	streamID    StreamID
-	dispatcher  *Dispatcher
+	coordinator  Coordinator
+	receiver     InputManager
+	taskStreamID StreamID
+	topics       []StreamID
+	matchBy      []string
+	streamID     StreamID
+	dispatcher   *Dispatcher
 
 	existing map[string]struct{}
 	stopCh   chan struct{}
@@ -53,6 +56,7 @@ func (mt *matchTask) Run(chan error) {
 	dropped := make(chan string)
 	errc := make(chan error)
 	for _, topic := range mt.topics {
+		log.Println("[match] watching", topic)
 		mt.coordinator.WatchTagMatch(topic, added, dropped, errc)
 	}
 	for {
@@ -60,29 +64,27 @@ func (mt *matchTask) Run(chan error) {
 		case <-mt.stopCh:
 			return
 		case pub := <-added:
-			log.Println("ADDED", pub)
+			log.Println("[match] new", pub)
 			pubTags := ParseTags(StreamID(pub))
-			// pubTopic := StripTags(StreamID(pub))
 			values := make([]string, len(mt.matchBy))
 			for i, matchBy := range mt.matchBy {
 				values[i] = pubTags[matchBy]
 			}
 			combination := strings.Join(values, "-")
-			log.Println("combination", combination)
 			_, existing := mt.existing[combination]
 			if !existing {
-				log.Println("not existing")
 				mt.existing[combination] = struct{}{}
-				for _, topic := range mt.topics {
+				matchedTopics := make([]interface{}, len(mt.topics))
+				for i, topic := range mt.topics {
 					subTags := ParseTags(topic)
 					subTopic := StripTags(topic)
 					for i, matchBy := range mt.matchBy {
 						subTags[matchBy] = values[i]
 					}
-					log.Println("subTags", subTags)
-					sub := UnparseTags(subTopic, subTags)
-					mt.receiver.SubscribeTo(sub, Timestamp(0), mt)
+					matchedTopics[i] = UnparseTags(subTopic, subTags)
 				}
+				sidString := fmt.Sprintf(string(mt.streamID), matchedTopics...)
+				mt.receiver.SubscribeTo(StreamID(sidString), Timestamp(0), mt)
 			}
 		}
 	}
@@ -93,7 +95,9 @@ func (mt *matchTask) Stop() {
 }
 
 func (mt *matchTask) ProcessRecord(rec *Record) error {
-	return mt.dispatcher.ProcessRecord(rec)
+	newRec := *rec
+	newRec.StreamID = mt.taskStreamID
+	return mt.dispatcher.ProcessRecord(&newRec)
 }
 
 func parseMatchDefinition(d string) ([]StreamID, []string, StreamID, error) {
