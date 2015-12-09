@@ -47,7 +47,6 @@ func NewTestServer(t *testing.T) *testutil.TestServer {
 	return srv
 }
 func TestSetWatcher(t *testing.T) {
-	prefix := "prefix/"
 	srv := NewTestServer(t)
 	defer srv.Stop()
 	conf := api.DefaultConfig()
@@ -56,15 +55,15 @@ func TestSetWatcher(t *testing.T) {
 	coord := NewConsulCoordinator(func(conf *ConsulConfig) {
 		conf.Address = srv.HTTPAddr
 	}).(*consulCoordinator)
-	newc, errc := coord.watchSet(prefix, nil)
+	newc, errc := coord.watchSet("prefix/", nil)
 	add := []string{
-		"test/1",
-		"test/2",
-		"test/3",
+		"prefix/test/1",
+		"prefix/test/2",
+		"prefix/test/3",
 	}
 	remove := []string{
-		"test/1",
-		"test/2",
+		"prefix/test/1",
+		"prefix/test/2",
 	}
 	expected := [][]string{
 		{},
@@ -76,10 +75,10 @@ func TestSetWatcher(t *testing.T) {
 	}
 	go func() {
 		for _, k := range add {
-			kv.Put(prefix+k, nil)
+			kv.Put(k, nil)
 		}
 		for _, k := range remove {
-			kv.Delete(prefix + k)
+			kv.Delete(k)
 		}
 	}()
 	var actual [][]string
@@ -106,29 +105,28 @@ func TestSetDiffWatcher(t *testing.T) {
 	srv := NewTestServer(t)
 	defer srv.Stop()
 
-	prefix := "prefix/"
 	conf := api.DefaultConfig()
 	conf.Address = srv.HTTPAddr
 	kv := NewSimpleKV(t, conf)
 	coord := NewConsulCoordinator(func(conf *ConsulConfig) {
 		conf.Address = srv.HTTPAddr
 	}).(*consulCoordinator)
-	addc, droppedc, errc := coord.watchSetDiff(prefix, nil)
+	addc, droppedc, errc := coord.watchSetDiff("prefix/", nil)
 	add := []string{
-		"test/1",
-		"test/2",
-		"test/3",
+		"prefix/test/1",
+		"prefix/test/2",
+		"prefix/test/3",
 	}
 	remove := []string{
-		"test/1",
-		"test/2",
+		"prefix/test/1",
+		"prefix/test/2",
 	}
 	go func() {
 		for _, k := range add {
-			kv.Put(prefix+k, nil)
+			kv.Put(k, nil)
 		}
 		for _, k := range remove {
-			kv.Delete(prefix + k)
+			kv.Delete(k)
 		}
 	}()
 	var addedActual, droppedActual []string
@@ -250,6 +248,63 @@ func TestWatchSubscribers(t *testing.T) {
 		select {
 		case <-timeout.C:
 			t.Fatalf("Timeout!")
+		case k := <-addc:
+			addedActual = append(addedActual, k)
+		case k := <-droppedc:
+			droppedActual = append(droppedActual, k)
+		case err := <-errc:
+			t.Fatalf(err.Error())
+		}
+		if len(addedActual) == len(expectedA) &&
+			len(droppedActual) == len(remove) {
+			break
+		}
+	}
+	assert.Equal(t, expectedA, addedActual)
+}
+
+func TestWatchTagMatch(t *testing.T) {
+	// Create a server
+	srv := NewTestServer(t)
+	defer srv.Stop()
+
+	prefix := publishersPrefix
+	conf := api.DefaultConfig()
+	conf.Address = srv.HTTPAddr
+	kv := NewSimpleKV(t, conf)
+	coord := NewConsulCoordinator(func(conf *ConsulConfig) {
+		conf.Address = srv.HTTPAddr
+	}).(*consulCoordinator)
+	add := []string{
+		"test/a",
+		"test/b",
+		"test{t1=v1,t2=v2}/c",
+		"test{t1=v1}/d",
+		"test{t1=v2}/d",
+	}
+	remove := []string{}
+	addc := make(chan string)
+	droppedc := make(chan string)
+	errc := make(chan error)
+	coord.WatchTagMatch(StreamID("test{t1=v1}"), addc, droppedc, errc)
+	go func() {
+		for _, k := range add {
+			kv.Put(prefix+k, nil)
+		}
+		for _, k := range remove {
+			kv.Delete(prefix + k)
+		}
+	}()
+	var addedActual, droppedActual []string
+	timeout := time.NewTimer(5 * time.Second)
+
+	expectedA := []string{"test{t1=v1,t2=v2}", "test{t1=v1}"}
+LOOP:
+	for {
+		select {
+		case <-timeout.C:
+			t.Log("Timeout!")
+			break LOOP
 		case k := <-addc:
 			addedActual = append(addedActual, k)
 		case k := <-droppedc:

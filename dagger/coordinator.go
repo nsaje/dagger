@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"fmt"
 	"net"
 	"strings"
 )
@@ -46,7 +47,7 @@ type SubscribeCoordinator interface {
 	EnsurePublisherNum(StreamID, int, chan struct{}) chan error
 	CheckpointPosition(streamID StreamID, from Timestamp) error
 	UnsubscribeFrom(streamID StreamID) error
-	WatchTagMatch(topic string, tags Tags, matcherTags []string, addedRet chan string, droppedRet chan string, errc chan error)
+	WatchTagMatch(topic StreamID, addedRet chan string, droppedRet chan string, errc chan error)
 }
 
 // PublishCoordinator handles the coordination of publishing a stream
@@ -92,6 +93,17 @@ func ParseTags(s StreamID) Tags {
 		return nil
 	}
 	return tags
+}
+
+// UnparseTags creates a string representation of a StreamID from a topic
+// name and a list of tags
+func UnparseTags(topic StreamID, tags Tags) StreamID {
+	taglist := make([]string, len(tags))
+	i := 0
+	for k, v := range tags {
+		taglist[i] = fmt.Sprintf("%s=%s", k, v)
+	}
+	return StreamID(string(topic) + "{" + strings.Join(taglist, ", ") + "}")
 }
 
 // StripTags removes the kv pairs encoded in StreamID

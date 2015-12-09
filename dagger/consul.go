@@ -16,6 +16,7 @@ const (
 	// JobPrefix is the key prefix for tasks
 	taskPrefix        = "dagger/tasks/"
 	subscribersPrefix = "dagger/subscribers/"
+	publishersPrefix  = "dagger/publishers/"
 )
 
 // ConsulConfig is used to configure the Consul coordinator
@@ -113,7 +114,8 @@ func (c *consulCoordinator) Stop() {
 }
 
 func (c *consulCoordinator) WatchTasks(stop chan struct{}) (chan []string, chan error) {
-	return c.watchSet(taskPrefix, stop)
+	newc, errc := c.watchSet(taskPrefix, stop)
+	return stripPrefix(taskPrefix, newc), errc
 }
 
 func (c *consulCoordinator) AcquireTask(task StreamID) (bool, error) {
@@ -193,11 +195,10 @@ func (c *consulCoordinator) EnsurePublisherNum(topic StreamID, n int, stop chan 
 	return errc
 }
 
-func tagsMatch(subscriber string, publisherTags Tags) bool {
-	tags := ParseTags(StreamID(subscriber))
-	log.Println("[coordinator][tags] Publisher", publisherTags, ", subscriber", tags)
-	for k, v := range tags {
-		if publisherTags[k] != v {
+func tagsAreSubset(a Tags, b Tags) bool {
+	log.Println("[coordinator][tags] a:", a, ", b:", b)
+	for k, v := range a {
+		if b[k] != v {
 			return false
 		}
 	}
@@ -239,7 +240,8 @@ func (c *consulCoordinator) WatchSubscribers(streamID StreamID, stop chan struct
 			case <-stop:
 				return
 			case sub := <-added:
-				if tagsMatch(sub, publisherTags) {
+				subTags := ParseTags(StreamID(sub))
+				if tagsAreSubset(subTags, publisherTags) {
 					idx := strings.LastIndex(sub, "/")
 					filtered <- sub[idx+1:]
 				}
@@ -276,25 +278,24 @@ func (c *consulCoordinator) WatchSubscriberPosition(topic StreamID, subscriber s
 	return posc, errc
 }
 
-func (c *consulCoordinator) WatchTagMatch(topic string, tags Tags, matcherTags []string, addedRet chan string, droppedRet chan string, errc chan error) {
-	added, dropped, errc := c.watchSetDiff(subscribersPrefix+string(topic), make(chan struct{}))
-	// alreadyMatchedSet := make(map[string]struct{})
+func (c *consulCoordinator) WatchTagMatch(streamID StreamID, addedRet chan string, droppedRet chan string, errcRet chan error) {
+	topic := StripTags(streamID)
+	subTags := ParseTags(streamID)
+	added, dropped, errc := c.watchSetDiff(publishersPrefix+string(topic), make(chan struct{}))
 	go func() {
 		for {
-			// SELECT:
 			select {
 			case pub := <-added:
 				pubTags := ParseTags(StreamID(pub))
-				for k, v := range tags {
-					if pubTags[k] != v {
-						// continue SELECT
-					}
+				if tagsAreSubset(subTags, pubTags) {
+					log.Println("adding", pub)
+					idx := strings.LastIndex(pub, "/")
+					addedRet <- pub[len(publishersPrefix):idx]
 				}
-				// for _, mt := range matcherTags {
-
-				// }
-			case <-dropped:
-			case <-errc:
+			case pub := <-dropped:
+				droppedRet <- pub
+			case err := <-errc:
+				errcRet <- err
 			}
 		}
 	}()
@@ -530,7 +531,8 @@ func (sl *subscribersList) fetch() error {
 	sl.lastIndex = queryMeta.LastIndex
 	filtered := make([]string, 0, len(keys))
 	for _, sub := range keys {
-		if tagsMatch(sub, sl.tags) {
+		subTags := ParseTags(StreamID(sub))
+		if tagsAreSubset(subTags, sl.tags) {
 			idx := strings.LastIndex(sub, "/")
 			if idx > 0 {
 				filtered = append(filtered, sub[idx+1:])
@@ -611,11 +613,11 @@ func (c *consulCoordinator) watchSet(prefix string, stop chan struct{}) (chan []
 				return
 			case s := <-new:
 				keys := s.([]string)
-				stripped := make([]string, len(keys), len(keys))
-				for i := range keys {
-					stripped[i] = keys[i][len(prefix):]
+				if keys == nil {
+					sets <- []string{}
+				} else {
+					sets <- keys
 				}
-				sets <- stripped
 			}
 		}
 	}()
@@ -657,4 +659,21 @@ func (c *consulCoordinator) watchSetDiff(prefix string, stop chan struct{}) (cha
 		}
 	}()
 	return added, dropped, errc
+}
+
+func stripPrefix(prefix string, newc chan []string) chan []string {
+	newcStripped := make(chan []string)
+	go func() {
+		for {
+			select {
+			case new := <-newc:
+				stripped := make([]string, len(new))
+				for i := range new {
+					stripped[i] = new[i][len(prefix):]
+				}
+				newcStripped <- stripped
+			}
+		}
+	}()
+	return newcStripped
 }

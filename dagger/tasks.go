@@ -121,7 +121,7 @@ func (cm *taskManager) ManageTasks() error {
 					var taskInfo *TaskInfo
 					if name == "match" {
 						// internal task
-						taskInfo, err = NewMatchTask(cm.coordinator, streamID, definition)
+						taskInfo, err = NewMatchTask(cm.coordinator, cm.receiver, streamID, definition)
 					} else {
 						taskInfo, err = cm.taskStarter.StartTask(streamID, name, definition)
 					}
