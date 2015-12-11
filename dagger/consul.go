@@ -113,6 +113,22 @@ func (c *consulCoordinator) Stop() {
 	session.Destroy(c.sessionID, nil) // ignoring error, session will expire anyway
 }
 
+func (c *consulCoordinator) RenewSession(session string) error {
+	_, _, err := c.client.Session().Renew(session, nil)
+	return fmt.Errorf("error renewing session: %s", err)
+}
+
+func (c *consulCoordinator) RegisterSession() (string, error) {
+	sessionOptions := &api.SessionEntry{
+		Behavior:  api.SessionBehaviorDelete,
+		LockDelay: c.config.LockDelay,
+		TTL:       c.config.TTL,
+	}
+	session := c.client.Session()
+	sessionID, _, err := session.Create(sessionOptions, nil)
+	return sessionID, err
+}
+
 func (c *consulCoordinator) WatchTasks(stop chan struct{}) (chan []string, chan error) {
 	newc, errc := c.watchSet(taskPrefix, stop)
 	return stripPrefix(taskPrefix, newc), errc
@@ -303,11 +319,20 @@ func (c *consulCoordinator) WatchTagMatch(streamID StreamID, addedRet chan strin
 
 // RegisterAsPublisher registers us as publishers of this stream and
 func (c *consulCoordinator) RegisterAsPublisher(compID StreamID) error {
+	return c.registerAsPublisher(c.sessionID, compID)
+}
+
+// RegisterAsPublisherWithSession registers us as publishers of this stream and
+func (c *consulCoordinator) RegisterAsPublisherWithSession(session string, compID StreamID) error {
+	return c.registerAsPublisher(session, compID)
+}
+
+func (c *consulCoordinator) registerAsPublisher(session string, compID StreamID) error {
 	log.Println("[coordinator] Registering as publisher for: ", compID)
 	kv := c.client.KV()
 	pair := &api.KVPair{
-		Key:     fmt.Sprintf("dagger/publishers/%s/%s", compID, c.addr.String()),
-		Session: c.sessionID,
+		Key:     fmt.Sprintf("dagger/publishers/%s/%s", compID, session),
+		Session: session,
 	}
 	_, _, err := kv.Acquire(pair, nil)
 	if err != nil {
@@ -321,7 +346,7 @@ func (c *consulCoordinator) RegisterAsPublisher(compID StreamID) error {
 func (c *consulCoordinator) DeregisterAsPublisher(compID StreamID) error {
 	log.Println("[coordinator] Deregistering as publisher for: ", compID)
 	kv := c.client.KV()
-	key := fmt.Sprintf("dagger/publishers/%s/%s", compID, c.addr.String())
+	key := fmt.Sprintf("dagger/publishers/%s/%s", compID, c.sessionID)
 	_, err := kv.Delete(key, nil)
 	if err != nil {
 		log.Println("[coordinator] Error registering as publisher: ", err)

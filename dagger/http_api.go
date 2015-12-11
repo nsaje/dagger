@@ -15,14 +15,18 @@ import (
 )
 
 type HttpAPI struct {
+	coordinator Coordinator
 	dispatcher  *Dispatcher
+	publishing  map[string]map[StreamID]struct{}
 	subscribers *httpSubscribers
 }
 
-func NewHttpAPI(receiver Receiver, dispatcher *Dispatcher) HttpAPI {
+func NewHttpAPI(coordinator Coordinator, receiver Receiver, dispatcher *Dispatcher) HttpAPI {
 	return HttpAPI{
-		dispatcher,
-		&httpSubscribers{
+		coordinator: coordinator,
+		dispatcher:  dispatcher,
+		publishing:  make(map[string]map[StreamID]struct{}),
+		subscribers: &httpSubscribers{
 			receiver: receiver,
 			subs:     make(map[StreamID]map[chan *Record]struct{}),
 			lock:     &sync.RWMutex{},
@@ -38,16 +42,43 @@ func (api HttpAPI) Serve() {
 	log.Fatal(http.ListenAndServe(":46632", nil))
 }
 
+func (api HttpAPI) register(w http.ResponseWriter, r *http.Request) {
+	session, err := api.coordinator.RegisterSession()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	} else {
+		w.Write([]byte(session))
+	}
+}
+
+func (api HttpAPI) renew(w http.ResponseWriter, r *http.Request) {
+	session := r.FormValue("session")
+	api.coordinator.RenewSession(session)
+}
+
 func (api HttpAPI) submit(w http.ResponseWriter, r *http.Request) {
+	session := r.FormValue("session")
+	streams, registered := api.publishing[session]
+	if !registered {
+		http.Error(w, "Session not registered!", 500)
+	}
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
 		return
 	}
+
 	t, err := CreateRecordFromJSON(body)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error parsing record: %s", err), 500)
 	}
+
+	_, streamRegistered := streams[t.StreamID]
+	if !streamRegistered {
+		api.coordinator.RegisterAsPublisher(t.StreamID)
+	}
+
 	err = api.dispatcher.ProcessRecord(t)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error dispatching record: %s", err), 500)

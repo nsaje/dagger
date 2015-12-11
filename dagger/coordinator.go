@@ -24,8 +24,17 @@ type Coordinator interface {
 	PublishCoordinator
 	TaskCoordinator
 	ReplicationCoordinator
+	RegisterSession() (string, error)
+	RenewSession(string) error
 	Start(net.Addr, chan error) error
 	Stop()
+}
+
+// Session represents a coordination session. As long as the session
+// doesn't expire, other agents expect data from us.
+type Session interface {
+	ID() string
+	Renew() error
 }
 
 // TaskCoordinator allows watching and taking new available tasks
@@ -58,6 +67,7 @@ type PublishCoordinator interface {
 	GetSubscriberPosition(StreamID, string) (Timestamp, error)
 	WatchSubscriberPosition(StreamID, string, chan struct{}) (chan Timestamp, chan error)
 	RegisterAsPublisher(streamID StreamID) error
+	RegisterAsPublisherWithSession(session string, streamID StreamID) error
 	DeregisterAsPublisher(streamID StreamID) error
 }
 
