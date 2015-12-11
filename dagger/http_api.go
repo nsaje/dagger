@@ -39,6 +39,7 @@ func (api HttpAPI) Serve() {
 	http.HandleFunc("/submit_raw", api.submitRaw)
 	http.HandleFunc("/listen", api.listen)
 	http.HandleFunc("/register", api.register)
+	http.HandleFunc("/renew", api.renew)
 
 	log.Fatal(http.ListenAndServe(":46632", nil))
 }
@@ -79,7 +80,7 @@ func (api HttpAPI) submit(w http.ResponseWriter, r *http.Request) {
 
 	_, streamRegistered := streams[t.StreamID]
 	if !streamRegistered {
-		api.coordinator.RegisterAsPublisher(t.StreamID)
+		api.coordinator.RegisterAsPublisherWithSession(session, t.StreamID)
 		streams[t.StreamID] = struct{}{}
 	}
 
@@ -99,11 +100,12 @@ func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
 	streamID := StreamID(r.FormValue("s"))
 	_, streamRegistered := streams[streamID]
 	if !streamRegistered {
-		api.coordinator.RegisterAsPublisher(streamID)
+		api.coordinator.RegisterAsPublisherWithSession(session, streamID)
 		streams[streamID] = struct{}{}
 	}
 
 	data, err := ioutil.ReadAll(r.Body)
+	log.Println("data", data)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
 		return
