@@ -10,18 +10,13 @@ import (
 
 // Worker takes on computations. It registers as a subscriber for necessary
 // topics and publishes the results of the computations
-var httpapi = cli.Command{
-	Name:    "worker",
+var HTTPAPI = cli.Command{
+	Name:    "httpapi",
 	Aliases: []string{"w"},
 	Usage:   "start dagger node as a HTTP API node",
 	Action:  httpapiAction,
 	Flags: mergeFlags(consulFlags, receiverFlags, persisterFlags, dispatcherFlags,
-		[]cli.Flag{
-			cli.StringFlag{
-				Name:  "appmetrics",
-				Usage: "InfluxDB URL for app metrics (how many records are being processed etc.)",
-			},
-		}),
+		[]cli.Flag{}),
 }
 
 func httpapiAction(c *cli.Context) {

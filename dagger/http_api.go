@@ -38,6 +38,7 @@ func (api HttpAPI) Serve() {
 	http.HandleFunc("/submit", api.submit)
 	http.HandleFunc("/submit_raw", api.submitRaw)
 	http.HandleFunc("/listen", api.listen)
+	http.HandleFunc("/register", api.register)
 
 	log.Fatal(http.ListenAndServe(":46632", nil))
 }
@@ -48,6 +49,7 @@ func (api HttpAPI) register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	} else {
+		api.publishing[session] = make(map[StreamID]struct{})
 		w.Write([]byte(session))
 	}
 }
@@ -72,11 +74,13 @@ func (api HttpAPI) submit(w http.ResponseWriter, r *http.Request) {
 	t, err := CreateRecordFromJSON(body)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error parsing record: %s", err), 500)
+		return
 	}
 
 	_, streamRegistered := streams[t.StreamID]
 	if !streamRegistered {
 		api.coordinator.RegisterAsPublisher(t.StreamID)
+		streams[t.StreamID] = struct{}{}
 	}
 
 	err = api.dispatcher.ProcessRecord(t)
@@ -86,7 +90,19 @@ func (api HttpAPI) submit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
+	session := r.FormValue("session")
+	streams, registered := api.publishing[session]
+	if !registered {
+		http.Error(w, "Session not registered!", 500)
+		return
+	}
 	streamID := StreamID(r.FormValue("s"))
+	_, streamRegistered := streams[streamID]
+	if !streamRegistered {
+		api.coordinator.RegisterAsPublisher(streamID)
+		streams[streamID] = struct{}{}
+	}
+
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)

@@ -17,6 +17,7 @@ func main() {
 		command.Worker,
 		command.Producer,
 		command.Subscriber,
+		command.HTTPAPI,
 	}
 
 	app.Run(os.Args)
