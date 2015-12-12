@@ -1,5 +1,4 @@
-Dagger
-======
+![Dagger](https://raw.githubusercontent.com/nsaje/nsaje.github.io/master/images/dagger.png)
 
 Dagger is a dynamic realtime stream processing framework based on publishing of and subscribing to streams of data.
 
@@ -20,9 +19,21 @@ Properties
 
   Ensured using retries and efficient deduplication.
 
+* **Timestamp-ordered processing**
+
+  Even when processing records from different streams, Dagger will process the records
+   in the order of their timestamps. This is achieved using low watermarks, used also
+   in Google's MillWheel stream processing system, which tell us when we have received
+   all the records up to a certain point in time.
+
 * **Fault tolerant**
 
   Achieved without using a separate database system, with multiple computations being executed in parallel enabling no-loss failover.
+
+* **Kafka-like rewinds**
+
+  Using the approach Kafka pioneered, Dagger persists all the streams to disk. This means you can decide from where on you want to receive stream data or even rewind to an
+  earlier position in time.
 
 * **Decentralized**
 
