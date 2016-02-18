@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/dagger"
@@ -33,7 +33,7 @@ func (c BarComputation) SetState(state []byte) error {
 }
 
 func main() {
-	log.SetPrefix("[barComputation log] ")
+	//log.SetPrefix("[barComputation log] ")
 	log.Printf("barComputation started")
 	c := BarComputation{}
 	computations.StartPlugin(c)

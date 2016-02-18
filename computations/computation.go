@@ -1,7 +1,7 @@
 package computations
 
 import (
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"net/rpc/jsonrpc"
 	"sync"
 

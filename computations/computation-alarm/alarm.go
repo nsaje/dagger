@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"sort"
 
 	"github.com/nsaje/dagger/computations"
@@ -188,7 +188,7 @@ func (c *AlarmComputation) SubmitRecord(t *dagger.Record) ([]*dagger.Record, err
 }
 
 func main() {
-	log.SetPrefix("[alarmComputation log] ")
+	//log.SetPrefix("[alarmComputation log] ")
 	log.Printf("alarmComputation started")
 	c := &AlarmComputation{NewAlarmComputationState()}
 	computations.StartPlugin(c)

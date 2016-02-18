@@ -1,8 +1,9 @@
 package command
 
 import (
-	"log"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/nsaje/dagger/dagger"
 	"github.com/rcrowley/go-metrics"
@@ -18,7 +19,7 @@ var Worker = cli.Command{
 	Aliases: []string{"w"},
 	Usage:   "start dagger node as a worker",
 	Action:  workerAction,
-	Flags: mergeFlags(consulFlags, receiverFlags, persisterFlags, dispatcherFlags, httpApiFlags,
+	Flags: mergeFlags(logFlags, consulFlags, receiverFlags, persisterFlags, dispatcherFlags, httpApiFlags,
 		[]cli.Flag{
 			cli.StringFlag{
 				Name:  "appmetrics",
@@ -28,6 +29,7 @@ var Worker = cli.Command{
 }
 
 func workerAction(c *cli.Context) {
+	initLogging(c)
 	appmetrics := c.String("appmetrics")
 	if len(appmetrics) > 0 {
 		// set up monitoring

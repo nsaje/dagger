@@ -1,7 +1,7 @@
 package command
 
 import (
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"os"
 	"os/signal"
 	"syscall"

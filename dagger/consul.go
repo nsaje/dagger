@@ -2,7 +2,7 @@ package dagger
 
 import (
 	"fmt"
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"net"
 	"strings"
 	"sync"

@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"strconv"
 
 	"github.com/nsaje/dagger/computations"
@@ -46,7 +46,7 @@ func (c *FooComputation) SubmitRecord(t *dagger.Record) ([]*dagger.Record, error
 }
 
 func main() {
-	log.SetPrefix("[fooComputation log] ")
+	//log.SetPrefix("[fooComputation log] ")
 	log.Printf("fooComputation started")
 	c := &FooComputation{1}
 	computations.StartPlugin(c)

@@ -3,10 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strconv"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/nsaje/dagger/computations"
 	"github.com/nsaje/dagger/dagger"
@@ -108,7 +109,7 @@ func main() {
 			panic(sig)
 		}
 	}()
-	log.SetPrefix("[AvgComputation log] ")
+	//log.SetPrefix("[AvgComputation log] ")
 	log.Printf("AvgComputation started")
 	c := computations.NewTimeBucketsComputation(&AvgProcessor{state: NewAvgProcessorState()})
 	computations.StartPlugin(c)

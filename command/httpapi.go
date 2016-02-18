@@ -1,7 +1,7 @@
 package command
 
 import (
-	"log"
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/nsaje/dagger/dagger"
 
@@ -15,11 +15,12 @@ var HTTPAPI = cli.Command{
 	Aliases: []string{"h"},
 	Usage:   "start dagger node as a HTTP API node",
 	Action:  httpapiAction,
-	Flags: mergeFlags(consulFlags, receiverFlags, persisterFlags, dispatcherFlags,
+	Flags: mergeFlags(logFlags, consulFlags, receiverFlags, persisterFlags, dispatcherFlags,
 		[]cli.Flag{}),
 }
 
 func httpapiAction(c *cli.Context) {
+	initLogging(c)
 	errc := make(chan error)
 
 	persister, err := dagger.NewPersister(persisterConfFromFlags(c))

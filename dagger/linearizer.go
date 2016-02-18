@@ -1,7 +1,7 @@
 package dagger
 
 import (
-	"log"
+	log "github.com/Sirupsen/logrus"
 )
 
 // Linearizer buffers records and forwards them to the next RecordProcessor sorted

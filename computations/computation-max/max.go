@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"math"
 	"os"
 	"os/signal"
@@ -107,7 +107,7 @@ func main() {
 			panic(sig)
 		}
 	}()
-	log.SetPrefix("[MaxComputation log] ")
+	//log.SetPrefix("[MaxComputation log] ")
 	log.Printf("MaxComputation started")
 	c := computations.NewTimeBucketsComputation(&MaxProcessor{state: NewMaxProcessorState()})
 	computations.StartPlugin(c)

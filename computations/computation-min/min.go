@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"math"
 	"os"
 	"os/signal"
@@ -107,7 +107,7 @@ func main() {
 			panic(sig)
 		}
 	}()
-	log.SetPrefix("[MinComputation log] ")
+	//log.SetPrefix("[MinComputation log] ")
 	log.Printf("MinComputation started")
 	c := computations.NewTimeBucketsComputation(&MinProcessor{state: NewMinProcessorState()})
 	computations.StartPlugin(c)

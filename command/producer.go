@@ -2,9 +2,10 @@ package command
 
 import (
 	"bufio"
-	"log"
 	"os"
 	"strings"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/codegangsta/cli"
 	"github.com/nsaje/dagger/dagger"
@@ -16,7 +17,7 @@ var Producer = cli.Command{
 	Name:    "producer",
 	Aliases: []string{"p"},
 	Usage:   "start a dedicated dagger producer node, which reads data from stdin and publishes it on the given stream",
-	Flags: mergeFlags(consulFlags, persisterFlags, dispatcherFlags,
+	Flags: mergeFlags(logFlags, consulFlags, persisterFlags, dispatcherFlags,
 		[]cli.Flag{
 			cli.StringFlag{
 				Name:  "streamID, s",
@@ -27,6 +28,7 @@ var Producer = cli.Command{
 }
 
 func producerAction(c *cli.Context) {
+	initLogging(c)
 	errc := make(chan error)
 	coordinator := dagger.NewConsulCoordinator(consulConfFromFlags(c))
 	err := coordinator.Start(nil, errc)

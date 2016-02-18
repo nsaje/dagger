@@ -3,7 +3,7 @@ package dagger
 import (
 	"errors"
 	"fmt"
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"strings"
 )
 

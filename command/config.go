@@ -1,12 +1,33 @@
 package command
 
 import (
-	"log"
 	"net"
+
+	log "github.com/Sirupsen/logrus"
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/codegangsta/cli"
 	"github.com/nsaje/dagger/dagger"
 )
+
+func initLogging(c *cli.Context) {
+	if !c.IsSet("log") {
+		return
+	}
+	log.SetOutput(&lumberjack.Logger{
+		Filename:   c.String("log"),
+		MaxSize:    500, // megabytes
+		MaxBackups: 3,
+		MaxAge:     28, //days
+	})
+}
+
+var logFlags = []cli.Flag{
+	cli.StringFlag{
+		Name:  "log",
+		Usage: "logging path, log to stdout if empty",
+	},
+}
 
 func mergeFlags(flags ...[]cli.Flag) []cli.Flag {
 	var all []cli.Flag

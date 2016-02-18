@@ -2,9 +2,10 @@ package command
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/nsaje/dagger/dagger"
 
@@ -18,7 +19,7 @@ var Subscriber = cli.Command{
 	Aliases: []string{"s"},
 	Usage:   "start dagger node as a topic subscriber",
 	Action:  subscriberAction,
-	Flags: mergeFlags(consulFlags, receiverFlags, persisterFlags,
+	Flags: mergeFlags(logFlags, consulFlags, receiverFlags, persisterFlags,
 		[]cli.Flag{
 			cli.BoolFlag{
 				Name:  "dataonly",
@@ -37,6 +38,7 @@ var Subscriber = cli.Command{
 }
 
 func subscriberAction(c *cli.Context) {
+	initLogging(c)
 	fmt.Println(c.Args())
 	errc := make(chan error)
 	persister, err := dagger.NewPersister(persisterConfFromFlags(c))

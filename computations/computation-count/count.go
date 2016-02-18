@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"os"
 	"os/signal"
 
@@ -99,7 +99,7 @@ func main() {
 			panic(sig)
 		}
 	}()
-	log.SetPrefix("[CountComputation log] ")
+	//log.SetPrefix("[CountComputation log] ")
 	log.Printf("CountComputation started")
 	c := computations.NewTimeBucketsComputation(&CountProcessor{state: NewCountProcessorState()})
 	computations.StartPlugin(c)

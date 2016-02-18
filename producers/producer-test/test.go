@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"time"
 
 	"github.com/nsaje/dagger/producers"
@@ -14,7 +14,7 @@ type TestProducerPlugin struct {
 }
 
 func main() {
-	log.SetPrefix("[testProducer log] ")
+	//log.SetPrefix("[testProducer log] ")
 	log.Printf("testProducer started")
 	p := TestProducerPlugin{producers.InitProducer()}
 	counter := 0

@@ -1,7 +1,7 @@
 package producers
 
 import (
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"net/rpc/jsonrpc"
 
 	"github.com/nsaje/dagger/dagger"

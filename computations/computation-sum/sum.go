@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"os"
 	"os/signal"
 	"strconv"
@@ -100,7 +100,7 @@ func main() {
 			panic(sig)
 		}
 	}()
-	log.SetPrefix("[SumComputation log] ")
+	//log.SetPrefix("[SumComputation log] ")
 	log.Printf("SumComputation started")
 	c := computations.NewTimeBucketsComputation(&SumProcessor{state: NewSumProcessorState()})
 	computations.StartPlugin(c)
