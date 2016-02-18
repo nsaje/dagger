@@ -14,6 +14,17 @@ import (
 	"github.com/twinj/uuid"
 )
 
+// HttpAPIConfig configures the HTTP API
+type HttpAPIConfig struct {
+	Port string
+}
+
+func defaultHttpAPIConfig() *HttpAPIConfig {
+	return &HttpAPIConfig{
+		Port: "46666",
+	}
+}
+
 type HttpAPI struct {
 	coordinator Coordinator
 	dispatcher  *Dispatcher
@@ -41,7 +52,7 @@ func (api HttpAPI) Serve() {
 	http.HandleFunc("/register", api.register)
 	http.HandleFunc("/renew", api.renew)
 
-	log.Fatal(http.ListenAndServe(":46632", nil))
+	log.Fatal(http.ListenAndServe(":46666", nil))
 }
 
 func (api HttpAPI) register(w http.ResponseWriter, r *http.Request) {

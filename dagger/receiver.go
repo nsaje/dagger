@@ -78,6 +78,7 @@ func NewReceiver(coordinator Coordinator, customizeConfig func(*ReceiverConfig))
 
 // ListenAddr is the network address on which the receiver listens
 func (r *receiver) ListenAddr() net.Addr {
+	log.Printf("LISTENING ON ", r.listener.Addr())
 	return r.listener.Addr()
 }
 

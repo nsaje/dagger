@@ -2,32 +2,41 @@ dagger1:
   image: "dagger-scratch"
   links:
     - "consul1:consul1"
+    - "dagger2"
+    - "dagger3"
   ports:
     - "46632:46632"
     - "46633"
-  command: "--consul consul1:8500 worker"
+    - "46666"
+  command: "worker --consul consul1:8500 --bind dagger1"
 
 dagger2:
   image: "dagger-scratch"
   links:
     - "consul1:consul1"
+    - "dagger1"
+    - "dagger3"
   ports:
     - "46632"
     - "46633"
-  command: "--consul consul1:8500 worker"
+    - "46666"
+  command: "worker --consul consul1:8500 --bind dagger2"
 
 dagger3:
   image: "dagger-scratch"
   links:
     - "consul1:consul1"
+    - "dagger1"
+    - "dagger2"
   ports:
     - "46632"
     - "46633"
-  command: "--consul consul1:8500 worker"
+    - "46666"
+  command: "worker --consul consul1:8500 --bind dagger3"
 
 consul1:
   image: "progrium/consul:latest"
-  name: "consul1"
+  container_name: "consul1"
   hostname: "consul1"
   ports:
     - "8400:8400"

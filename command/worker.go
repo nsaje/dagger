@@ -18,7 +18,7 @@ var Worker = cli.Command{
 	Aliases: []string{"w"},
 	Usage:   "start dagger node as a worker",
 	Action:  workerAction,
-	Flags: mergeFlags(consulFlags, receiverFlags, persisterFlags, dispatcherFlags,
+	Flags: mergeFlags(consulFlags, receiverFlags, persisterFlags, dispatcherFlags, httpApiFlags,
 		[]cli.Flag{
 			cli.StringFlag{
 				Name:  "appmetrics",
@@ -63,6 +63,10 @@ func workerAction(c *cli.Context) {
 
 	go receiver.Listen(errc)
 	go taskManager.ManageTasks()
+
+	dispatcher := dagger.NewDispatcher(coordinator)
+	httpapi := dagger.NewHttpAPI(coordinator, receiver, dispatcher)
+	go httpapi.Serve()
 
 	handleSignals(errc)
 }

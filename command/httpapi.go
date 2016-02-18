@@ -12,7 +12,7 @@ import (
 // topics and publishes the results of the computations
 var HTTPAPI = cli.Command{
 	Name:    "httpapi",
-	Aliases: []string{"w"},
+	Aliases: []string{"h"},
 	Usage:   "start dagger node as a HTTP API node",
 	Action:  httpapiAction,
 	Flags: mergeFlags(consulFlags, receiverFlags, persisterFlags, dispatcherFlags,

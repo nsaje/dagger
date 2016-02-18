@@ -80,6 +80,22 @@ func receiverConfFromFlags(c *cli.Context) func(*dagger.ReceiverConfig) {
 	}
 }
 
+var httpApiFlags = []cli.Flag{
+	cli.StringFlag{
+		Name:  "api-port, ap",
+		Usage: "Which port to bind HTTP API to",
+		Value: "46666",
+	},
+}
+
+func httpapiConfFromFlags(c *cli.Context) func(*dagger.HttpAPIConfig) {
+	return func(conf *dagger.HttpAPIConfig) {
+		if c.IsSet("api-port") {
+			conf.Port = c.String("api-port")
+		}
+	}
+}
+
 var persisterFlags = []cli.Flag{
 	cli.StringFlag{
 		Name:  "data-dir",
