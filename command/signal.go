@@ -1,10 +1,11 @@
 package command
 
 import (
-	log "github.com/Sirupsen/logrus"
 	"os"
 	"os/signal"
 	"syscall"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 func handleSignals(errc chan error) {

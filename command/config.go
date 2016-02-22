@@ -79,9 +79,9 @@ func getAdvertiseAddr(c *cli.Context, receiver dagger.Receiver) net.Addr {
 
 var receiverFlags = []cli.Flag{
 	cli.StringFlag{
-		Name:  "bind, b",
-		Usage: "Which addres to bind RPC receiver to",
-		Value: "0.0.0.0",
+		Name:  "iface, i",
+		Usage: "Which interface to bind RPC receiver to",
+		Value: "",
 	},
 	cli.StringFlag{
 		Name:  "port, p",
@@ -90,10 +90,35 @@ var receiverFlags = []cli.Flag{
 	},
 }
 
+func getIfaceAddr(ifaceName string) string {
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return ""
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return ""
+	}
+	for _, address := range addrs {
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				log.Warnln("Returning IP ", ipnet.IP.String())
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
+}
+
 func receiverConfFromFlags(c *cli.Context) func(*dagger.ReceiverConfig) {
 	return func(conf *dagger.ReceiverConfig) {
-		if c.IsSet("bind") {
-			conf.Addr = c.String("bind")
+		if c.IsSet("iface") {
+			addr := getIfaceAddr(c.String("iface"))
+			if len(addr) == 0 {
+				log.Warnf("Interface %s invalid", c.String("iface"))
+			} else {
+				conf.Addr = addr
+			}
 		}
 		if c.IsSet("port") {
 			conf.Port = c.String("port")

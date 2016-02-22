@@ -1,43 +1,17 @@
-dagger1:
+dagger:
   image: "dagger-scratch"
   links:
-    - "consul1:consul1"
-    - "dagger2"
-    - "dagger3"
-  ports:
-    - "46632:46632"
-    - "46633"
-    - "46666"
-  command: "worker --consul consul1:8500 --bind dagger1"
-
-dagger2:
-  image: "dagger-scratch"
-  links:
-    - "consul1:consul1"
-    - "dagger1"
-    - "dagger3"
+    - "consul:consul"
   ports:
     - "46632"
     - "46633"
     - "46666"
-  command: "worker --consul consul1:8500 --bind dagger2"
+  environment:
+    - "DAGGER_PLUGIN_PATH=/"
+  command: "worker --consul consul:8500 --iface eth0"
 
-dagger3:
-  image: "dagger-scratch"
-  links:
-    - "consul1:consul1"
-    - "dagger1"
-    - "dagger2"
-  ports:
-    - "46632"
-    - "46633"
-    - "46666"
-  command: "worker --consul consul1:8500 --bind dagger3"
-
-consul1:
+consul:
   image: "progrium/consul:latest"
-  container_name: "consul1"
-  hostname: "consul1"
   ports:
     - "8400:8400"
     - "8500:8500"
