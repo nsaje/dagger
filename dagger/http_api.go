@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	log "github.com/Sirupsen/logrus"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/twinj/uuid"
 )
@@ -68,6 +69,7 @@ func (api HttpAPI) register(w http.ResponseWriter, r *http.Request) {
 
 func (api HttpAPI) renew(w http.ResponseWriter, r *http.Request) {
 	session := r.FormValue("session")
+	log.Println("[HTTP] renew session", session)
 	api.coordinator.RenewSession(session)
 }
 
@@ -109,6 +111,7 @@ func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	streamID := StreamID(r.FormValue("s"))
+	log.Println("[HTTP] submit to ", streamID)
 	_, streamRegistered := streams[streamID]
 	if !streamRegistered {
 		api.coordinator.RegisterAsPublisherWithSession(session, streamID)
@@ -116,7 +119,7 @@ func (api HttpAPI) submitRaw(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, err := ioutil.ReadAll(r.Body)
-	log.Println("data", data)
+	log.Println("[HTTP] submit to stream", streamID, ", data", string(data))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error reading POST body: %s", err), 500)
 		return
@@ -183,6 +186,7 @@ func validate(t *Record) error {
 
 func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 	topicGlob := StreamID(r.FormValue("s"))
+	log.Println("[HTTP] new subscriber to ", topicGlob)
 	if len(topicGlob) == 0 {
 		http.Error(w, "stream id missing in URL", 400)
 		return
@@ -192,10 +196,13 @@ func (api HttpAPI) listen(w http.ResponseWriter, r *http.Request) {
 
 	api.subscribers.SubscribeTo(topicGlob, ch)
 	defer api.subscribers.UnsubscribeFrom(topicGlob, ch)
+	// flush so response header is sent and the client know we've successfuly subscribed
+	w.(http.Flusher).Flush()
 	for {
 		select {
 		case r := <-ch:
 			json, _ := json.Marshal(r) // FIXME: error?
+			log.Println("[HTTP] sending to subscriber ", json)
 			w.Write(json)
 			w.Write([]byte("\n"))
 			w.(http.Flusher).Flush()
@@ -229,6 +236,7 @@ func (hs *httpSubscribers) UnsubscribeFrom(streamID StreamID, ch chan *Record) {
 	delete(hs.subs[streamID], ch)
 	if len(hs.subs[streamID]) == 0 {
 		hs.receiver.UnsubscribeFrom(streamID, hs)
+		delete(hs.subs, streamID)
 	}
 }
 

@@ -2,11 +2,12 @@ package dagger
 
 import (
 	"fmt"
-	log "github.com/Sirupsen/logrus"
 	"net"
 	"strings"
 	"sync"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/cenkalti/backoff"
 	"github.com/hashicorp/consul/api"
@@ -564,6 +565,7 @@ func (sl *subscribersList) fetch() error {
 			}
 		}
 	}
+	log.Println("[coordinator] new subscribers ", filtered)
 	sl.subscribers = filtered
 	return nil
 }
