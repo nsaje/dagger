@@ -13,7 +13,7 @@ dagger:
 consul:
   image: "progrium/consul:latest"
   ports:
-    - "8400:8400"
-    - "8500:8500"
-    - "53:53"
+    - "8400"
+    - "8500"
+    - "53"
   command: "-server -bootstrap-expect 1 -ui-dir /ui"
