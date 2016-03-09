@@ -2,6 +2,7 @@ package command
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 
@@ -64,6 +65,7 @@ func producerAction(c *cli.Context) {
 		log.Println("read", line)
 		persister.Insert(streamID, "p", record)
 		dispatcher.ProcessRecord(record)
+		fmt.Println("written")
 	}
 	handleSignals(errc)
 }

@@ -1,12 +1,13 @@
 package dagger
 
 import (
-	log "github.com/Sirupsen/logrus"
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"sync"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 // DispatcherConfig configures the dispatcher
@@ -199,7 +200,12 @@ func (si *StreamIterator) Dispatch(startAt Timestamp) {
 				}
 			}
 		case r := <-sentSuccessfuly:
-			lastSent = r
+			if lastSent == nil {
+				lastSent = r
+			}
+			if r.LWM > lastSent.LWM {
+				lastSent = r
+			}
 			lwmFlushTimer.Reset(flushAfter)
 			si.lwmTracker.SentSuccessfuly("FIXME", r)
 			log.Println("[iterator] newFrom updated:", r, r.Timestamp+1)
