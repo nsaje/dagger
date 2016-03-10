@@ -1,3 +1,4 @@
-FROM scratch
-ADD bin/linux_amd64/ /
-ENTRYPOINT ["/dagger"]
+FROM progrium/busybox
+RUN opkg-install bash
+COPY . /
+ENTRYPOINT ["bin/linux_amd64/dagger"]

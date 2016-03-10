@@ -189,7 +189,7 @@ func (c *consulCoordinator) EnsurePublisherNum(topic StreamID, n int, stop chan 
 				return
 			case keys := <-new:
 				// if there are no publishers registered, post a new job
-				if len(keys) != lastNumPublishers && len(keys) < 2 {
+				if len(keys) != lastNumPublishers && len(keys) < n {
 					log.Printf("[coordinator] Number of publishers of %s is %d, posting a job.", topic, len(keys))
 					// log.Println("Publishers: ", keys)
 					pair := &api.KVPair{
@@ -200,7 +200,7 @@ func (c *consulCoordinator) EnsurePublisherNum(topic StreamID, n int, stop chan 
 						errc <- fmt.Errorf("consul error: %s", err)
 					}
 				} else { // FIXME: do this more elegantly
-					if len(keys) == 2 {
+					if len(keys) == n {
 						log.Printf("[coordinator] Number of publishers of %s is %d, not posting a job.", topic, len(keys))
 						// log.Println("Publishers: ", keys)
 					}
@@ -275,6 +275,9 @@ func (c *consulCoordinator) GetSubscriberPosition(topic StreamID, subscriber str
 	pair, _, err := c.client.KV().Get(subscribersPrefix+string(topic)+"/"+subscriber, nil)
 	if err != nil {
 		return Timestamp(0), err
+	}
+	if pair == nil || pair.Value == nil {
+		return 0, nil
 	}
 	return TSFromString(string(pair.Value)), nil
 }

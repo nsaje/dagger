@@ -2,13 +2,14 @@ package dagger
 
 import (
 	"fmt"
-	log "github.com/Sirupsen/logrus"
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"strings"
 	"sync"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 // ReceiverConfig configures the RPC receiver
@@ -103,20 +104,21 @@ func (r *receiver) Listen(errc chan error) {
 func (r *receiver) SubscribeTo(streamID StreamID, from Timestamp, tp RecordProcessor) {
 	r.subscribersLock.Lock()
 	defer r.subscribersLock.Unlock()
-	subscribersSet := r.subscribedRecordProcessors[streamID]
+	topic := StripTags(streamID)
+	subscribersSet := r.subscribedRecordProcessors[topic]
 	if subscribersSet == nil {
 		r.coordinator.SubscribeTo(streamID, from) // FIXME: return error
-		if strings.ContainsAny(string(streamID), "()") {
+		if strings.ContainsAny(string(topic), "()") {
 			// only monitor publishers if it's a computation
 			stop := make(chan struct{})
-			r.coordinator.EnsurePublisherNum(streamID, 2, stop)
-			r.publisherMonitors[streamID] = stop
+			r.coordinator.EnsurePublisherNum(topic, 1, stop)
+			r.publisherMonitors[topic] = stop
 		}
 		subscribersSet = make(map[RecordProcessor]struct{})
-		r.checkpointTimers[streamID] = time.NewTimer(time.Second) // FIXME: configurable
+		r.checkpointTimers[topic] = time.NewTimer(time.Second) // FIXME: configurable
 	}
 	subscribersSet[tp] = struct{}{}
-	r.subscribedRecordProcessors[streamID] = subscribersSet
+	r.subscribedRecordProcessors[topic] = subscribersSet
 }
 
 func (r *receiver) UnsubscribeFrom(streamID StreamID, rp RecordProcessor) {
@@ -147,8 +149,9 @@ func (rpci *RPCHandler) SubmitRecord(t *Record, reply *string) error {
 	rpci.r.subscribersLock.RLock()
 	defer rpci.r.subscribersLock.RUnlock()
 	log.Printf("[receiver] Received: %s", t)
-	subscribers := make([]RecordProcessor, 0, len(rpci.r.subscribedRecordProcessors[t.StreamID]))
-	for k := range rpci.r.subscribedRecordProcessors[t.StreamID] {
+	topic := StripTags(t.StreamID)
+	subscribers := make([]RecordProcessor, 0, len(rpci.r.subscribedRecordProcessors[topic]))
+	for k := range rpci.r.subscribedRecordProcessors[topic] {
 		subscribers = append(subscribers, k)
 	}
 	err := ProcessMultipleProcessors(subscribers, t)
@@ -158,10 +161,10 @@ func (rpci *RPCHandler) SubmitRecord(t *Record, reply *string) error {
 	}
 	// if enough time has passed, create a checkpoint in coordination system
 	select {
-	case <-rpci.r.checkpointTimers[t.StreamID].C:
+	case <-rpci.r.checkpointTimers[topic].C:
 		log.Printf("[receiver] checkpointing position of stream %s at %s", t.StreamID, t.Timestamp)
 		rpci.r.coordinator.CheckpointPosition(t.StreamID, t.Timestamp)
-		rpci.r.checkpointTimers[t.StreamID].Reset(time.Second)
+		rpci.r.checkpointTimers[topic].Reset(time.Second)
 	default:
 	}
 	*reply = "ok"

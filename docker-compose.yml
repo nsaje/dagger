@@ -1,5 +1,6 @@
 dagger:
-  image: "dagger-scratch"
+  image: "nsaje2/dagger-scratch"
+  mem_limit: 850000000
   links:
     - "consul:consul"
   ports:
@@ -12,6 +13,7 @@ dagger:
 
 consul:
   image: "progrium/consul:latest"
+  mem_limit: 850000000
   ports:
     - "8400"
     - "8500"
