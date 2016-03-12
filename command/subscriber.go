@@ -113,9 +113,10 @@ type printer struct {
 }
 
 func (p *printer) ProcessRecordLinearized(t *dagger.Record) error {
-	log.Println("in printer")
+	log.Printf("in printer, record: %+v\n", t)
+	fmt.Printf("yippie ")
 	if p.dataonly {
-		fmt.Println(t.Data)
+		fmt.Printf("%v\n", t.Data)
 	} else {
 		fmt.Println(t)
 	}

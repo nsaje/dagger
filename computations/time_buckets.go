@@ -99,6 +99,7 @@ func (c *TimeBucketsComputation) SubmitRecord(t *dagger.Record) ([]*dagger.Recor
 	if t.Timestamp < c.lastLWM {
 		return nil, fmt.Errorf("LWM semantics violated! Record ts: %v, lastLWM: %v", t.Timestamp, c.lastLWM)
 	}
+	time.Sleep(100 * time.Millisecond)
 
 	c.buckets[bucket] = struct{}{}
 	log.Println("[time_buckets] submitting to processor ", t)

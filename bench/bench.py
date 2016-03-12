@@ -3,6 +3,7 @@ import time
 import subprocess
 import argparse
 import multiprocessing
+import select
 
 parser = argparse.ArgumentParser(description='Benchmark Dagger.')
 parser.add_argument('--deadline', dest='deadline', default=2, type=int)
@@ -27,9 +28,10 @@ def pub_worker(chan, consul, deadline, runfor, stream):
     # for i in xrange(100):
     count = 0
     while datetime.datetime.utcnow() < end:
-        dagger.stdin.write('a%d\n' % count)
+        dagger.stdin.write('%d\n' % count)
         dagger.stdout.readline()
         count += 1
+        time.sleep(0.1)
     time.sleep(2.0)
     dagger.terminate()
 
@@ -38,19 +40,25 @@ def pub_worker(chan, consul, deadline, runfor, stream):
 
 
 def sub_worker(chan, consul, deadline, runfor, stream, i=0):
-    dagger = subprocess.Popen(['dagger', 's', '-consul', consul, '-i', 'virbr0',
+    dagger = subprocess.Popen(['dagger', 's', '-consul', consul, '-i', 'eth0',
                                '-p', '%s' % (46667 + i), stream], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    poll_obj = select.poll()
+    poll_obj.register(dagger.stdout, select.POLLIN)   
 
     now = datetime.datetime.utcnow()
     sleep_for = (deadline - now).seconds
     print "sub worker sleeping for ", sleep_for
     time.sleep(sleep_for)
 
+
     count = 0
     end = deadline + datetime.timedelta(seconds=runfor)
     while datetime.datetime.utcnow() < end:
-        dagger.stdout.readline()
-        count += 1
+        poll_result = poll_obj.poll(0.25)
+        if poll_result:
+            line = dagger.stdout.readline()
+            print "subscriber read ", line
+            count += 1
     time.sleep(2.0)
     dagger.terminate()
 
@@ -83,13 +91,13 @@ if __name__ == '__main__':
     if args.test == 'task':
         for i in range(args.publishers):
             pubs.append(start_worker(target=pub_worker, args=(args.consul, deadline, args.runfor, stream)))
-        subs.append(start_worker(target=sub_worker, args=(args.consul, deadline, args.runfor, 'foo(%s)' % stream)))
+        subs.append(start_worker(target=sub_worker, args=(args.consul, deadline, args.runfor, 'avg(%s, 1s)' % stream)))
 
     if args.test == 'many-many':
         for i in range(args.publishers):
             pubs.append(start_worker(target=pub_worker, args=(args.consul, deadline, args.runfor, '%s%d' % (stream, i))))
         for i in range(args.subscribers):
-            subs.append(start_worker(target=sub_worker, args=(args.consul, deadline, args.runfor, 'foo(%s%d)' % (stream, i), i)))
+            subs.append(start_worker(target=sub_worker, args=(args.consul, deadline, args.runfor, 'avg(%s%d, 1s)' % (stream, i), i)))
 
     if args.test == 'many-one':
         for i in range(args.publishers):

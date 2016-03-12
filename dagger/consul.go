@@ -190,7 +190,7 @@ func (c *consulCoordinator) EnsurePublisherNum(topic StreamID, n int, stop chan 
 			case keys := <-new:
 				// if there are no publishers registered, post a new job
 				if len(keys) != lastNumPublishers && len(keys) < n {
-					log.Printf("[coordinator] Number of publishers of %s is %d, posting a job.", topic, len(keys))
+					log.Printf("[coordinator] Number of publishers of %s is %d, posting a job. ensuring %d", topic, len(keys), n)
 					// log.Println("Publishers: ", keys)
 					pair := &api.KVPair{
 						Key: taskPrefix + string(topic),

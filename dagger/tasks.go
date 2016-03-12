@@ -73,6 +73,7 @@ func (cm *taskManager) Stop() {
 func (cm *taskManager) ManageTasks() error {
 	unapplicableSet := make(map[StreamID]struct{})
 	new, errc := cm.coordinator.WatchTasks(cm.done)
+	ourTasks := 0
 	for {
 		select {
 		case <-cm.done:
@@ -93,6 +94,10 @@ func (cm *taskManager) ManageTasks() error {
 				return nil
 			}
 			log.Println("[taskManager] got new tasks", candidateTasks)
+			//if ourTasks > 0 {
+			//	log.Println("[taskManager] got enough tasks, passing", candidateTasks)
+			//}
+
 
 			// try to acquire available tasks in random order, so the tasks are
 			// spread evenly among workers
@@ -153,6 +158,7 @@ func (cm *taskManager) ManageTasks() error {
 					if err != nil {
 						return err
 					}
+					ourTasks++
 				}
 			}
 		}
