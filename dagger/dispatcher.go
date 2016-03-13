@@ -17,7 +17,7 @@ type DispatcherConfig struct {
 
 func defaultDispatcherConfig() *DispatcherConfig {
 	return &DispatcherConfig{
-		PipeliningLimit: 10,
+		PipeliningLimit: 1,
 	}
 }
 
@@ -278,7 +278,7 @@ func StartBufferedDispatcher(compID StreamID, dispatcher RecordProcessor, sentTr
 	stopCh chan struct{}) *BufferedDispatcher {
 	bd := &BufferedDispatcher{
 		streamID:    compID,
-		buffer:      make(chan *Record, 100), // FIXME: make it configurable
+		buffer:      make(chan *Record, 1), // FIXME: make it configurable
 		dispatcher:  dispatcher,
 		sentTracker: sentTracker,
 		lwmTracker:  lwmTracker,

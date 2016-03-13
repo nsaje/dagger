@@ -102,16 +102,16 @@ if __name__ == '__main__':
     if args.test == 'many-one':
         for i in range(args.publishers):
             pubs.append(start_worker(target=pub_worker, args=(args.consul, deadline, args.runfor, '%s{hostname=%d}' % (stream, i))))
-        subs.append(start_worker(target=sub_worker, args=(args.consul, deadline, args.runfor, 'foo(%s)' % (stream,))))
+        subs.append(start_worker(target=sub_worker, args=(args.consul, deadline, args.runfor, 'avg(%s, 1s)' % (stream,))))
 
     count = 0
     for proc, chan in pubs:
         count += chan.recv()
         proc.join()
-    print 'write throughput %f msgs/s' % (count / args.runfor)
+    print 'write count %d, throughput %f msgs/s' % (count, count / float(args.runfor))
 
     count = 0
     for proc, chan in subs:
         count += chan.recv()
         proc.join()
-    print 'read throughput %f msgs/s' % (count / args.runfor)
+    print 'read count %d, throughput %f msgs/s' % (count, count / float(args.runfor))
