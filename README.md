@@ -6,7 +6,7 @@ Computations are only executed on a stream (or streams) of data if there's someo
 
 This way, computation and data transfer over the network is only done when necessary, thus conserving compute cycles and reducing network traffic.
 
-*This software is a prototype in the making. It is being developed for the purpose of my master's thesis.*
+*This software is a prototype in the making. It is being developed for the purpose of my [master's thesis](http://eprints.fri.uni-lj.si/3338/).*
 
 Properties
 ----------
